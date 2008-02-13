@@ -618,14 +618,14 @@ static int do_uninstall(Options *op)
             if (!nvrename(op, tmpstr, e->filename)) {
                 ui_warn(op, "Unable to restore file '%s'.", e->filename);
             } else {
-                if (chmod(e->filename, e->mode) == -1) {
-                    ui_warn(op, "Unable to restore permissions %04o for "
-                            "file '%s'.", e->mode, e->filename);
+                if (chown(e->filename, e->uid, e->gid)) {
+                    ui_warn(op, "Unable to restore owner (%d) and group "
+                            "(%d) for file '%s' (%s).",
+                            e->uid, e->gid, e->filename, strerror(errno));
                 } else {
-                    if (chown(e->filename, e->uid, e->gid)) {
-                        ui_warn(op, "Unable to restore owner (%d) and group "
-                                "(%d) for file '%s' (%s).",
-                                e->uid, e->gid, e->filename, strerror(errno));
+                    if (chmod(e->filename, e->mode) == -1) {
+                        ui_warn(op, "Unable to restore permissions %04o for "
+                                "file '%s'.", e->mode, e->filename);
                     }
                 }
             }

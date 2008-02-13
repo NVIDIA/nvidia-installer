@@ -55,6 +55,7 @@ static int rmmod_kernel_module(Options *op, const char *);
 static PrecompiledInfo *download_updated_kernel_interface(Options*, Package*,
                                                           const char*);
 static int fbdev_check(Options *op, Package *p);
+static int xen_check(Options *op, Package *p);
 
 static PrecompiledInfo *scan_dir(Options *op, Package *p,
                                  const char *directory_name,
@@ -445,6 +446,7 @@ int build_kernel_module(Options *op, Package *p)
     }
 
     if (!fbdev_check(op, p)) return FALSE;
+    if (!xen_check(op, p)) return FALSE;
 
     cmd = nvstrcat("cd ", p->kernel_module_build_directory,
                    "; make print-module-filename",
@@ -1576,8 +1578,45 @@ static int fbdev_check(Options *op, Package *p)
 
     return TRUE;
     
-    
 } /* fbdev_check() */
+
+
+
+/*
+ * xen_check() - run the xen_sanity_check conftest; if this test fails, print
+ * the test's error message and abort the driver installation.
+ */
+
+static int xen_check(Options *op, Package *p)
+{
+    char *CC, *cmd, *result;
+    int ret;
+    
+    CC = getenv("CC");
+    if (!CC) CC = "cc";
+    
+    ui_log(op, "Performing Xen check.");
+    
+    cmd = nvstrcat("sh ", p->kernel_module_build_directory,
+                   "/conftest.sh ", CC, " ", CC, " ",
+                   op->kernel_source_path, " ",
+                   op->kernel_output_path, " ",
+                   "xen_sanity_check just_msg", NULL);
+    
+    ret = run_command(op, cmd, &result, FALSE, 0, TRUE);
+    
+    nvfree(cmd);
+    
+    if (ret != 0) {
+        ui_error(op, "%s", result);
+        nvfree(result);
+
+        return FALSE;
+    }
+
+    return TRUE;
+    
+} /* xen_check() */
 
 
 

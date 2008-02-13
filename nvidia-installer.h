@@ -178,6 +178,7 @@ typedef struct __options {
     char *kernel_name;
     char *rpm_file_list;
     char *precompiled_kernel_interfaces_path;
+    const char *selinux_chcon_type;
 
     Distribution distro;
 

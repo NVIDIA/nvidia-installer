@@ -2089,7 +2089,56 @@ int check_selinux(Options *op)
         }
         break;
     }                 
-    
+
+    /* Figure out which chcon type we need if the user didn't supply one. */
+    if (op->selinux_enabled && !op->selinux_chcon_type) {
+        unsigned char foo = 0;
+        char *tmpfile;
+        static const char* chcon_types[] = {
+            "textrel_shlib_t",    /* Shared library with text relocations */
+            "texrel_shlib_t",     /* Obsolete synonym for the above */
+            "shlib_t",            /* Generic shared library */
+            NULL
+        };
+
+        /* Create a temporary file */
+        tmpfile = write_temp_file(op, 1, &foo, S_IRUSR);
+        if (!tmpfile) {
+            ui_warn(op, "Couldn't test chcon.  Assuming shlib_t.");
+            op->selinux_chcon_type = "shlib_t";
+        } else {
+            int i, ret;
+            char *cmd;
+
+            /* Try each chcon command */
+            for (i = 0; chcon_types[i]; i++) {
+                cmd = nvstrcat(op->utils[CHCON], " -t ", chcon_types[i], " ",
+                               tmpfile, NULL);
+                ret = run_command(op, cmd, NULL, FALSE, 0, TRUE);
+                nvfree(cmd);
+
+                if (ret == 0) break;
+            }
+
+            if (!chcon_types[i]) {
+                /* None of them work! */
+                ui_warn(op, "Couldn't find a working chcon argument.  "
+                            "Defaulting to shlib_t.");
+                op->selinux_chcon_type = "shlib_t";
+            } else {
+                op->selinux_chcon_type = chcon_types[i];
+            }
+
+            unlink(tmpfile);
+            nvfree(tmpfile);
+        }
+    }
+
+    if (op->selinux_enabled) {
+        ui_log(op, "Tagging shared libraries with chcon -t %s.",
+               op->selinux_chcon_type);
+    }
+
     return TRUE;
 } /* check_selinux */
 /*

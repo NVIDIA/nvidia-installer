@@ -45,6 +45,7 @@ enum {
     COMPAT32_LIBDIR_OPTION,
     UPDATE_OPTION,
     FORCE_SELINUX_OPTION,
+    SELINUX_CHCON_TYPE_OPTION,
     NO_SIGWINCH_WORKAROUND_OPTION,
     X_MODULE_PATH_OPTION,
     DOCUMENTATION_PREFIX_OPTION,
@@ -126,18 +127,21 @@ static const NVOption __options[] = {
 
     { "x-module-path", X_MODULE_PATH_OPTION, NVOPT_HAS_ARGUMENT,
       "The path under which the NVIDIA X server modules will be installed.  "
-      "If `pkg-config --variable=moduledir xorg-server` is successful and "
-      "returns a directory that exists, then that is the default; otherwise, "
-      "this value defaults to the X library path (see the '--x-library-path' "
-      "option) plus '" DEFAULT_X_MODULEDIR "' or '" XORG7_DEFAULT_X_MODULEDIR
-      "' if nvidia-installer detects that Xorg >= 7.0 is installed." },
+      "If this option is not specified, nvidia-installer uses the following "
+      "search order and selects the first valid directory it finds: 1) "
+      "`X -showDefaultModulePath`, 2) `pkg-config --variable=moduledir "
+      "xorg-server`, or 3) the X library path (see the '--x-library-path' "
+      "option) plus either '" DEFAULT_X_MODULEDIR "' (for X servers older "
+      "than X.Org 7.0) or '" XORG7_DEFAULT_X_MODULEDIR "' (for X.Org 7.0 or "
+      "later)." },
 
     { "x-library-path", X_LIBRARY_PATH_OPTION, NVOPT_HAS_ARGUMENT,
       "The path under which the NVIDIA X libraries will be installed.  "
-      "If `pkg-config --variable=libdir xorg-server` is successful and "
-      "returns a directory that exists, then that is the default; otherwise, "
-      "this value defaults to the X prefix (see the '--x-prefix' option) "
-      "plus '" DEFAULT_LIBDIR "' on 32bit systems, and '"
+      "If this option is not specified, nvidia-installer uses the following "
+      "search order and selects the first valid directory it finds: 1) "
+      "`X -showDefaultLibPath`, 2) `pkg-config --variable=libdir "
+      "xorg-server`, or 3) the X prefix (see the '--x-prefix' option) "
+      "plus '" DEFAULT_LIBDIR "' on 32bit systems, and either '"
       DEFAULT_64BIT_LIBDIR "' or '" DEFAULT_LIBDIR "' on 64bit systems, "
       "depending on the installed Linux distribution." },
 
@@ -379,7 +383,8 @@ static const NVOption __options[] = {
     { "force-selinux", FORCE_SELINUX_OPTION, NVOPT_HAS_ARGUMENT,
       "Linux installations using SELinux (Security-Enhanced Linux) "
       "require that the security type of all shared libraries be set "
-      "to 'shlib_t'. nvidia-installer will detect when to set "
+      "to 'shlib_t' or 'textrel_shlib_t', depending on the distribution. "
+      "nvidia-installer will detect when to set "
       "the security type, and set it using chcon(1) on the shared "
       "libraries it installs.  Use this option to override "
       "nvidia-installer's detection of when to set the security type.  "
@@ -387,7 +392,13 @@ static const NVOption __options[] = {
       "security type), "
       "'no' (prevent setting of the security type), and 'default' "
       "(let nvidia-installer decide when to set the security type)." },
-      
+
+    { "selinux-chcon-type", SELINUX_CHCON_TYPE_OPTION, NVOPT_HAS_ARGUMENT,
+      "When SELinux support is enabled, nvidia-installer will try to determine "
+      "which chcon argument to use by first trying 'textrel_shlib_t', then "
+      "'texrel_shlib_t', then 'shlib_t'.  Use this option to override this "
+      "detection logic." },
+
     { "no-sigwinch-workaround", NO_SIGWINCH_WORKAROUND_OPTION, 0,
       "Normally, nvidia-installer ignores the SIGWINCH signal before it "
       "forks to execute commands, e.g. to build the kernel module, and "
