@@ -703,6 +703,7 @@ int find_system_utils(Options *op)
         { "chcon",          "selinux" },
         { "selinuxenabled", "selinux" },
         { "getenforce",     "selinux" },
+        { "execstack",      "selinux" },
         { "pkg-config",     "pkg-config" },
         { "X",              "xserver" }
     };

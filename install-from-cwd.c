@@ -618,8 +618,6 @@ static Package *parse_manifest (Options *op)
                 p->entries[n].flags |= FILE_TYPE_UTILITY_BINARY;
             else if (strcmp(flag, "DOT_DESKTOP") == 0)
                 p->entries[n].flags |= FILE_TYPE_DOT_DESKTOP;
-            else if (strcmp(flag, "XMODULE_STATIC_LIB") == 0)
-                p->entries[n].flags |= FILE_TYPE_XMODULE_STATIC_LIB;
             else if (strcmp(flag, "XMODULE_SHARED_LIB") == 0)
                 p->entries[n].flags |= FILE_TYPE_XMODULE_SHARED_LIB;
             else if (strcmp(flag, "XMODULE_SYMLINK") == 0)
