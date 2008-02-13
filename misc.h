@@ -51,13 +51,17 @@ char *get_next_line(char *buf, char **e);
 int run_command(Options *op, const char *cmd, char **data,
                 int output, int status, int redirect);
 int find_system_utils(Options *op);
+int find_module_utils(Options *op);
+int check_development_tools(Options *op);
 int nvid_version (const char *str, int *major, int *minor, int *patch);
 int continue_after_error(Options *op, const char *fmt, ...);
 int do_install(Options *op, Package *p, CommandList *c);
 void should_install_opengl_headers(Options *op, Package *p);
+void should_install_compat32_files(Options *op, Package *p);
 void check_installed_files_from_package(Options *op, Package *p);
 unsigned int get_installable_file_mask(Options *op);
 int tls_test(Options *op, int compat_32_libs);
+int check_runtime_configuration(Options *op, Package *p);
 Distribution get_distribution(Options *op);
 int check_for_running_x(Options *op);
 

@@ -29,6 +29,7 @@
 
 #include <sys/types.h>
 #include <sys/stat.h>
+#include <fts.h>
 #include <unistd.h>
 #include <dirent.h>
 #include <string.h>
@@ -91,17 +92,33 @@ CommandList *build_command_list(Options *op, Package *p)
     if (!op->kernel_module_only) {
 
         find_conflicting_xfree86_libraries
-            (DEFAULT_XFREE86_INSTALLATION_PREFIX,l);
+            (op, DEFAULT_XFREE86_INSTALLATION_PREFIX, l);
     
         if (strcmp(DEFAULT_XFREE86_INSTALLATION_PREFIX,
                    op->xfree86_prefix) != 0)
-            find_conflicting_xfree86_libraries(op->xfree86_prefix, l);
+            find_conflicting_xfree86_libraries(op, op->xfree86_prefix, l);
     
         find_conflicting_opengl_libraries
-            (DEFAULT_OPENGL_INSTALLATION_PREFIX,l);
+            (op, DEFAULT_OPENGL_INSTALLATION_PREFIX, l);
     
         if (strcmp(DEFAULT_OPENGL_INSTALLATION_PREFIX, op->opengl_prefix) != 0)
-            find_conflicting_opengl_libraries(op->opengl_prefix, l);
+            find_conflicting_opengl_libraries(op, op->opengl_prefix, l);
+
+#if defined(NV_X86_64)
+        if (op->compat32_prefix != NULL) {
+            char *prefix = nvstrcat(op->compat32_prefix,
+                                    DEFAULT_OPENGL_INSTALLATION_PREFIX, NULL);
+            find_conflicting_opengl_libraries(op, prefix, l);
+            nvfree(prefix);
+
+            if (strcmp(DEFAULT_OPENGL_INSTALLATION_PREFIX,
+                op->opengl_prefix) != 0) {
+                prefix = nvstrcat(op->compat32_prefix, op->opengl_prefix, NULL);
+                find_conflicting_opengl_libraries(op, prefix, l);
+                nvfree(prefix);
+            }
+        }
+#endif /* NV_X86_64 */
     }
     
     find_conflicting_kernel_modules(op, p, l);
@@ -147,6 +164,16 @@ CommandList *build_command_list(Options *op, Package *p)
                         p->entries[i].file,
                         p->entries[i].dst,
                         p->entries[i].mode);
+        }
+
+        /*
+         * delete the temporary libGL.la file generated based on
+         * the template earlier.
+         */
+
+        if (p->entries[i].flags & FILE_TYPE_LIBGL_LA) {
+            add_command(c, DELETE_CMD,
+                        p->entries[i].file);
         }
     }
 
@@ -365,7 +392,24 @@ int execute_command_list(Options *op, CommandList *c,
  ***************************************************************************
  */
 
-static const char *__libdirs[] = { "lib", "lib64", NULL };
+typedef struct {
+    const char *name;
+    int len;
+} ConflictingLibInfo;
+
+static void find_conflicting_libraries(Options *op,
+                                       const char *prefix,
+                                       ConflictingLibInfo *libs,
+                                       FileList *l);
+
+static ConflictingLibInfo __xfree86_libs[] = {
+    { "libGLcore.",     10 /* strlen("libGLcore.") */    },
+    { "libGL.",         6  /* strlen("libGL.") */        },
+    { "libGLwrapper.",  13 /* strlen("libGLwrapper.") */ },
+    { "libglx.",        7  /* strlen("libglx.") */       },
+    { "libXvMCNVIDIA",  14 /* strlen("libXvMCNVIDIA") */ },
+    { NULL, 0 }
+};
 
 /*
  * find_conflicting_xfree86_libraries() - search for conflicting
@@ -373,60 +417,21 @@ static const char *__libdirs[] = { "lib", "lib64", NULL };
  * libdirs.
  */
 
-void find_conflicting_xfree86_libraries(const char *xprefix, FileList *l)
+void find_conflicting_xfree86_libraries(Options *op,
+                                        const char *xprefix, FileList *l)
 {
-    char *s;
-    const char *libdir;
-    int i;
+    find_conflicting_libraries(op, xprefix, __xfree86_libs, l);
 
-    for (i = 0; __libdirs[i]; i++) {
-        
-        libdir = __libdirs[i];
-
-        /*
-         * [xprefix]/[libdir]/libGL.*
-         * [xprefix]/[libdir]/libGLcore.*
-         * [xprefix]/[libdir]/libXvMCNVIDIA*
-         * [xprefix]/[libdir]/libGLwrapper.*
-         */
-
-        s = nvstrcat(xprefix, "/", libdir, NULL);
-        find_matches(s, "libGL.", l, FALSE);
-        find_matches(s, "libGLcore.", l, FALSE);
-        find_matches(s, "libXvMCNVIDIA", l, FALSE);
-        find_matches(s, "libGLwrapper.", l, FALSE);
-        free(s);
-    
-        /*
-         * [xprefix]/[libdir]/tls/libGL.*
-         * [xprefix]/[libdir]/tls/libGLcore.*
-         * [xprefix]/[libdir]/tls/libXvMCNVIDIA*
-         * [xprefix]/[libdir]/tls/libGLwrapper.*
-         */
-        
-        s = nvstrcat(xprefix, "/", libdir, "/tls", NULL);
-        find_matches(s, "libGL.", l, FALSE);
-        find_matches(s, "libGLcore.", l, FALSE);
-        find_matches(s, "libXvMCNVIDIA", l, FALSE);
-        find_matches(s, "libGLwrapper.", l, FALSE);
-        free(s);
-    
-        /*
-         * [xprefix]/[libdir]/modules/extensions/libGLcore.*
-         * [xprefix]/[libdir]/modules/extensions/libglx.*
-         * [xprefix]/[libdir]/modules/extensions/libGLwrapper.*
-         */
-        
-        s = nvstrcat(xprefix, "/", libdir, "/modules/extensions", NULL);
-        find_matches(s, "libglx.", l, FALSE);
-        find_matches(s, "libGLcore.", l, FALSE);
-        find_matches(s, "libGLwrapper.", l, FALSE);
-        free(s);
-    }
-    
 } /* find_conflicting_xfree86_libraries() */
 
 
+static ConflictingLibInfo __opengl_libs[] = {
+    { "libGLcore.",     10 /* strlen("libGLcore.") */     },
+    { "libGL.",         6  /* strlen("libGL.") */         },
+    { "libnvidia-tls.", 14 /* strlen("libnvidia-tls.") */ },
+    { "libGLwrapper.",  13 /* strlen("libGLwrapper.") */  },
+    { NULL, 0 }
+};
 
 /*
  * find_conflicting_opengl_libraries() - search for conflicting
@@ -434,40 +439,11 @@ void find_conflicting_xfree86_libraries(const char *xprefix, FileList *l)
  * libdirs.
  */
 
-void find_conflicting_opengl_libraries(const char *glprefix, FileList *l)
+void find_conflicting_opengl_libraries(Options *op,
+                                       const char *glprefix, FileList *l)
 {
-    char *s;
-    const char *libdir;
-    int i;
+    find_conflicting_libraries(op, glprefix, __opengl_libs, l);
 
-    for (i = 0; __libdirs[i]; i++) {
-        
-        libdir = __libdirs[i];
-
-        /*
-         * [glprefix]/[libdir]/libGL.*
-         * [glprefix]/[libdir]/libGLcore.*
-         * [glprefix]/[libdir]/libGLwrapper.*
-         * [glprefix]/[libdir]/tls/libGL.*
-         * [glprefix]/[libdir]/tls/libGLcore.*
-         * [glprefix]/[libdir]/tls/libGLwrapper.*
-         */
-    
-        s = nvstrcat(glprefix, "/", libdir, NULL);
-        find_matches(s, "libGL.", l, FALSE);
-        find_matches(s, "libGLcore.", l, FALSE);
-        find_matches(s, "libGLwrapper.", l, FALSE);
-        find_matches(s, "libnvidia-tls.", l, FALSE);
-        free(s);
-
-        s = nvstrcat(glprefix, "/", libdir, "/tls", NULL);
-        find_matches(s, "libGL.", l, FALSE);
-        find_matches(s, "libGLcore.", l, FALSE);
-        find_matches(s, "libGLwrapper.", l, FALSE);
-        find_matches(s, "libnvidia-tls.", l, FALSE);
-        free(s);
-    }
-    
 } /* find_conflicting_opengl_libraries() */
 
 
@@ -536,6 +512,66 @@ static void find_existing_files(Package *p, FileList *l, unsigned int flag)
     }
 } /* find_existing_files() */
 
+
+
+
+/*
+ * find_conflicting_libraries() - search for any conflicting
+ * libraries in all relevant libdirs within the hierarchy under
+ * the given prefix.
+ */
+
+static void find_conflicting_libraries(Options *op,
+                                       const char *prefix,
+                                       ConflictingLibInfo *libs,
+                                       FileList *l)
+{
+    int i;
+    char *paths[3];
+    FTS *fts;
+    FTSENT *ent;
+
+    paths[0] = nvstrcat(prefix, "/", "lib", NULL);
+    paths[1] = nvstrcat(prefix, "/", "lib64", NULL);
+    paths[2] = NULL;
+
+    fts = fts_open(paths, FTS_LOGICAL | FTS_NOSTAT, NULL);
+    if (!fts) return;
+
+    while ((ent = fts_read(fts)) != NULL) {
+        switch (ent->fts_info) {
+        case FTS_F:
+        case FTS_SLNONE:
+            for (i = 0; libs[i].name; i++) {
+                if (!strncmp(ent->fts_name, libs[i].name, libs[i].len))
+                    add_file_to_list(NULL, ent->fts_path, l);
+            }
+            break;
+
+        case FTS_DP:
+        case FTS_D:
+            if (op->no_recursion)
+                fts_set(fts, ent, FTS_SKIP);
+            break;
+
+        default:
+            /*
+             * we only care about regular files, symbolic links
+             * and directories; traversing the hierarchy logically
+             * to simplify handling of paths with symbolic links
+             * to directories, we only need to handle broken links
+             * and, if recursion was disabled, directories.
+             */
+            break;
+        }
+    }
+
+    fts_close(fts);
+
+    for (i = 0; paths[i]; i++)
+        nvfree(paths[i]);
+
+} /* find_conflicting_libraries() */
 
 
 /*

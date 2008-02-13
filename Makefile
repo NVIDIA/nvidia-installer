@@ -102,8 +102,14 @@ TLS_TEST_DSO_SO = tls_test_dso_$(INSTALLER_OS)-$(INSTALLER_ARCH).so
 
 TLS_TEST_32_C = g_tls_test_32.c
 TLS_TEST_DSO_32_C = g_tls_test_dso_32.c
-TLS_TEST_32 = tls_test_Linux-x86
-TLS_TEST_DSO_SO_32 = tls_test_dso_Linux-x86.so
+TLS_TEST_32 = tls_test_$(INSTALLER_OS)-x86
+TLS_TEST_DSO_SO_32 = tls_test_dso_$(INSTALLER_OS)-x86.so
+
+RTLD_TEST_C = g_rtld_test.c
+RTLD_TEST = rtld_test_$(INSTALLER_OS)-$(INSTALLER_ARCH)
+
+RTLD_TEST_32_C = g_rtld_test_32.c
+RTLD_TEST_32 = rtld_test_$(INSTALLER_OS)-x86
 
 GEN_UI_ARRAY = ./gen-ui-array
 CONFIG_H = config.h
@@ -115,7 +121,8 @@ TLS_MODEL=initial-exec
 PIC=-fPIC
 CFLAGS += -DNV_X86_64
 # Only Linux-x86_64 needs the tls_test_32 files
-COMPAT_32_SRC = $(TLS_TEST_32_C) $(TLS_TEST_DSO_32_C)
+COMPAT_32_SRC = $(TLS_TEST_32_C) $(TLS_TEST_DSO_32_C) \
+	$(RTLD_TEST_32_C)
 else
 # So far all other platforms use local-exec
 TLS_MODEL=local-exec
@@ -144,7 +151,7 @@ SRC =	backup.c           \
 	sanity.c
 
 ALL_SRC = $(SRC) $(NCURSES_UI_C) $(TLS_TEST_C) $(TLS_TEST_DSO_C) \
-	$(COMPAT_32_SRC) $(STAMP_C)
+	$(RTLD_TEST_C) $(COMPAT_32_SRC) $(STAMP_C)
 
 OBJS = $(ALL_SRC:.c=.o)
 
@@ -196,6 +203,12 @@ $(TLS_TEST_32_C): $(GEN_UI_ARRAY) $(TLS_TEST_32)
 $(TLS_TEST_DSO_32_C): $(GEN_UI_ARRAY) $(TLS_TEST_DSO_SO_32)
 	$(GEN_UI_ARRAY) $(TLS_TEST_DSO_SO_32) tls_test_dso_array_32 > $@
 
+$(RTLD_TEST_C): $(GEN_UI_ARRAY) $(RTLD_TEST)
+	$(GEN_UI_ARRAY) $(RTLD_TEST) rtld_test_array > $@
+
+$(RTLD_TEST_32_C): $(GEN_UI_ARRAY) $(RTLD_TEST_32)
+	$(GEN_UI_ARRAY) $(RTLD_TEST_32) rtld_test_array_32 > $@
+
 ncurses-ui.o: ncurses-ui.c $(CONFIG_H)
 	$(CC) -c $(ALL_CFLAGS) $< -fPIC -o $@
 
@@ -228,7 +241,7 @@ $(STAMP_C): $(filter-out $(STAMP_C:.c=.o), $(OBJS))
 clean clobber:
 	rm -rf $(NVIDIA_INSTALLER) $(MKPRECOMPILED) \
 		$(NCURSES_UI) $(NCURSES_UI_C) \
-		$(TLS_TEST_C) $(TLS_TEST_DSO_C) $(COMPAT_32_SRC) \
+		$(TLS_TEST_C) $(TLS_TEST_DSO_C) $(RTLD_TEST_C) $(COMPAT_32_SRC) \
 		$(GEN_UI_ARRAY) $(CONFIG_H) $(STAMP_C) *.o *~ *.d
 
 # rule to rebuild tls_test and tls_test_dso; a precompiled tls_test
@@ -248,6 +261,19 @@ rebuild_tls_test_dso: tls_test_dso.c
 # tls_test.c
 
 tls_test: tls_test.c
+	touch $@
+
+# rule to rebuild rtld_test; a precompiled rtld_test is distributed with
+# nvidia-installer to simplify x86-64 builds.
+
+rebuild_rtld_test: rtld_test.c
+	gcc -Wall -O2 -fomit-frame-pointer -o $(RTLD_TEST) -lGL $<
+	strip $(RTLD_TEST)
+
+# dummy rule to override implicit rule that builds dls_test from
+# rtld_test.c
+
+rtld_test: rtld_test.c
 	touch $@
 
 print_version:

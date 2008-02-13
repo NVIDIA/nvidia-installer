@@ -219,8 +219,14 @@ int do_backup(Options *op, const char *filename)
     }
     
     if (lstat(filename, &stat_buf) == -1) {
-        ui_error(op, "Unable to determine properties for file '%s' (%s).",
-                 filename, strerror(errno));
+        switch (errno) {
+        case ENOENT:
+            ret_val = TRUE;
+            break;
+        default:
+            ui_error(op, "Unable to determine properties for file '%s' (%s).",
+                     filename, strerror(errno));
+        }
         goto done;
     }
 

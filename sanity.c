@@ -162,15 +162,31 @@ static int find_conflicting_libraries(Options *op)
 
     /* search for possibly conflicting libraries */
     
-    find_conflicting_xfree86_libraries(DEFAULT_XFREE86_INSTALLATION_PREFIX, l);
+    find_conflicting_xfree86_libraries(op, DEFAULT_XFREE86_INSTALLATION_PREFIX, l);
     
     if (strcmp(DEFAULT_XFREE86_INSTALLATION_PREFIX, op->xfree86_prefix) != 0)
-        find_conflicting_xfree86_libraries(op->xfree86_prefix, l);
+        find_conflicting_xfree86_libraries(op, op->xfree86_prefix, l);
     
-    find_conflicting_opengl_libraries(DEFAULT_OPENGL_INSTALLATION_PREFIX, l);
+    find_conflicting_opengl_libraries(op, DEFAULT_OPENGL_INSTALLATION_PREFIX, l);
     
     if (strcmp(DEFAULT_OPENGL_INSTALLATION_PREFIX, op->opengl_prefix) != 0)
-        find_conflicting_opengl_libraries(op->opengl_prefix, l);
+        find_conflicting_opengl_libraries(op, op->opengl_prefix, l);
+
+#if defined(NV_X86_64)
+    if (op->compat32_prefix != NULL) {
+        char *prefix = nvstrcat(op->compat32_prefix,
+                                DEFAULT_OPENGL_INSTALLATION_PREFIX, NULL);
+        find_conflicting_opengl_libraries(op, prefix, l);
+        nvfree(prefix);
+
+        if (strcmp(DEFAULT_OPENGL_INSTALLATION_PREFIX,
+            op->opengl_prefix) != 0) {
+            prefix = nvstrcat(op->compat32_prefix, op->opengl_prefix, NULL);
+            find_conflicting_opengl_libraries(op, prefix, l);
+            nvfree(prefix);
+        }
+    }
+#endif /* NV_X86_64 */
     
     /* condense the file list */
 

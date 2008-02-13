@@ -34,21 +34,35 @@
 /*
  * Enumerated type, listing each of the system utilities we'll need.
  * Keep this enum in sync with the needed_utils string array in
- * misc.c:find_system_utils()
+ * misc.c:find_system_utils().
  */
 
 typedef enum {
-    INSMOD = 0,
+    LDCONFIG = 0,
+    LDD,
+    LD,
+    OBJCOPY,
+    GREP,
+    DMESG,
+    TAIL,
+    CUT,
+    MAX_SYSTEM_UTILS
+} SystemUtils;
+
+/*
+ * Enumerated type, listing each of the module utilities we'll need.
+ * Keep this enum in sync with the needed_utils string array in
+ * misc.c:find_module_utils().
+ */
+
+typedef enum {
+    INSMOD = MAX_SYSTEM_UTILS,
     MODPROBE,
     RMMOD,
     LSMOD,
     DEPMOD,
-    LDCONFIG,
-    LD,
-    OBJCOPY,
     MAX_UTILS
-} Utils;
-
+} ModuleUtils;
 
 /*
  * Enumerated type of distributions; this isn't an exhaustive list of
@@ -59,6 +73,7 @@ typedef enum {
 typedef enum {
     SUSE,
     UNITED_LINUX,
+    DEBIAN,
     OTHER
 } Distribution;
 
@@ -92,6 +107,7 @@ typedef struct __options {
     int no_questions;
     int silent;
     int which_tls;
+    int which_tls_compat32;
     int sanity;
     int add_this_kernel;
     int no_runlevel_check;
@@ -100,9 +116,11 @@ typedef struct __options {
     int kernel_module_only;
     int no_abi_note;
     int no_rpms;
+    int no_recursion;
 
     char *xfree86_prefix;
     char *opengl_prefix;
+    char *compat32_prefix;
     char *installer_prefix;
     char *utility_prefix;
 
@@ -236,6 +254,8 @@ typedef struct {
 #define FILE_TYPE_INSTALLER_BINARY  0x00000200
 #define FILE_TYPE_UTILITY_BINARY    0x00000400
 #define FILE_TYPE_LIBGL_LA          0x00000800
+#define FILE_TYPE_TLS_LIB           0x00001000
+#define FILE_TYPE_TLS_SYMLINK       0x00002000
 
 /* file class: this is used to distinguish OpenGL libraries */
 
@@ -243,31 +263,52 @@ typedef struct {
 
 #define FILE_CLASS_NEW_TLS          0x00010000
 #define FILE_CLASS_CLASSIC_TLS      0x00020000
-#define FILE_CLASS_NEW_TLS_32       0x00040000
+#define FILE_CLASS_NATIVE           0x00040000
+#define FILE_CLASS_COMPAT32         0x00080000
 
 
 #define FILE_TYPE_INSTALLABLE_FILE (FILE_TYPE_OPENGL_LIB       | \
                                     FILE_TYPE_XFREE86_LIB      | \
+                                    FILE_TYPE_TLS_LIB          | \
                                     FILE_TYPE_DOCUMENTATION    | \
                                     FILE_TYPE_OPENGL_HEADER    | \
                                     FILE_TYPE_KERNEL_MODULE    | \
                                     FILE_TYPE_INSTALLER_BINARY | \
-                                    FILE_TYPE_UTILITY_BINARY)
+                                    FILE_TYPE_UTILITY_BINARY   | \
+                                    FILE_TYPE_LIBGL_LA)
 
 #define FILE_TYPE_HAVE_PATH        (FILE_TYPE_OPENGL_LIB       | \
                                     FILE_TYPE_OPENGL_SYMLINK   | \
                                     FILE_TYPE_LIBGL_LA         | \
                                     FILE_TYPE_XFREE86_LIB      | \
                                     FILE_TYPE_XFREE86_SYMLINK  | \
+                                    FILE_TYPE_TLS_LIB          | \
+                                    FILE_TYPE_TLS_SYMLINK      | \
                                     FILE_TYPE_DOCUMENTATION)
 
-#define FILE_TYPE_SYMLINK          (FILE_TYPE_OPENGL_SYMLINK | \
-                                    FILE_TYPE_XFREE86_SYMLINK)
+#define FILE_TYPE_HAVE_ARCH        (FILE_TYPE_OPENGL_LIB       | \
+                                    FILE_TYPE_OPENGL_SYMLINK   | \
+                                    FILE_TYPE_LIBGL_LA         | \
+                                    FILE_TYPE_TLS_LIB          | \
+                                    FILE_TYPE_TLS_SYMLINK)
+
+#define FILE_TYPE_HAVE_CLASS       (FILE_TYPE_TLS_LIB          | \
+                                    FILE_TYPE_TLS_SYMLINK)
+
+#define FILE_TYPE_SYMLINK          (FILE_TYPE_OPENGL_SYMLINK   | \
+                                    FILE_TYPE_XFREE86_SYMLINK  | \
+                                    FILE_TYPE_TLS_SYMLINK)
+
+#define FILE_TYPE_RTLD_CHECKED     (FILE_TYPE_OPENGL_LIB       | \
+                                    FILE_TYPE_TLS_LIB)
 
 
-#define SELECT_TLS        0
-#define FORCE_CLASSIC_TLS 1
-#define FORCE_NEW_TLS     2
+#define TLS_LIB_TYPE_FORCED         0x0001
+#define TLS_LIB_NEW_TLS             0x0002
+#define TLS_LIB_CLASSIC_TLS         0x0004
+
+#define FORCE_CLASSIC_TLS          (TLS_LIB_CLASSIC_TLS | TLS_LIB_TYPE_FORCED)
+#define FORCE_NEW_TLS              (TLS_LIB_NEW_TLS | TLS_LIB_TYPE_FORCED)
 
 #define PERM_MASK (S_IRWXU|S_IRWXG|S_IRWXO)
 
@@ -277,6 +318,7 @@ typedef struct {
 #define DEFAULT_OPENGL_INSTALLATION_PREFIX "/usr"
 #define DEFAULT_INSTALLER_INSTALLATION_PREFIX "/usr"
 #define DEFAULT_UTILITY_INSTALLATION_PREFIX "/usr"
+#define DEBIAN_COMPAT32_INSTALLATION_PREFIX "/emul/ia32-linux"
 
 
 #define DEFAULT_PROC_MOUNT_POINT "/proc"

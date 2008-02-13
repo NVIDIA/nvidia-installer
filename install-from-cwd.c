@@ -150,8 +150,12 @@ int install_from_cwd(Options *op)
         if (!link_kernel_module(op, p)) goto failed;
 
     } else {
-        
-        /* XXX we need to do a cc version check */
+        /*
+         * make sure the required development tools are present on
+         * this system before attempting to verify the compiler and
+         * trying to build a custom kernel interface.
+         */
+        if (!check_development_tools(op)) goto failed;
 
         /*
          * we do not have a prebuilt kernel interface; thus we'll need
@@ -162,6 +166,13 @@ int install_from_cwd(Options *op)
         if (!determine_kernel_source_path(op)) goto failed;
         determine_kernel_output_path(op);
     
+        /*
+         * make sure that the selected or default system compiler
+         * is compatible with the target kernel; the user may choose
+         * to override the check.
+         */
+        if (!check_cc_version(op, p)) goto failed;
+
         /* and now, build the kernel interface */
         
         if (!build_kernel_module(op, p)) goto failed;
@@ -211,6 +222,15 @@ int install_from_cwd(Options *op)
          */
         
         process_libGL_la_files(op, p);
+
+#if defined(NV_X86_64)
+        /*
+         * ask if we should install the 32bit compatibility files on
+         * this machine.
+         */
+
+        should_install_compat32_files(op, p);
+#endif /* NV_X86_64 */
     }
 
     /*
@@ -264,6 +284,7 @@ int install_from_cwd(Options *op)
     check_installed_files_from_package(op, p);
 
     if (!check_sysvipc(op)) goto failed;
+    if (!check_runtime_configuration(op, p)) goto failed;
     
     /* done */
 
@@ -367,6 +388,8 @@ int add_this_kernel(Options *op)
  *   - a filename (relative to the cwd)
  *   - an octal value describing the permissions
  *   - a flag describing the file type
+ *   - certain file types have an architecture
+ *   - certain file types have a second flag
  *   - certain file types will have a path
  *   - symbolic links will name the target of the link
  */
@@ -378,7 +401,7 @@ static Package *parse_manifest (Options *op)
     int fd, len = 0;
     struct stat stat_buf;
     Package *p;
-    char *manifest = NULL, *ptr;
+    char *manifest = MAP_FAILED, *ptr;
     
     p = (Package *) nvalloc(sizeof (Package));
     
@@ -396,7 +419,7 @@ static Package *parse_manifest (Options *op)
     len = stat_buf.st_size;
 
     manifest = mmap(0, len, PROT_READ, MAP_FILE|MAP_SHARED, fd, 0);
-    if (manifest == (void *) -1) goto cannot_open;
+    if (manifest == MAP_FAILED) goto cannot_open;
     
     /* the first line is the description */
 
@@ -412,35 +435,20 @@ static Package *parse_manifest (Options *op)
     if (!nvid_version(p->version_string, &p->major, &p->minor, &p->patch))
         goto invalid_manifest_file;
     
-    /* the third line is the kernel module filename */
-
-    line++;
-    p->kernel_module_filename = get_next_line(ptr, &ptr);
-    if (!p->kernel_module_filename) goto invalid_manifest_file;
-
-    /*
-     * XXX The kernel module filename in the .manifest file can no
-     * longer be used: the filename is different for 2.4 or 2.6
-     * kernels.
-     */
-
-    free(p->kernel_module_filename);
-    p->kernel_module_filename = NULL;
-
-    /* new fourth line is the kernel interface filename */
+    /* new third line is the kernel interface filename */
 
     line++;
     p->kernel_interface_filename = get_next_line(ptr, &ptr);
     if (!p->kernel_interface_filename) goto invalid_manifest_file;
 
-    /* the fifth line is the kernel module name */
+    /* the fourth line is the kernel module name */
 
     line++;
     p->kernel_module_name = get_next_line(ptr, &ptr);
     if (!p->kernel_module_name) goto invalid_manifest_file;
 
     /*
-     * the sixth line is a whitespace-separated list of kernel modules
+     * the fifth line is a whitespace-separated list of kernel modules
      * to be unloaded before installing the new kernel module
      */
 
@@ -460,7 +468,7 @@ static Package *parse_manifest (Options *op)
     } while (p->bad_modules[n-1]);
     
     /*
-     * the seventh line is a whitespace-separated list of kernel module
+     * the sixth line is a whitespace-separated list of kernel module
      * filenames to be uninstalled before installing the new kernel
      * module
      */
@@ -480,7 +488,7 @@ static Package *parse_manifest (Options *op)
         p->bad_module_filenames[n-1] = read_next_word(c, &c);
     } while (p->bad_module_filenames[n-1]);
     
-    /* the eighth line is the kernel module build directory */
+    /* the seventh line is the kernel module build directory */
 
     line++;
     p->kernel_module_build_directory = get_next_line(ptr, &ptr);
@@ -488,7 +496,7 @@ static Package *parse_manifest (Options *op)
     remove_trailing_slashes(p->kernel_module_build_directory);
 
     /*
-     * the nineth line is the directory containing precompiled kernel
+     * the eigth line is the directory containing precompiled kernel
      * interfaces
      */
 
@@ -539,7 +547,7 @@ static Package *parse_manifest (Options *op)
             }
             free(tmpstr);
             
-            /* now, parse the flags */
+            /* every file has a type field */
 
             p->entries[n].flags = 0x0;
 
@@ -558,39 +566,63 @@ static Package *parse_manifest (Options *op)
                 p->entries[n].flags |= FILE_TYPE_LIBGL_LA;
             else if (strcmp(flag, "XFREE86_LIB") == 0)
                 p->entries[n].flags |= FILE_TYPE_XFREE86_LIB;
+            else if (strcmp(flag, "TLS_LIB") == 0)
+                p->entries[n].flags |= FILE_TYPE_TLS_LIB;
             else if (strcmp(flag, "DOCUMENTATION") == 0)
                 p->entries[n].flags |= FILE_TYPE_DOCUMENTATION;
             else if (strcmp(flag, "OPENGL_SYMLINK") == 0)
                 p->entries[n].flags |= FILE_TYPE_OPENGL_SYMLINK;
             else if (strcmp(flag, "XFREE86_SYMLINK") == 0)
                 p->entries[n].flags |= FILE_TYPE_XFREE86_SYMLINK;
+            else if (strcmp(flag, "TLS_SYMLINK") == 0)
+                p->entries[n].flags |= FILE_TYPE_TLS_SYMLINK;
             else if (strcmp(flag, "INSTALLER_BINARY") == 0)
                 p->entries[n].flags |= FILE_TYPE_INSTALLER_BINARY;
             else if (strcmp(flag, "UTILITY_BINARY") == 0)
                 p->entries[n].flags |= FILE_TYPE_UTILITY_BINARY;
-            else if (strcmp(flag, "OPENGL_LIB_CLASSIC_TLS") == 0)
-                p->entries[n].flags |= (FILE_TYPE_OPENGL_LIB |
-                                        FILE_CLASS_CLASSIC_TLS);
-            else if (strcmp(flag, "OPENGL_LIB_NEW_TLS") == 0)
-                p->entries[n].flags |= (FILE_TYPE_OPENGL_LIB |
-                                        FILE_CLASS_NEW_TLS);
-            else if (strcmp(flag, "OPENGL_SYMLINK_CLASSIC_TLS") == 0)
-                p->entries[n].flags |= (FILE_TYPE_OPENGL_SYMLINK |
-                                        FILE_CLASS_CLASSIC_TLS);
-            else if (strcmp(flag, "OPENGL_SYMLINK_NEW_TLS") == 0)
-                p->entries[n].flags |= (FILE_TYPE_OPENGL_SYMLINK |
-                                        FILE_CLASS_NEW_TLS);
-            else if (strcmp(flag, "OPENGL_LIB_NEW_TLS_32") == 0)
-                p->entries[n].flags |= (FILE_TYPE_OPENGL_LIB |
-                                        FILE_CLASS_NEW_TLS_32);
-            else if (strcmp(flag, "OPENGL_SYMLINK_NEW_TLS_32") == 0)
-                p->entries[n].flags |= (FILE_TYPE_OPENGL_SYMLINK |
-                                        FILE_CLASS_NEW_TLS_32);
-            else
+            else {
+                nvfree(flag);
                 goto invalid_manifest_file;
-            
-            free(flag);
-            
+            }
+
+            nvfree(flag);
+
+            /* some libs/symlinks have an arch field */
+
+            if (p->entries[n].flags & FILE_TYPE_HAVE_ARCH) {
+                flag = read_next_word(c, &c);
+                if (!flag) goto invalid_manifest_file;
+
+                if (strcmp(flag, "COMPAT32") == 0)
+                    p->entries[n].flags |= FILE_CLASS_COMPAT32;
+                else if (strcmp(flag, "NATIVE") == 0)
+                    p->entries[n].flags |= FILE_CLASS_NATIVE;
+                else {
+                    nvfree(flag);
+                    goto invalid_manifest_file;
+                }
+
+                nvfree(flag);
+            }
+
+            /* some libs/symlinks have a class field */
+
+            if (p->entries[n].flags & FILE_TYPE_HAVE_CLASS) {
+                flag = read_next_word(c, &c);
+                if (!flag) goto invalid_manifest_file;
+
+                if (strcmp(flag, "CLASSIC") == 0)
+                    p->entries[n].flags |= FILE_CLASS_CLASSIC_TLS;
+                else if (strcmp(flag, "NEW") == 0)
+                    p->entries[n].flags |= FILE_CLASS_NEW_TLS;
+                else {
+                    nvfree(flag);
+                    goto invalid_manifest_file;
+                }
+
+                nvfree(flag);
+            }
+
             /* libs and documentation have a path field */
 
             if (p->entries[n].flags & FILE_TYPE_HAVE_PATH) {
@@ -629,7 +661,7 @@ static Package *parse_manifest (Options *op)
 
     } while (!done);
     
-    if (manifest) munmap(manifest, len);
+    munmap(manifest, len);
     if (fd != -1) close(fd);
 
     return p;
@@ -647,7 +679,7 @@ static Package *parse_manifest (Options *op)
  fail:
     if (p && p->entries) free(p->entries);
     if (p) free(p);
-    if (manifest) munmap(manifest, len);
+    if (manifest != MAP_FAILED) munmap(manifest, len);
     if (fd != -1) close(fd);
     return NULL;
        

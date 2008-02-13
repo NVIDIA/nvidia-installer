@@ -83,8 +83,8 @@ CommandList *build_command_list(Options*, Package *);
 void free_command_list(Options*, CommandList*);
 int execute_command_list(Options*, CommandList*, const char*, const char*);
 
-void find_conflicting_xfree86_libraries(const char*, FileList*);
-void find_conflicting_opengl_libraries(const char*, FileList*);
+void find_conflicting_xfree86_libraries(Options*,const char*, FileList*);
+void find_conflicting_opengl_libraries(Options*, const char*, FileList*);
 void condense_file_list(FileList *l);
 
 #endif /* __NVIDIA_INSTALLER_COMMAND_LIST_H__ */

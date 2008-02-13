@@ -49,7 +49,7 @@
 
 static int check_symlink(Options*, const char*, const char*, const char*);
 static int check_file(Options*, const char*, const mode_t, const uint32);
-static char *find_system_util(char *util);
+static char *find_system_util(const char *util);
 
 
 /*
@@ -635,16 +635,16 @@ int run_command(Options *op, const char *cmd, char **data, int output,
 
 int find_system_utils(Options *op)
 {
-    /* keep in sync with the Utils enum type */
-    const struct { char *util, *package; } needed_utils[] = {
-        { "insmod",   "modutils" },
-        { "modprobe", "modutils" },
-        { "rmmod",    "modutils" },
-        { "lsmod",    "modutils" },
-        { "depmod",   "modutils" },
-        { "ldconfig", "glibc"    },
+    /* keep in sync with the SystemUtils enum type */
+    const struct { const char *util, *package; } needed_utils[] = {
+        { "ldconfig", "glibc" },
+        { "ldd",      "glibc" },
         { "ld",       "binutils" },
         { "objcopy",  "binutils" },
+        { "grep",     "grep" },
+        { "dmesg",    "util-linux" },
+        { "tail",     "coreutils" },
+        { "cut",      "coreutils" }
     };
     
     int i;
@@ -653,7 +653,7 @@ int find_system_utils(Options *op)
 
     /* search the PATH for each utility */
 
-    for (i = 0; i < MAX_UTILS; i++) {
+    for (i = 0; i < MAX_SYSTEM_UTILS; i++) {
         op->utils[i] = find_system_util(needed_utils[i].util);
         if (!op->utils[i]) {
             ui_error(op, "Unable to find the system utility `%s`; please "
@@ -675,13 +675,115 @@ int find_system_utils(Options *op)
 
 
 
+typedef struct {
+    const char *util;
+    const char *package;
+} Util;
+
+/* keep in sync with the ModuleUtils enum type */
+static Util __module_utils[] = {
+    { "insmod",   "module-init-tools" },
+    { "modprobe", "module-init-tools" },
+    { "rmmod",    "module-init-tools" },
+    { "lsmod",    "module-init-tools" },
+    { "depmod",   "module-init-tools" },
+};
+
+/* keep in sync with the ModuleUtils enum type */
+static Util __module_utils_linux24[] = {
+    { "insmod",   "modutils" },
+    { "modprobe", "modutils" },
+    { "rmmod",    "modutils" },
+    { "lsmod",    "modutils" },
+    { "depmod",   "modutils" },
+};
+
+/*
+ * find_module_utils() - search the $PATH (as well as some common
+ * additional directories) for the utilities that the installer will
+ * need to use.  Returns TRUE on success and assigns the util fields
+ * in the option struct; it returns FALSE on failures.
+ */
+
+int find_module_utils(Options *op)
+{
+    int i, j = 0;
+    Util *needed_utils = __module_utils;
+
+    if (strncmp(get_kernel_name(op), "2.4", 3) == 0)
+        needed_utils = __module_utils_linux24;
+
+    ui_expert(op, "Searching for module utilities:");
+
+    /* search the PATH for each utility */
+
+    for (i = MAX_SYSTEM_UTILS; i < MAX_UTILS; i++, j++) {
+        op->utils[i] = find_system_util(needed_utils[j].util);
+        if (!op->utils[i]) {
+            ui_error(op, "Unable to find the module utility `%s`; please "
+                     "make sure you have the package '%s' installed.  If "
+                     "you do have %s installed, then please check that "
+                     "`%s` is in your PATH.",
+                     needed_utils[j].util, needed_utils[j].package,
+                     needed_utils[j].package, needed_utils[j].util);
+            return FALSE;
+        }
+
+        ui_expert(op, "found `%s` : `%s`",
+                  needed_utils[j].util, op->utils[i]);
+    };
+
+    return TRUE;
+
+} /* find_module_utils() */
+
+
+/*
+ * check_development_tools() - check if the development tools needed
+ * to build custom kernel interfaces are available.
+ */
+
+int check_development_tools(Options *op)
+{
+#define MAX_TOOLS 2
+    const struct { char *tool, *package; } needed_tools[] = {
+        { "cc",   "gcc"  },
+        { "make", "make" }
+    };
+
+    int i;
+    char *tool;
+
+    ui_expert(op, "Checking development tools:");
+
+    for (i = 0; i < MAX_TOOLS; i++) {
+        tool = find_system_util(needed_tools[i].tool);
+        if (!tool) {
+            ui_error(op, "Unable to find the development tool `%s` in "
+                     "your path; please make sure that you have the "
+                     "package '%s' installed. If %s is installed on your "
+                     "system, then please check that `%s` is in your "
+                     "PATH.",
+                     needed_tools[i].tool, needed_tools[i].package,
+                     needed_tools[i].package, needed_tools[i].tool);
+            return FALSE;
+        }
+
+        ui_expert(op, "found `%s` : `%s`", needed_tools[i].tool, tool);
+    }
+
+    return TRUE;
+
+} /* check_development_tools() */
+
+
 /*
  * find_system_util() - build a search path and search for the named
  * utility.  If the utility is found, the fully qualified path to the
  * utility is returned.  On failure NULL is returned.
  */
 
-static char *find_system_util(char *util)
+static char *find_system_util(const char *util)
 {
     char *buf, *path, *file, *x, *y;
     
@@ -835,7 +937,10 @@ void should_install_opengl_headers(Options *op, Package *p)
      */
 
     for (i = 0; i < p->num_entries; i++) {
-        if (p->entries[i].flags & FILE_TYPE_OPENGL_HEADER) have_headers = TRUE;
+        if (p->entries[i].flags & FILE_TYPE_OPENGL_HEADER) {
+            have_headers = TRUE;
+            break;
+        }
     }
 
     if (!have_headers) return;
@@ -862,6 +967,44 @@ void should_install_opengl_headers(Options *op, Package *p)
 
 } /* should_install_opengl_headers() */
 
+
+/*
+ * should_install_compat32_files() - ask the user if he/she wishes to
+ * install 32bit compatibily libraries.
+ */
+
+void should_install_compat32_files(Options *op, Package *p)
+{
+#if defined(NV_X86_64)
+    int i, have_compat32_files = FALSE;
+
+    /*
+     * first, scan through the package to see if we have any
+     * 32bit compatibility files to install.
+     */
+
+    for (i = 0; i < p->num_entries; i++) {
+        if (p->entries[i].flags & FILE_CLASS_COMPAT32) {
+            have_compat32_files = TRUE;
+            break;
+        }
+    }
+
+    if (!have_compat32_files)
+        return;
+
+    if (!ui_yes_no(op, TRUE, "Install NVIDIA's 32bit compatibility "
+                   "OpenGL libraries?")) {
+        for (i = 0; i < p->num_entries; i++) {
+            if (p->entries[i].flags & FILE_CLASS_COMPAT32) {
+                /* invalidate file */
+                p->entries[i].flags &= ~FILE_TYPE_MASK;
+                p->entries[i].dst = NULL;
+            }
+        }
+    }
+#endif /* NV_X86_64 */
+}
 
 
 /*
@@ -899,12 +1042,8 @@ void check_installed_files_from_package(Options *op, Package *p)
     }
 
     ui_status_end(op, "done.");
+    ui_log(op, "Post-install sanity check %s.", ret ? "passed" : "failed");
 
-    if (ret) {
-        ui_log(op, "Sanity check passed.");
-    } else {
-        ui_log(op, "The sanity check found some discrepancies.");
-    }
 } /* check_installed_files_from_package() */
 
 
@@ -1078,7 +1217,7 @@ extern const int tls_test_dso_array_32_size;
 
 /* forward prototype */
 
-static int tls_test_internal(Options *op,
+static int tls_test_internal(Options *op, int which_tls,
                              const unsigned char *test_array,
                              const int test_array_size,
                              const unsigned char *dso_test_array,
@@ -1091,7 +1230,7 @@ int tls_test(Options *op, int compat_32_libs)
     if (compat_32_libs) {
         
 #if defined(NV_X86_64)
-        return tls_test_internal(op,
+        return tls_test_internal(op, op->which_tls_compat32,
                                  tls_test_array_32,
                                  tls_test_array_32_size,
                                  tls_test_dso_array_32,
@@ -1101,7 +1240,7 @@ int tls_test(Options *op, int compat_32_libs)
 #endif /* NV_X86_64 */        
         
     } else {
-        return tls_test_internal(op,
+        return tls_test_internal(op, op->which_tls,
                                  tls_test_array,
                                  tls_test_array_size,
                                  tls_test_dso_array,
@@ -1117,7 +1256,7 @@ int tls_test(Options *op, int compat_32_libs)
  * just selects which array data is used as the test.
  */
 
-static int tls_test_internal(Options *op,
+static int tls_test_internal(Options *op, int which_tls,
                              const unsigned char *test_array,
                              const int test_array_size,
                              const unsigned char *test_dso_array,
@@ -1128,8 +1267,8 @@ static int tls_test_internal(Options *op,
     
     /* allow commandline options to bypass this test */
     
-    if (op->which_tls == FORCE_NEW_TLS) return TRUE;
-    if (op->which_tls == FORCE_CLASSIC_TLS) return FALSE;
+    if (which_tls == FORCE_NEW_TLS) return TRUE;
+    if (which_tls == FORCE_CLASSIC_TLS) return FALSE;
     
     /* check that we have the test program */
 
@@ -1193,6 +1332,201 @@ static int tls_test_internal(Options *op,
 
 
 /*
+ * check_runtime_configuration() - In the past, nvidia-installer has
+ * frequently failed to backup/move all conflicting files prior to
+ * installing the NVIDIA OpenGL libraries.  Consequently, some of the
+ * installations considered successful by the installer didn't work
+ * correctly.
+ *
+ * This sanity check attemps to verify that the correct libraries are
+ * picked up by the runtime linker.  It returns TRUE on success and
+ * FALSE on failure.
+ */
+
+/* pull in the array and size from g_rtld_test.c */
+
+extern const unsigned char rtld_test_array[];
+extern const int rtld_test_array_size;
+
+#if defined(NV_X86_64)
+
+/* pull in the array and size from g_rtld_test_32.c */
+
+extern const unsigned char rtld_test_array_32[];
+extern const int rtld_test_array_32_size;
+
+#endif /* NV_X86_64 */
+
+
+/* forward prototype */
+
+static int rtld_test_internal(Options *op, Package *p,
+                              int which_tls,
+                              const unsigned char *test_array,
+                              const int test_array_size,
+                              int compat_32_libs);
+
+int check_runtime_configuration(Options *op, Package *p)
+{
+    int ret = TRUE;
+
+    ui_status_begin(op, "Running runtime sanity check:", "Checking");
+
+#if defined(NV_X86_64)
+    ret = rtld_test_internal(op, p, op->which_tls_compat32,
+                             rtld_test_array_32,
+                             rtld_test_array_32_size,
+                             TRUE);
+#endif /* NV_X86_64 */
+
+    if (ret == TRUE) {
+        ret = rtld_test_internal(op, p, op->which_tls,
+                                 rtld_test_array,
+                                 rtld_test_array_size,
+                                 FALSE);
+    }
+
+    ui_status_end(op, "done.");
+    ui_log(op, "Runtime sanity check %s.", ret ? "passed" : "failed");
+
+    return ret;
+
+} /* check_runtime_configuration() */
+
+
+/*
+ * rtld_test_internal() - this routine writes the test binaries to a file
+ * and performs the test; the caller (rtld_test()) selects which array data
+ * is used (native, compat_32).
+ */
+
+static int rtld_test_internal(Options *op, Package *p,
+                              int which_tls,
+                              const unsigned char *test_array,
+                              const int test_array_size,
+                              int compat_32_libs)
+{
+    int i, ret = TRUE;
+    char *name = NULL, *cmd = NULL, *data = NULL;
+    char *tmpfile, *s;
+    struct stat stat_buf0, stat_buf1;
+
+    if ((test_array == NULL) || (test_array_size == 0)) {
+        ui_warn(op, "The runtime configuration test program is not "
+                "present; assuming successful installation.");
+        return TRUE;
+    }
+
+    /* write the rtld_test data to a temporary file */
+
+    tmpfile = write_temp_file(op, test_array_size, test_array,
+                              S_IRUSR|S_IWUSR|S_IXUSR);
+
+    if (!tmpfile) {
+        ui_warn(op, "Unable to create a temporary file for the runtime "
+                "configuration test program (%s); assuming successful "
+                "installation.", strerror(errno));
+        goto done;
+    }
+
+    /* perform the test(s) */
+
+    for (i = 0; i < p->num_entries; i++) {
+        if (!(p->entries[i].flags & FILE_TYPE_RTLD_CHECKED))
+            continue;
+        else if ((which_tls & TLS_LIB_TYPE_FORCED) &&
+                 (p->entries[i].flags & FILE_TYPE_TLS_LIB))
+            continue;
+#if defined(NV_X86_64)
+        else if ((p->entries[i].flags & FILE_CLASS_NATIVE)
+                 && compat_32_libs)
+            continue;
+        else if ((p->entries[i].flags & FILE_CLASS_COMPAT32)
+                 && !compat_32_libs)
+            continue;
+#endif /* NV_X86_64 */
+        else if ((which_tls == TLS_LIB_NEW_TLS) &&
+                 (p->entries[i].flags & FILE_CLASS_CLASSIC_TLS))
+            continue;
+        else if ((which_tls == TLS_LIB_CLASSIC_TLS) &&
+                 (p->entries[i].flags & FILE_CLASS_NEW_TLS))
+            continue;
+
+        name = nvstrdup(p->entries[i].name);
+        if (!name) continue;
+
+        s = strstr(name, ".so.1");
+        if (!s) goto next;
+        *(s + strlen(".so.1")) = '\0';
+
+        cmd = nvstrcat(op->utils[LDD], " ", tmpfile, " | ",
+                       op->utils[GREP], " ", name, " | ",
+                       op->utils[CUT], " -d \" \" -f 3", NULL);
+
+        if (run_command(op, cmd, &data, FALSE, 0, TRUE)) {
+            ui_warn(op, "Unable to perform the runtime configuration "
+                    "check (%s); assuming successful installation.",
+                    strerror(errno));
+            goto done;
+        }
+
+        nvfree(name); name = NULL;
+        name = nvstrdup(p->entries[i].dst);
+        if (!name) goto next;
+
+        s = strstr(name, ".so.1");
+        if (!s) goto next;
+        *(s + strlen(".so.1")) = '\0';
+
+        if ((strcmp(data, name) != 0)) {
+            /*
+             * XXX Handle the case where the same library is
+             * referred to, once directly and once via a symbolic
+             * link. This check is far from perfect, but should
+             * get the job done.
+             */
+
+            if ((stat(data, &stat_buf0) == 0) &&
+                (stat(name, &stat_buf1) == 0) &&
+                (memcmp(&stat_buf0, &stat_buf1, sizeof(struct stat)) == 0))
+                goto next;
+
+            ui_error(op, "The runtime configuration check failed for "
+                     "library '%s' (expected: '%s', found: '%s').  "
+                     "The most likely reason for this is that conflicting "
+                     "OpenGL libraries are installed in a location "
+                     "not inspected by nvidia-installer.  Please be sure "
+                     "you have uninstalled any third-party OpenGL and "
+                     "third-party graphics driver packages.",
+                     p->entries[i].name, name,
+                     (data && strlen(data)) ? data : "(not found)");
+
+            ret = FALSE;
+            goto done;
+        }
+
+ next:
+        nvfree(name); name = NULL;
+        nvfree(cmd); cmd = NULL;
+        nvfree(data); data = NULL;
+    }
+
+ done:
+    if (tmpfile) {
+        unlink(tmpfile);
+        nvfree(tmpfile);
+    }
+
+    nvfree(name);
+    nvfree(cmd);
+    nvfree(data);
+
+    return ret;
+
+} /* rtld_test_internal() */
+
+
+/*
  * get_distribution() - determine what distribution this is; only used
  * for several bits of distro-specific behavior requested by
  * distribution maintainers.
@@ -1205,6 +1539,7 @@ Distribution get_distribution(Options *op)
 {
     if (access("/etc/SuSE-release", F_OK) == 0) return SUSE;
     if (access("/etc/UnitedLinux-release", F_OK) == 0) return UNITED_LINUX;
+    if (access("/etc/debian_version", F_OK) == 0) return DEBIAN;
 
     return OTHER;
     

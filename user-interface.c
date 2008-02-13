@@ -204,14 +204,14 @@ char *ui_get_input(Options *op, const char *def, const char *fmt, ...)
     va_end(ap);
 
     if (op->no_questions) {
-        ret = nvstrdup(def);
-        tmp = nvstrcat(msg, " (Answer: '", ret," ')", NULL);
+        ret = nvstrdup(def ? def : "");
+        tmp = nvstrcat(msg, " (Answer: '", ret, "')", NULL);
         if (!op->silent) {
             __ui->message(op, NV_MSG_LEVEL_LOG, tmp);
         }
     } else {
         ret = __ui->get_input(op, def, msg);
-        tmp = nvstrcat(msg, " (Answer: '", ret," ')", NULL);
+        tmp = nvstrcat(msg, " (Answer: '", ret, "')", NULL);
     }
     log_printf(op, TRUE, NV_BULLET_STR, tmp);
     nvfree(msg);

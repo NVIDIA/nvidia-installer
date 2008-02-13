@@ -231,6 +231,16 @@ static void print_advanced_options_args_only(int args_only)
             "mandates this default value.",
             DEFAULT_OPENGL_INSTALLATION_PREFIX);
     fmtout("");
+
+#if defined(NV_X86_64)
+    fmtout("--compat32-prefix=[COMPAT32 PREFIX]");
+    fmtoutp(TAB, "The path relative to which the 32bit compatibility "
+            "libraries will be installed on x86-64 systems; this option "
+            "is unset by default, the OpenGL prefix alone determines "
+            "the target location.  Only under very rare circumstances "
+            "should this option need to be used.");
+    fmtout("");
+#endif /* NV_X86_64 */
     
     fmtout("--installer-prefix=[INSTALLER PREFIX]");
     fmtoutp(TAB, "The prefix under which the installer binary will be "
@@ -348,6 +358,14 @@ static void print_advanced_options_args_only(int args_only)
             "'classic'.");
     fmtout("");
 
+#if defined(NV_X86_64)
+    fmtout("--force-tls-compat32=[TLS TYPE]");
+    fmtoutp(TAB, "This option forces the installer to install a specific "
+            "32bit compatibility OpenGL TLS library; further details "
+            "can be found in the description of the '--force-tls' option.");
+    fmtout("");
+#endif /* NV_X86_64 */
+
     fmtout("-k, --kernel-name=[KERNELNAME]");
     fmtoutp(TAB, "Build and install the NVIDIA kernel module for the "
             "non-running kernel specified by [KERNELNAME] ([KERNELNAME] "
@@ -398,6 +416,13 @@ static void print_advanced_options_args_only(int args_only)
     fmtoutp(TAB, "This option instructs the installer to not attempt to "
             "connect to the NVIDIA ftp site (for updated precompiled kernel "
             "interfaces, for example).");
+    fmtout("");
+
+    fmtout("--no-recursion");
+    fmtoutp(TAB, "Normally, nvidia-installer will recursively search for "
+            "potentially conflicting libraries under the default OpenGL "
+            "and X server installation locations.  With this option set, "
+            "the installer will only search in the top-level directories.");
     fmtout("");
     
     fmtout("-K, --kernel-module-only");
@@ -463,6 +488,9 @@ Options *parse_commandline(int argc, char *argv[])
 #define NO_RPMS_OPTION                  24
 #define X_PREFIX_OPTION                 25
 #define KERNEL_OUTPUT_PATH_OPTION       26
+#define NO_RECURSION_OPTION             27
+#define FORCE_TLS_COMPAT32_OPTION       28
+#define COMPAT32_PREFIX_OPTION          29
 
 
     static struct option long_options[] = {
@@ -486,6 +514,7 @@ Options *parse_commandline(int argc, char *argv[])
         { "kernel-module-only",       0, NULL, 'K'                        },
         { "xfree86-prefix",           1, NULL, XFREE86_PREFIX_OPTION      },
         { "x-prefix",                 1, NULL, X_PREFIX_OPTION            },
+        { "compat32-prefix",          1, NULL, COMPAT32_PREFIX_OPTION     },
         { "opengl-prefix",            1, NULL, OPENGL_PREFIX_OPTION       },
         { "installer-prefix",         1, NULL, INSTALLER_PREFIX_OPTION    },
         { "utility-prefix",           1, NULL, UTILITY_PREFIX_OPTION      },
@@ -501,6 +530,7 @@ Options *parse_commandline(int argc, char *argv[])
         { "tmpdir",                   1, NULL, TMPDIR_OPTION              },
         { "opengl-headers",           0, NULL, OPENGL_HEADERS_OPTION      },
         { "force-tls",                1, NULL, FORCE_TLS_OPTION           },
+        { "force-tls-compat32",       1, NULL, FORCE_TLS_COMPAT32_OPTION  },
         { "sanity",                   0, NULL, SANITY_OPTION              },
         { "add-this-kernel",          0, NULL, ADD_THIS_KERNEL_OPTION     },
         { "rpm-file-list",            1, NULL, RPM_FILE_LIST_OPTION       },
@@ -508,6 +538,7 @@ Options *parse_commandline(int argc, char *argv[])
         { "no-network",               0, NULL, NO_NETWORK_OPTION          },
         { "no-abi-note",              0, NULL, NO_ABI_NOTE_OPTION         },
         { "no-rpms",                  0, NULL, NO_RPMS_OPTION             },
+        { "no-recursion",             0, NULL, NO_RECURSION_OPTION        },
         { "precompiled-kernel-interfaces-path", 1, NULL,
           PRECOMPILED_KERNEL_INTERFACES_PATH                              },
         { "advanced-options-args-only", 0, NULL,
@@ -521,17 +552,18 @@ Options *parse_commandline(int argc, char *argv[])
     
     op->xfree86_prefix = DEFAULT_XFREE86_INSTALLATION_PREFIX;
     op->opengl_prefix = DEFAULT_OPENGL_INSTALLATION_PREFIX;
-    op->installer_prefix = NULL;
     op->utility_prefix = DEFAULT_UTILITY_INSTALLATION_PREFIX;
     op->proc_mount_point = DEFAULT_PROC_MOUNT_POINT;
     op->log_file_name = DEFAULT_LOG_FILE_NAME;
     op->ftp_site = DEFAULT_FTP_SITE;
+
     op->tmpdir = get_tmpdir(op);
-    op->no_runlevel_check = FALSE;
-    op->no_backup = FALSE;
-    op->no_network = FALSE;
-    op->kernel_module_only = FALSE;
-    op->no_abi_note = FALSE;    
+    op->distro = get_distribution(op);
+
+#if defined(NV_X86_64)
+    if (op->distro == DEBIAN)
+        op->compat32_prefix = DEBIAN_COMPAT32_INSTALLATION_PREFIX;
+#endif
 
     op->logging = TRUE; /* log by default */
 
@@ -579,6 +611,8 @@ Options *parse_commandline(int argc, char *argv[])
             op->xfree86_prefix = optarg; break;
         case OPENGL_PREFIX_OPTION:
             op->opengl_prefix = optarg; break;
+        case COMPAT32_PREFIX_OPTION:
+            op->compat32_prefix = optarg; break;
         case INSTALLER_PREFIX_OPTION:
             op->installer_prefix = optarg; break;
         case UTILITY_PREFIX_OPTION:
@@ -618,6 +652,20 @@ Options *parse_commandline(int argc, char *argv[])
                 exit(1);
             }
             break;
+        case FORCE_TLS_COMPAT32_OPTION:
+            if (strcasecmp(optarg, "new") == 0)
+                op->which_tls_compat32 = FORCE_NEW_TLS;
+            else if (strcasecmp(optarg, "classic") == 0)
+                op->which_tls_compat32 = FORCE_CLASSIC_TLS;
+            else {
+                fmterr("");
+                fmterr("Invalid parameter for '--force-tls-compat32'; "
+                       "please run `%s --help` for usage information.",
+                       argv[0]);
+                fmterr("");
+                exit(1);
+            }
+            break;
         case SANITY_OPTION:
             op->sanity = TRUE;
             break;
@@ -645,6 +693,9 @@ Options *parse_commandline(int argc, char *argv[])
         case NO_RPMS_OPTION:
             op->no_rpms = TRUE;
             break;
+        case NO_RECURSION_OPTION:
+            op->no_recursion = TRUE;
+            break;
             
         default:
             fmterr("");
@@ -669,8 +720,6 @@ Options *parse_commandline(int argc, char *argv[])
         fmterr("");
         exit(1);
     }
-    
-    op->distro = get_distribution(op);
     
     /*
      * if the installer prefix was not specified, default it to the
@@ -730,6 +779,7 @@ int main(int argc, char *argv[])
      */
     
     if (!find_system_utils(op)) goto done;
+    if (!find_module_utils(op)) goto done;
     
     /* get the latest available driver version */
 

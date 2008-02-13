@@ -223,6 +223,8 @@ int copy_file(Options *op, const char *srcfile,
                   srcfile, strerror (errno));
         goto fail;
     }
+    if (stat_buf.st_size == 0)
+        goto done;
     if (lseek(dst_fd, stat_buf.st_size - 1, SEEK_SET) == -1) {
         ui_error (op, "Unable to set file size for '%s' (%s)",
                   dstfile, strerror (errno));
@@ -259,6 +261,7 @@ int copy_file(Options *op, const char *srcfile,
         goto fail;
     }
 
+ done:
     /*
      * the mode used to create dst_fd may have been affected by the
      * user's umask; so explicitly set the mode again
@@ -377,7 +380,9 @@ void select_tls_class(Options *op, Package *p)
     int i;
 
     if (!tls_test(op, FALSE)) {
-        
+        op->which_tls = (op->which_tls & TLS_LIB_TYPE_FORCED);
+        op->which_tls |= TLS_LIB_CLASSIC_TLS;
+
         /*
          * tls libraries will not run on this system; just install the
          * classic OpenGL libraries: clear the FILE_TYPE of any
@@ -387,12 +392,16 @@ void select_tls_class(Options *op, Package *p)
         ui_log(op, "Installing classic TLS OpenGL libraries.");
         
         for (i = 0; i < p->num_entries; i++) {
-            if (p->entries[i].flags & FILE_CLASS_NEW_TLS) {
+            if ((p->entries[i].flags & FILE_CLASS_NEW_TLS) &&
+                (p->entries[i].flags & FILE_CLASS_NATIVE)) {
+                nvfree(p->entries[i].dst);
                 p->entries[i].flags &= ~FILE_TYPE_MASK;
                 p->entries[i].dst = NULL;
             }
         }
     } else {
+        op->which_tls = (op->which_tls & TLS_LIB_TYPE_FORCED);
+        op->which_tls |= TLS_LIB_NEW_TLS;
 
         /*
          * tls libraries will run on this system: install both the
@@ -410,7 +419,9 @@ void select_tls_class(Options *op, Package *p)
      */
 
     if (!tls_test(op, TRUE)) {
-        
+        op->which_tls_compat32 = (op->which_tls_compat32 & TLS_LIB_TYPE_FORCED);
+        op->which_tls_compat32 |= TLS_LIB_CLASSIC_TLS;
+
         /*
          * 32bit tls libraries will not run on this system; just
          * install the classic OpenGL libraries: clear the FILE_TYPE
@@ -420,13 +431,17 @@ void select_tls_class(Options *op, Package *p)
         ui_log(op, "Installing classic TLS 32bit OpenGL libraries.");
         
         for (i = 0; i < p->num_entries; i++) {
-            if (p->entries[i].flags & FILE_CLASS_NEW_TLS_32) {
+            if ((p->entries[i].flags & FILE_CLASS_NEW_TLS) &&
+                (p->entries[i].flags & FILE_CLASS_COMPAT32)) {
+                nvfree(p->entries[i].dst);
                 p->entries[i].flags &= ~FILE_TYPE_MASK;
                 p->entries[i].dst = NULL;
             }
         }
     } else {
-        
+        op->which_tls_compat32 = (op->which_tls_compat32 & TLS_LIB_TYPE_FORCED);
+        op->which_tls_compat32 |= TLS_LIB_NEW_TLS;
+
         /*
          * 32bit tls libraries will run on this system: install both
          * the classic and new TLS libraries.
@@ -475,6 +490,17 @@ int set_destinations(Options *op, Package *p)
         case FILE_TYPE_XFREE86_LIB:
         case FILE_TYPE_XFREE86_SYMLINK:
             prefix = op->xfree86_prefix;
+            path = p->entries[i].path;
+            break;
+
+        case FILE_TYPE_TLS_LIB:
+        case FILE_TYPE_TLS_SYMLINK:
+            prefix = op->opengl_prefix;
+            path = p->entries[i].path;
+            break;
+
+        case FILE_TYPE_LIBGL_LA:
+            prefix = op->opengl_prefix;
             path = p->entries[i].path;
             break;
 
@@ -528,6 +554,23 @@ int set_destinations(Options *op, Package *p)
         name = p->entries[i].name;
 
         p->entries[i].dst = nvstrcat(prefix, "/", path, "/", name, NULL);
+
+#if defined(NV_X86_64)
+        if ((p->entries[i].flags & FILE_CLASS_COMPAT32) &&
+            (op->compat32_prefix != NULL)) {
+
+            /*
+             * prepend an additional prefix; this is currently only
+             * used for Debian GNU/Linux on Linux/x86-64, but may see
+             * more use in the future.
+             */
+
+            char *dst = p->entries[i].dst;
+            p->entries[i].dst = nvstrcat(op->compat32_prefix, dst, NULL);
+
+            nvfree(dst);
+        }
+#endif /* NV_X86_64 */
     }
     
     return TRUE;
@@ -625,6 +668,21 @@ int get_prefixes (Options *op)
     remove_trailing_slashes(op->opengl_prefix);
     ui_expert(op, "OpenGL installation prefix is: '%s'", op->opengl_prefix);
 
+#if defined(NV_X86_64)
+    if (op->expert) {
+        ret = ui_get_input(op, op->compat32_prefix,
+                           "Compat32 installation prefix");
+        if (ret && ret[0]) {
+            op->compat32_prefix = ret;
+            if (!confirm_path(op, op->compat32_prefix)) return FALSE;
+        }
+    }
+
+    remove_trailing_slashes(op->compat32_prefix);
+    ui_expert(op, "Compat32 installation prefix is: '%s'",
+              op->compat32_prefix);
+#endif /* NV_X86_64 */
+
     if (op->expert) {
         ret = ui_get_input(op, op->installer_prefix,
                            "Installer installation prefix");
@@ -717,7 +775,10 @@ void remove_non_kernel_module_files_from_package(Options *op, Package *p)
 
 void remove_trailing_slashes(char *s)
 {
-    int len = strlen(s);
+    int len;
+
+    if (s == NULL) return;
+    len = strlen(s);
 
     while (s[len-1] == '/') s[--len] = '\0';
     
@@ -1348,8 +1409,10 @@ void process_libGL_la_files(Options *op, Package *p)
     struct stat stat_buf;
     char *src, *dst, *tmp, *tmp0, *tmp1, *tmpfile;
 
-    for (i = 0; i < p->num_entries; i++) {
-        if (p->entries[i].flags & FILE_TYPE_LIBGL_LA) {
+    int package_num_entries = p->num_entries;
+
+    for (i = 0; i < package_num_entries; i++) {
+        if ((p->entries[i].flags & FILE_TYPE_LIBGL_LA)) {
     
             src_fd = dst_fd = -1;
             tmp0 = tmp1 = src = dst = tmpfile = NULL;
@@ -1436,6 +1499,11 @@ void process_libGL_la_files(Options *op, Package *p)
 
             memcpy(dst, tmp1, len);
 
+            /* invalidate the template file */
+
+            p->entries[i].flags &= ~FILE_TYPE_MASK;
+            p->entries[i].dst = NULL;
+
             /* add this new file to the package */
             
             n = p->num_entries;
@@ -1447,7 +1515,7 @@ void process_libGL_la_files(Options *op, Package *p)
             p->entries[n].path = p->entries[i].path;
             p->entries[n].target = NULL;
             p->entries[n].flags = ((p->entries[i].flags & FILE_CLASS_MASK) |
-                                   FILE_TYPE_OPENGL_LIB);
+                                   FILE_TYPE_LIBGL_LA); 
             p->entries[n].mode = p->entries[i].mode;
             
             p->entries[n].name = nvstrdup(p->entries[i].name);

@@ -92,6 +92,7 @@ uint32 compute_crc(Options *op, const char *filename)
     if ((fd = open(filename, O_RDONLY)) == -1) goto fail;
     if (fstat(fd, &stat_buf) == -1) goto fail;
 
+    if (stat_buf.st_size == 0) return 0;
     len = stat_buf.st_size;
 
     buf = mmap(0, len, PROT_READ, MAP_FILE | MAP_SHARED, fd, 0);

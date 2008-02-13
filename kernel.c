@@ -51,7 +51,6 @@ static int check_for_loaded_kernel_module(Options *op, const char *);
 static int rmmod_kernel_module(Options *op, const char *);
 static PrecompiledInfo *download_updated_kernel_interface(Options*, Package*,
                                                           const char*);
-static int cc_version_check(Options *op, Package *p);
 static int rivafb_check(Options *op, Package *p);
 static void rivafb_module_check(Options *op, Package *p);
 
@@ -201,13 +200,23 @@ int determine_kernel_source_path(Options *op)
         
         /*
          * I suppose we could ask them here for the kernel source
-         * path, but we've already given them multiple methods of
+         * path, but we've already given users multiple methods of
          * specifying their kernel source tree.
          */
         
         return FALSE;
     }
-    
+
+    /* reject /usr as an invalid kernel source path */
+
+    if (!strcmp(op->kernel_source_path, "/usr") ||
+            !strcmp(op->kernel_source_path, "/usr/")) {
+        ui_error (op, "The kernel source path '%s' is invalid.  %s",
+                  op->kernel_source_path, install_your_kernel_source);
+        op->kernel_source_path = NULL;
+        return FALSE;
+    }
+
     /* check that the kernel source path exists */
 
     if (!directory_exists(op, op->kernel_source_path)) {
@@ -299,7 +308,8 @@ int determine_kernel_source_path(Options *op)
 
 int determine_kernel_output_path(Options *op)
 {
-    char *str;
+    char *str, *tmp;
+    int len;
 
     /* check --kernel-output-path */
 
@@ -307,6 +317,14 @@ int determine_kernel_output_path(Options *op)
         ui_log(op, "Using the kernel output path '%s' as specified by the "
                "'--kernel-output-path' commandline option.",
                op->kernel_output_path);
+
+        if (!directory_exists(op, op->kernel_output_path)) {
+            ui_error(op, "The kernel output path '%s' does not exist.",
+                     op->kernel_output_path);
+            op->kernel_output_path = NULL;
+            return FALSE;
+        }
+
         return TRUE;
     }
 
@@ -317,7 +335,36 @@ int determine_kernel_output_path(Options *op)
         ui_log(op, "Using the kernel output path '%s', as specified by the "
                "SYSOUT environment variable.", str);
         op->kernel_output_path = str;
+
+        if (!directory_exists(op, op->kernel_output_path)) {
+            ui_error(op, "The kernel output path '%s' does not exist.",
+                     op->kernel_output_path);
+            op->kernel_output_path = NULL;
+            return FALSE;
+        }
+
         return TRUE;
+    }
+
+    /* check /lib/modules/`uname -r`/{source,build} */
+
+    tmp = get_kernel_name(op);
+
+    if (tmp) {
+        str = nvstrcat("/lib/modules/", tmp, "/source", NULL);
+        len = strlen(str);
+
+        if (!strncmp(op->kernel_source_path, str, len)) {
+            nvfree(str);
+            str = nvstrcat("/lib/modules/", tmp, "/build", NULL);
+
+            if (directory_exists(op, str)) {
+                op->kernel_output_path = str;
+                return TRUE;
+            }
+        }
+
+        nvfree(str);
     }
 
     op->kernel_output_path = op->kernel_source_path;
@@ -368,17 +415,12 @@ int link_kernel_module(Options *op, Package *p)
  * build_kernel_module() - determine the kernel include directory,
  * copy the kernel module source files into a temporary directory, and
  * compile nvidia.o.
- *
- * XXX depends on things like make, gcc, ld, existing.  Should we
- * check that the user has these before doing this?
  */
 
 int build_kernel_module(Options *op, Package *p)
 {
     char *result, *cmd, *tmp;
     int len, ret;
-    
-    if (!cc_version_check(op, p)) return FALSE;
     
     /*
      * touch all the files in the build directory to avoid make time
@@ -625,11 +667,30 @@ int test_kernel_module(Options *op, Package *p)
 
         if (!op->expert) ui_log(op, "Kernel module load error: %s", data);
         ret = FALSE;
+
+        nvfree(cmd);
+        nvfree(data);
+
+        /*
+         * display/log the last five lines of the kernel ring buffer
+         * to provide further details on the load failure.
+         */
+
+        cmd = nvstrcat(op->utils[DMESG], " | ",
+                       op->utils[TAIL], " -n 5", NULL);
+
+        if (!run_command(op, cmd, &data, FALSE, 0, TRUE))
+            ui_log(op, "Kernel messages:\n%s", data);
     } else {
         free(cmd);
+
+        /*
+         * attempt to unload the kernel module, but don't abort if
+         * this fails: the kernel may not have been configured with
+         * support for module unloading (Linux 2.6).
+         */
         cmd = nvstrcat(op->utils[RMMOD], " ", p->kernel_module_name, NULL);
         run_command(op, cmd, NULL, FALSE, 0, TRUE);
-        /* what if we fail to rmmod? */
         ret = TRUE;
     }
     
@@ -770,12 +831,15 @@ int check_for_unloaded_kernel_module(Options *op, Package *p)
         if (check_for_loaded_kernel_module(op, p->bad_modules[n])) {
             ui_error(op,  "An NVIDIA kernel module '%s' appears to already "
                      "be loaded in your kernel.  This may be because it is "
-                     "in use (for example, by the X server).  Please be "
-                     "sure you have exited X before attempting to upgrade "
-                     "your driver.  If you have exited X but still receive "
-                     "this message, then an error has occured that has "
-                     "confused the usage count of the kernel module; the "
-                     "simplest remedy is to reboot your computer.",
+                     "in use (for example, by the X server), but may also "
+                     "happen if your kernel was configured without support "
+                     "for module unloading.  Please be sure you have exited "
+                     "X before attempting to upgrade your driver.  If you "
+                     "have exited X, know that your kernel supports module "
+                     "unloading, and still receive this message, then an "
+                     "error may have occured that has corrupted the NVIDIA "
+                     "kernel module's usage count; the simplest remedy is "
+                     "to reboot your computer.",
                      p->bad_modules[n]);
     
             return FALSE;
@@ -1063,6 +1127,14 @@ static char *default_kernel_source_path(Options *op)
     tmp = get_kernel_name(op);
 
     if (tmp) {
+        str = nvstrcat("/lib/modules/", tmp, "/source", NULL);
+
+        if (directory_exists(op, str)) {
+            return str;
+        }
+
+        nvfree(str);
+
         str = nvstrcat("/lib/modules/", tmp, "/build", NULL);
     
         if (directory_exists(op, str)) {
@@ -1315,10 +1387,12 @@ download_updated_kernel_interface(Options *op, Package *p,
 
 
 /*
- * cc_version_check() - 
+ * check_cc_version() - check if the selected or default system
+ * compiler is compatible with the one that was used to build the
+ * currently running kernel.
  */
 
-static int cc_version_check(Options *op, Package *p)
+int check_cc_version(Options *op, Package *p)
 {
     char *cmd, *CC, *result;
     int ret;
@@ -1338,7 +1412,7 @@ static int cc_version_check(Options *op, Package *p)
     CC = getenv("CC");
     if (!CC) CC = "cc";
     
-    ui_log(op, "Performing cc_version_check with CC=\"%s\".", CC);
+    ui_log(op, "Performing CC test with CC=\"%s\".", CC);
 
     cmd = nvstrcat("sh ", p->kernel_module_build_directory,
                    "/conftest.sh ", CC, " ",
@@ -1366,7 +1440,7 @@ static int cc_version_check(Options *op, Package *p)
     
     return !ret;
              
-} /* cc_version_check() */
+} /* check_cc_version() */
 
 
 
