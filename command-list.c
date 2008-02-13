@@ -228,8 +228,8 @@ CommandList *build_command_list(Options *op, Package *p)
         if (op->selinux_enabled && 
             ((p->entries[i].flags & FILE_TYPE_SHARED_LIB) ||
              (p->entries[i].flags & FILE_TYPE_XMODULE_SHARED_LIB))) {
-            tmp = nvstrcat(op->utils[CHCON], " -t shlib_t ", p->entries[i].dst, 
-                           NULL);
+            tmp = nvstrcat(op->utils[CHCON], " -t ", op->selinux_chcon_type,
+                           " ", p->entries[i].dst, NULL);
             add_command(c, RUN_CMD, tmp);
             nvfree(tmp);
         }

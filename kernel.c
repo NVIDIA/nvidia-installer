@@ -75,9 +75,9 @@ static const char install_your_kernel_source[] =
 "Please make sure you have installed the kernel source files for "
 "your kernel and that they are properly configured; on Red Hat "
 "Linux systems, for example, be sure you have the 'kernel-source' "
-"RPM installed.  If you know the correct kernel source files are "
-"installed, you may specify the kernel source path with the "
-"'--kernel-source-path' command line option.";
+"or 'kernel-devel' RPM installed.  If you know the correct kernel "
+"source files are installed, you may specify the kernel source "
+"path with the '--kernel-source-path' command line option.";
 
  
 

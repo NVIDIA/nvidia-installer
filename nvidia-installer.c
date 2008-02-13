@@ -414,6 +414,8 @@ Options *parse_commandline(int argc, char *argv[])
                 exit(1);
             }
             break;
+        case SELINUX_CHCON_TYPE_OPTION:
+            op->selinux_chcon_type = optarg; break;
         case NO_SIGWINCH_WORKAROUND_OPTION:
             op->sigwinch_workaround = FALSE;
             break;

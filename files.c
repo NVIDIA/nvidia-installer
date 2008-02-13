@@ -1864,8 +1864,8 @@ int set_security_context(Options *op, const char *filename)
         return TRUE;
     } 
     
-    cmd = nvstrcat(op->utils[CHCON], " -t shlib_t ", filename, 
-                         NULL);
+    cmd = nvstrcat(op->utils[CHCON], " -t ", op->selinux_chcon_type, " ",
+                   filename, NULL);
     
     ret = run_command(op, cmd, NULL, FALSE, 0, TRUE);
     

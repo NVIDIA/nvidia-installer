@@ -45,6 +45,7 @@ enum {
     COMPAT32_LIBDIR_OPTION,
     UPDATE_OPTION,
     FORCE_SELINUX_OPTION,
+    SELINUX_CHCON_TYPE_OPTION,
     NO_SIGWINCH_WORKAROUND_OPTION,
     X_MODULE_PATH_OPTION,
     DOCUMENTATION_PREFIX_OPTION,
@@ -389,7 +390,8 @@ static const NVOption __options[] = {
     { "force-selinux", FORCE_SELINUX_OPTION, NVOPT_HAS_ARGUMENT,
       "Linux installations using SELinux (Security-Enhanced Linux) "
       "require that the security type of all shared libraries be set "
-      "to 'shlib_t'. nvidia-installer will detect when to set "
+      "to 'shlib_t' or 'textrel_shlib_t', depending on the distribution. "
+      "nvidia-installer will detect when to set "
       "the security type, and set it using chcon(1) on the shared "
       "libraries it installs.  Use this option to override "
       "nvidia-installer's detection of when to set the security type.  "
@@ -397,7 +399,13 @@ static const NVOption __options[] = {
       "security type), "
       "'no' (prevent setting of the security type), and 'default' "
       "(let nvidia-installer decide when to set the security type)." },
-      
+
+    { "selinux-chcon-type", SELINUX_CHCON_TYPE_OPTION, NVOPT_HAS_ARGUMENT,
+      "When SELinux support is enabled, nvidia-installer will try to determine "
+      "which chcon argument to use by first trying 'textrel_shlib_t', then "
+      "'texrel_shlib_t', then 'shlib_t'.  Use this option to override this "
+      "detection logic." },
+
     { "no-sigwinch-workaround", NO_SIGWINCH_WORKAROUND_OPTION, 0,
       "Normally, nvidia-installer ignores the SIGWINCH signal before it "
       "forks to execute commands, e.g. to build the kernel module, and "
