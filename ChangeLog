@@ -1,4 +1,9 @@
 
+2004-07-23 version 1.0.7
+
+    * Added --kernel-output-path option to support separate KBUILD
+      output directories.
+
 2004-01-12 version 1.0.6
 
     * Add support for installing on Linux 2.6 kernels.

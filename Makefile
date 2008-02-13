@@ -90,7 +90,7 @@ NVIDIA_INSTALLER = nvidia-installer
 MKPRECOMPILED = mkprecompiled
 
 NVIDIA_INSTALLER_PROGRAM_NAME = "nvidia-installer"
-NVIDIA_INSTALLER_VERSION = "1.0.6"
+NVIDIA_INSTALLER_VERSION = "1.0.7"
 
 NCURSES_UI = nvidia-installer-ncurses-ui.so
 NCURSES_UI_C = g_$(NCURSES_UI:.so=.c)

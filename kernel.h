@@ -29,6 +29,7 @@
 
 int determine_kernel_module_installation_path (Options*);
 int determine_kernel_source_path              (Options*);
+int determine_kernel_output_path              (Options*);
 int link_kernel_module                        (Options*, Package*);
 int build_kernel_module                       (Options*, Package*);
 int build_kernel_interface                    (Options*, Package*);

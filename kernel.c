@@ -291,6 +291,39 @@ int determine_kernel_source_path(Options *op)
 } /* determine_kernel_source_path() */
 
 
+/*
+ * determine_kernel_output_path() - determine the kernel output
+ * path; unless specified, the kernel output path is assumed to be
+ * the same as the kernel source path.
+ */
+
+int determine_kernel_output_path(Options *op)
+{
+    char *str;
+
+    /* check --kernel-output-path */
+
+    if (op->kernel_output_path) {
+        ui_log(op, "Using the kernel output path '%s' as specified by the "
+               "'--kernel-output-path' commandline option.",
+               op->kernel_output_path);
+        return TRUE;
+    }
+
+    /* check SYSOUT */
+
+    str = getenv("SYSOUT");
+    if (str) {
+        ui_log(op, "Using the kernel output path '%s', as specified by the "
+               "SYSOUT environment variable.", str);
+        op->kernel_output_path = str;
+        return TRUE;
+    }
+
+    op->kernel_output_path = op->kernel_source_path;
+    return TRUE;
+}
+
 
 /*
  * link_kernel_module() - link the prebuilt kernel interface against
@@ -360,7 +393,9 @@ int build_kernel_module(Options *op, Package *p)
      * no hope for the make rules if this fails.
      */
     cmd = nvstrcat("sh ", p->kernel_module_build_directory,
-                   "/conftest.sh cc ", op->kernel_source_path, "/include ",
+                   "/conftest.sh cc ",
+                   op->kernel_source_path, " ",
+                   op->kernel_output_path, " ",
                    "select_makefile just_msg", NULL);
 
     ret = run_command(op, cmd, &result, FALSE, 0, TRUE);
@@ -372,15 +407,13 @@ int build_kernel_module(Options *op, Package *p)
         return FALSE;
     }
 
-
     if (!rivafb_check(op, p)) return FALSE;
-
     rivafb_module_check(op, p);
 
-
     cmd = nvstrcat("cd ", p->kernel_module_build_directory,
-                   "; make print-module-filename SYSSRC=",
-                   op->kernel_source_path, NULL);
+                   "; make print-module-filename",
+                   " SYSSRC=", op->kernel_source_path,
+                   " SYSOUT=", op->kernel_output_path, NULL);
     
     ret = run_command(op, cmd, &p->kernel_module_filename, FALSE, 0, FALSE);
     
@@ -406,7 +439,9 @@ int build_kernel_module(Options *op, Package *p)
     ui_status_begin(op, "Building kernel module:", "Building");
 
     cmd = nvstrcat("cd ", p->kernel_module_build_directory,
-                   "; make module SYSSRC=", op->kernel_source_path, NULL);
+                   "; make module",
+                   " SYSSRC=", op->kernel_source_path,
+                   " SYSOUT=", op->kernel_output_path, NULL);
     
     ret = run_command(op, cmd, &result, TRUE, 25, TRUE);
 
@@ -1306,8 +1341,10 @@ static int cc_version_check(Options *op, Package *p)
     ui_log(op, "Performing cc_version_check with CC=\"%s\".", CC);
 
     cmd = nvstrcat("sh ", p->kernel_module_build_directory,
-                   "/conftest.sh ", CC, " ", op->kernel_source_path,
-                   "/include ", "cc_sanity_check just_msg", NULL);
+                   "/conftest.sh ", CC, " ",
+                   op->kernel_source_path, " ",
+                   op->kernel_output_path, " ",
+                   "cc_sanity_check just_msg", NULL);
 
     ret = run_command(op, cmd, &result, FALSE, 0, TRUE);
 
@@ -1347,7 +1384,9 @@ static int rivafb_check(Options *op, Package *p)
     ui_log(op, "Performing rivafb check.");
     
     cmd = nvstrcat("sh ", p->kernel_module_build_directory,
-                   "/conftest.sh cc ", op->kernel_source_path, "/include ",
+                   "/conftest.sh cc ",
+                   op->kernel_source_path, " ",
+                   op->kernel_output_path, " ",
                    "rivafb_sanity_check just_msg", NULL);
     
     ret = run_command(op, cmd, &result, FALSE, 0, TRUE);
@@ -1380,7 +1419,9 @@ static void rivafb_module_check(Options *op, Package *p)
     ui_log(op, "Performing rivafb module check.");
     
     cmd = nvstrcat("sh ", p->kernel_module_build_directory,
-                   "/conftest.sh cc ", op->kernel_source_path, "/include ",
+                   "/conftest.sh cc ",
+                   op->kernel_source_path, " ",
+                   op->kernel_output_path, " ",
                    "rivafb_module_sanity_check just_msg", NULL);
     
     ret = run_command(op, cmd, &result, FALSE, 0, TRUE);

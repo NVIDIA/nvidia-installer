@@ -160,6 +160,7 @@ int install_from_cwd(Options *op)
          */
         
         if (!determine_kernel_source_path(op)) goto failed;
+        determine_kernel_output_path(op);
     
         /* and now, build the kernel interface */
         

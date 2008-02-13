@@ -107,6 +107,7 @@ typedef struct __options {
     char *utility_prefix;
 
     char *kernel_source_path;
+    char *kernel_output_path;
     char *kernel_include_path;
     char *kernel_module_installation_path;
     char *utils[MAX_UTILS];

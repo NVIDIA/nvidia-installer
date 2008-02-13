@@ -261,6 +261,14 @@ static void print_advanced_options_args_only(int args_only)
             "directory exists.  Otherwise, it will use "
             "'/usr/src/linux'.");
     fmtout("");
+
+    fmtout("--kernel-output-path=[KERNEL OUTPUT PATH]");
+    fmtoutp(TAB, "The directory containing any KBUILD output files if "
+             "either one of the 'KBUILD_OUTPUT' or 'O' parameters were "
+             "passed to KBUILD when building the kernel image/modules.  "
+             "When not specified, the installer will assume that no "
+             "separate output directory was used.");
+    fmtout("");
     
     fmtout("--kernel-install-path=[KERNEL INSTALL PATH]");
     fmtoutp(TAB, "The directory in which the NVIDIA kernel module should be "
@@ -454,6 +462,7 @@ Options *parse_commandline(int argc, char *argv[])
 #define KERNEL_SOURCE_PATH_OPTION       23
 #define NO_RPMS_OPTION                  24
 #define X_PREFIX_OPTION                 25
+#define KERNEL_OUTPUT_PATH_OPTION       26
 
 
     static struct option long_options[] = {
@@ -482,6 +491,7 @@ Options *parse_commandline(int argc, char *argv[])
         { "utility-prefix",           1, NULL, UTILITY_PREFIX_OPTION      },
         { "kernel-include-path",      1, NULL, KERNEL_INCLUDE_PATH_OPTION },
         { "kernel-source-path",       1, NULL, KERNEL_SOURCE_PATH_OPTION  },
+        { "kernel-output-path",       1, NULL, KERNEL_OUTPUT_PATH_OPTION  },
         { "kernel-install-path",      1, NULL, KERNEL_INSTALL_PATH_OPTION },
         { "uninstall",                0, NULL, UNINSTALL_OPTION           },
         { "proc-mount-point",         1, NULL, PROC_MOUNT_POINT_OPTION    },
@@ -575,6 +585,8 @@ Options *parse_commandline(int argc, char *argv[])
             op->utility_prefix = optarg; break;
         case KERNEL_SOURCE_PATH_OPTION:
             op->kernel_source_path = optarg; break;
+        case KERNEL_OUTPUT_PATH_OPTION:
+            op->kernel_output_path = optarg; break;
         case KERNEL_INCLUDE_PATH_OPTION:
             op->kernel_include_path = optarg; break;
         case KERNEL_INSTALL_PATH_OPTION:
