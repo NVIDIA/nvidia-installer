@@ -1548,7 +1548,7 @@ int check_for_legacy_gpu(Options *op, Package *p)
             {
                     ui_warn(op, "The NVIDIA %s GPU installed in this system is "
                                 "supported through the NVIDIA Legacy drivers. Please "
-                                "visit http://www.nvidia.com/object/linux.html for more "
+                                "visit http://www.nvidia.com/object/unix.html for more "
                                 "information.  The %s NVIDIA driver will ignore "
                                 "this GPU. ",
                                 LegacyList[i].AdapterString, p->version_string);
