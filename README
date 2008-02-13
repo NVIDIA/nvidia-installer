@@ -1,0 +1,106 @@
+
+__________________________________________________________________________
+
+NVIDIA-INSTALLER SOURCE DOCUMENTATION
+__________________________________________________________________________
+
+Information on how to use the nvidia-installer is in:
+
+    (sec-02) INSTALLING THE NVIDIA DRIVER
+
+of the NVIDIA driver README (available from the NVIDIA Linux driver
+download page, and installed in /usr/share/doc/NVIDIA_GLX-1.0/).
+
+
+There is not currently any formal documentation describing the
+implementation of nvidia-installer, but the source code is fairly
+well commented.
+
+
+One interesting thing to note is that user interface shared libraries
+are "built into" nvidia-installer to avoid potential problems with
+the installer not being able to find the user interface libraries (or
+finding the wrong ones, etc): after the shared lib is built, the utility
+`gen-ui-array` is run on it to create a source file storing a byte
+array of the data that is the shared library.  When the installer runs,
+it writes this byte data to a temporary file and then dlopens() it.
+
+ 
+This directory also contains source for a simple tool 'mkprecompiled',
+which is used for stamping nv-linux.o's (aka the kernel interfaces)
+with the necessary information so that the installer can match it to a
+running kernel.
+
+To build a precompiled kernel interface, you might do the following:
+
+    sh NVIDIA-Linux-x86-1.0-XXXX.run --extract-only
+    cd NVIDIA-Linux-x86-1.0-XXXX/usr/src/nv/
+    make nv-linux.o
+    mkprecompiled --interface=nv-linux.o --output=nv-linux.o-mykernel \
+            --description="This is not an interesting description" \
+            --proc-version="`cat /proc/version`" \
+            --major=1 --minor=0 --patch=XXXX
+    mv nv-linux.o-mykernel precompiled/
+
+(where "XXXX" is replaced with the driver version number).
+
+
+To build a precompiled kernel interface for a kernel other than
+the currently running one, you can build nv-linux.o with:
+
+    make nv-linux.o SYSSRC=/path/to/kernel-source
+
+and extract the proc version string from a compressed kernel image with:
+
+    gzip -dc /boot/vmlinux.gz | strings | grep "^Linux version"
+
+
+
+nvidia-installer will scan the contents of the usr/src/nv/precompiled/
+directory for any precompiled kernel interfaces that match the running
+kernel's /proc/version string.
+
+If you would like to provide precompiled kernel interfaces for others
+to use, you may build them as above.  To use them, users can do the
+following:
+
+    sh NVIDIA-Linux-x86-1.0-XXXX.run --extract-only
+    cp nv-linux.o-mykernel NVIDIA-Linux-x86-1.0-XXXX/usr/src/nv/
+    ./NVIDIA-Linux-x86-1.0-XXXX/nvidia-installer
+
+
+(Updated: 2003-09-23)  The search path for directories containing
+precompiled kernel interfaces has been extended; the heuristic
+is now:
+
+    - if --precompiled-kernel-interfaces-path was specified, search
+      in that directory; if no match found, then
+
+    - search in the directory /lib/modules/precompiled/`uname -r`/nvidia/gfx/,
+      if no match found, then
+
+    - search in the usr/src/nv/precompiled directory of the .run file,
+      if no match found, then
+
+    - search on the ftp site, if no match found, then
+
+    - give up and just build the kernel module yourself
+
+
+TODO:
+
+- Edit/generate an XF86Config file
+
+- Add new user interfaces (gtk+/qt/your toolkit of choice).
+
+- Add additional tests to be run for the '--sanity' option.
+
+- Cleanup memory leaks.
+
+- Improve error messages.
+
+- Internationalization.
+
+Patches are very welcome, and may be submitted to linux-bugs@nvidia.com
+
+
