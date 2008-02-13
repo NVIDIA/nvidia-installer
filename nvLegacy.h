@@ -26,8 +26,8 @@ typedef struct _LEGACY_STRINGS {
  * This table describes how we should refer to legacy branches.
  */
 static const LEGACY_STRINGS LegacyStrings[] = {
-    { 2, "1.0-96xx" },
-    { 1, "1.0-71xx" }
+    { 2, "96.43.xx" },
+    { 1, "71.86.xx" }
 };
 
 // This is the list of the legacy GPUs

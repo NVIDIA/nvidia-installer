@@ -484,7 +484,7 @@ static Package *parse_manifest (Options *op)
     char *buf, *c, *flag , *tmpstr;
     int done, n, line;
     int fd, ret, len = 0;
-    struct stat stat_buf;
+    struct stat stat_buf, entry_stat_buf;
     Package *p;
     char *manifest = MAP_FAILED, *ptr;
     
@@ -760,7 +760,21 @@ static Package *parse_manifest (Options *op)
             if (p->entries[n].name) p->entries[n].name++;
             
             if (!p->entries[n].name) p->entries[n].name = p->entries[n].file;
-            
+
+            /*
+             * store the inode and device information, so that we can
+             * later recognize it, to avoid accidentally moving it as
+             * part of the 'find_conflicting_files' path
+             */
+
+            if (stat(p->entries[n].file, &entry_stat_buf) != -1) {
+                p->entries[n].inode = entry_stat_buf.st_ino;
+                p->entries[n].device = entry_stat_buf.st_dev;
+            } else {
+                p->entries[n].inode = 0;
+                p->entries[n].device = 0;
+            }
+
             /* free the line */
             
             free(buf);
@@ -792,6 +806,50 @@ static Package *parse_manifest (Options *op)
     return NULL;
        
 } /* parse_manifest() */
+
+
+
+/*
+ * add_package_entry() - add a PackageEntry to the package's entries
+ * array.
+ */
+
+void add_package_entry(Package *p,
+                       char *file,
+                       char *path,
+                       char *name,
+                       char *target,
+                       char *dst,
+                       unsigned int flags,
+                       mode_t mode)
+{
+    int n;
+    struct stat stat_buf;
+
+    n = p->num_entries;
+
+    p->entries =
+        (PackageEntry *) nvrealloc(p->entries, (n + 1) * sizeof(PackageEntry));
+
+    p->entries[n].file   = file;
+    p->entries[n].path   = path;
+    p->entries[n].name   = name;
+    p->entries[n].target = target;
+    p->entries[n].dst    = dst;
+    p->entries[n].flags  = flags;
+    p->entries[n].mode   = mode;
+
+    if (stat(p->entries[n].file, &stat_buf) != -1) {
+        p->entries[n].inode = stat_buf.st_ino;
+        p->entries[n].device = stat_buf.st_dev;
+    } else {
+        p->entries[n].inode = 0;
+        p->entries[n].device = 0;
+    }
+
+    p->num_entries++;
+
+} /* add_package_entry() */
 
 
 

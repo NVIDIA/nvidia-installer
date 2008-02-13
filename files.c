@@ -873,35 +873,26 @@ int get_prefixes (Options *op)
 
 int add_kernel_module_to_package(Options *op, Package *p)
 {
-    int n, len;
+    char *file, *name, *dst;
 
-    n = p->num_entries;
-    
-    p->entries =
-        (PackageEntry *) nvrealloc(p->entries, (n + 1) * sizeof(PackageEntry));
+    file = nvstrcat(p->kernel_module_build_directory, "/",
+                    p->kernel_module_filename, NULL);
 
-    len = strlen(p->kernel_module_build_directory) +
-        strlen(p->kernel_module_filename) + 2;
-    p->entries[n].file = (char *) nvalloc(len);
-    snprintf(p->entries[n].file, len, "%s/%s",
-             p->kernel_module_build_directory, p->kernel_module_filename);
-    
-    p->entries[n].path = NULL;
-    p->entries[n].target = NULL;
-    p->entries[n].flags = FILE_TYPE_KERNEL_MODULE;
-    p->entries[n].mode = 0644;
-    
-    p->entries[n].name = strrchr(p->entries[n].file, '/');
-    if (p->entries[n].name) p->entries[n].name++;
-    if (!p->entries[n].name) p->entries[n].name = p->entries[n].file;
-    
-    len = strlen(op->kernel_module_installation_path) +
-        strlen(p->kernel_module_filename) + 2;
-    p->entries[n].dst = (char *) nvalloc(len);
-    snprintf (p->entries[n].dst, len, "%s/%s",
-              op->kernel_module_installation_path, p->kernel_module_filename);
-    
-    p->num_entries++;
+    name = strrchr(file, '/');
+    if (name) name++;
+    if (!name) name = file;
+
+    dst = nvstrcat(op->kernel_module_installation_path, "/",
+                   p->kernel_module_filename, NULL);
+
+    add_package_entry(p,
+                      file,
+                      NULL, /* path */
+                      name,
+                      NULL, /* target */
+                      dst,
+                      FILE_TYPE_KERNEL_MODULE,
+                      0644);
 
     return TRUE;
 
@@ -1710,7 +1701,7 @@ done:
 
 void process_libGL_la_files(Options *op, Package *p)
 {
-    int i, n;
+    int i;
     char *tmpfile;
 
     char *tokens[3] = { "__LIBGL_PATH__", "__GENERATED_BY__", NULL };
@@ -1742,22 +1733,25 @@ void process_libGL_la_files(Options *op, Package *p)
 
             if (tmpfile != NULL) {
                 /* add this new file to the package */
-                
-                n = p->num_entries;
-                
-                p->entries =
-                    (PackageEntry *) nvrealloc(p->entries,
-                                               (n + 1) * sizeof(PackageEntry));
-                p->entries[n].file = tmpfile;
-                p->entries[n].path = p->entries[i].path;
-                p->entries[n].target = NULL;
-                p->entries[n].flags = ((p->entries[i].flags & FILE_CLASS_MASK)
-                                        | FILE_TYPE_LIBGL_LA); 
-                p->entries[n].mode = p->entries[i].mode;
-                
-                p->entries[n].name = nvstrdup(p->entries[i].name);
-                
-                p->num_entries++;
+
+                /*
+                 * XXX 'name' is the basename (non-directory part) of
+                 * the file to be installed; normally, 'name' just
+                 * points into 'file', but in this case 'file' is
+                 * mkstemp(3)-generated, so doesn't have the same
+                 * basename; instead, we just strdup the name from the
+                 * template package entry; yes, 'name' will get leaked
+                 */
+
+                add_package_entry(p,
+                                  tmpfile,
+                                  p->entries[i].path,
+                                  nvstrdup(p->entries[i].name),
+                                  NULL, /* target */
+                                  NULL, /* dst */
+                                  ((p->entries[i].flags & FILE_CLASS_MASK) |
+                                   FILE_TYPE_LIBGL_LA),
+                                  p->entries[i].mode);
             }
 
             nvfree(replacements[0]);
@@ -1779,7 +1773,7 @@ void process_libGL_la_files(Options *op, Package *p)
 
 void process_dot_desktop_files(Options *op, Package *p)
 {
-    int i, n;
+    int i;
     char *tmpfile;
 
     char *tokens[3] = { "__UTILS_PATH__", "__PIXMAP_PATH__", NULL };
@@ -1815,22 +1809,25 @@ void process_dot_desktop_files(Options *op, Package *p)
                                             replacements);
             if (tmpfile != NULL) {
                 /* add this new file to the package */
-                
-                n = p->num_entries;
-                
-                p->entries =
-                    (PackageEntry *) nvrealloc(p->entries,
-                                               (n + 1) * sizeof(PackageEntry));
-                p->entries[n].file = tmpfile;
-                p->entries[n].path = p->entries[i].path;
-                p->entries[n].target = NULL;
-                p->entries[n].flags = ((p->entries[i].flags & FILE_CLASS_MASK)
-                                        | FILE_TYPE_DOT_DESKTOP); 
-                p->entries[n].mode = p->entries[i].mode;
-                
-                p->entries[n].name = nvstrdup(p->entries[i].name);
-                
-                p->num_entries++;
+
+                /*
+                 * XXX 'name' is the basename (non-directory part) of
+                 * the file to be installed; normally, 'name' just
+                 * points into 'file', but in this case 'file' is
+                 * mkstemp(3)-generated, so doesn't have the same
+                 * basename; instead, we just strdup the name from the
+                 * template package entry; yes, 'name' will get leaked
+                 */
+
+                add_package_entry(p,
+                                  tmpfile,
+                                  p->entries[i].path,
+                                  nvstrdup(p->entries[i].name),
+                                  NULL, /* target */
+                                  NULL, /* dst */
+                                  ((p->entries[i].flags & FILE_CLASS_MASK) |
+                                   FILE_TYPE_DOT_DESKTOP),
+                                  p->entries[i].mode);
             }
         }
     }
