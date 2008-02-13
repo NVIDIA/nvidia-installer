@@ -95,9 +95,8 @@ int install_from_cwd(Options *op)
     
     if ((p = parse_manifest(op)) == NULL) goto failed;
     
-    ui_set_title(op, "%s (%d.%d-%d)", p->description,
-                 p->major, p->minor, p->patch);
-
+    ui_set_title(op, "%s (%s)", p->description, p->version);
+    
     /* check that we are not running any X server */
 
     if (!check_for_running_x(op)) goto failed;
@@ -240,10 +239,10 @@ int install_from_cwd(Options *op)
     if (op->kernel_module_only) {
         ui_message(op, "Installation of the kernel module for the %s "
                    "(version %s) is now complete.",
-                   p->description, p->version_string);
+                   p->description, p->version);
     } else {
         ui_message(op, "Installation of the %s (version: %s) is now "
-                   "complete.  %s", p->description, p->version_string, msg);
+                   "complete.  %s", p->description, p->version, msg);
     }
     
     return TRUE;
@@ -405,7 +404,7 @@ int add_this_kernel(Options *op)
  * The first nine lines of the .manifest file are:
  *
  *   - a description string
- *   - a version string of the form "major.minor-patch"
+ *   - a version string
  *   - the kernel module file name
  *   - the kernel interface file name
  *   - the kernel module name (what `rmmod` and `modprobe` should use)
@@ -433,7 +432,7 @@ static Package *parse_manifest (Options *op)
     char *buf, *c, *flag , *tmpstr;
     int done, n, line;
     int fd, len = 0;
-    struct stat stat_buf;
+    struct stat stat_buf, entry_stat_buf;
     Package *p;
     char *manifest = MAP_FAILED, *ptr;
     
@@ -464,10 +463,8 @@ static Package *parse_manifest (Options *op)
     /* the second line is the version */
     
     line++;
-    p->version_string = get_next_line(ptr, &ptr, manifest, len);
-    if (!p->version_string) goto invalid_manifest_file;
-    if (!nvid_version(p->version_string, &p->major, &p->minor, &p->patch))
-        goto invalid_manifest_file;
+    p->version = get_next_line(ptr, &ptr, manifest, len);
+    if (!p->version) goto invalid_manifest_file;
     
     /* new third line is the kernel interface filename */
 
@@ -698,7 +695,21 @@ static Package *parse_manifest (Options *op)
             if (p->entries[n].name) p->entries[n].name++;
             
             if (!p->entries[n].name) p->entries[n].name = p->entries[n].file;
-            
+
+            /*
+             * store the inode and device information, so that we can
+             * later recognize it, to avoid accidentally moving it as
+             * part of the 'find_conflicting_files' path
+             */
+
+            if (stat(p->entries[n].file, &entry_stat_buf) != -1) {
+                p->entries[n].inode = entry_stat_buf.st_ino;
+                p->entries[n].device = entry_stat_buf.st_dev;
+            } else {
+                p->entries[n].inode = 0;
+                p->entries[n].device = 0;
+            }
+
             /* free the line */
             
             free(buf);
@@ -731,3 +742,48 @@ static Package *parse_manifest (Options *op)
     return NULL;
        
 } /* parse_manifest() */
+
+
+
+/*
+ * add_package_entry() - add a PackageEntry to the package's entries
+ * array.
+ */
+
+void add_package_entry(Package *p,
+                       char *file,
+                       char *path,
+                       char *name,
+                       char *target,
+                       char *dst,
+                       unsigned int flags,
+                       mode_t mode)
+{
+    int n;
+    struct stat stat_buf;
+
+    n = p->num_entries;
+
+    p->entries =
+        (PackageEntry *) nvrealloc(p->entries, (n + 1) * sizeof(PackageEntry));
+
+    p->entries[n].file   = file;
+    p->entries[n].path   = path;
+    p->entries[n].name   = name;
+    p->entries[n].target = target;
+    p->entries[n].dst    = dst;
+    p->entries[n].flags  = flags;
+    p->entries[n].mode   = mode;
+
+    if (stat(p->entries[n].file, &stat_buf) != -1) {
+        p->entries[n].inode = stat_buf.st_ino;
+        p->entries[n].device = stat_buf.st_dev;
+    } else {
+        p->entries[n].inode = 0;
+        p->entries[n].device = 0;
+    }
+
+    p->num_entries++;
+
+} /* add_package_entry() */
+

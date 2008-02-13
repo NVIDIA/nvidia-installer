@@ -103,7 +103,7 @@ int find_module_utils(Options *op);
 int check_selinux(Options *op);
 int check_proc_modprobe_path(Options *op);
 int check_development_tools(Options *op, Package *p);
-int nvid_version (const char *str, int *major, int *minor, int *patch);
+char *extract_version_string(const char *str);
 int continue_after_error(Options *op, const char *fmt, ...);
 int do_install(Options *op, Package *p, CommandList *c);
 void should_install_opengl_headers(Options *op, Package *p);

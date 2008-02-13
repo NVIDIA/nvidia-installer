@@ -45,14 +45,14 @@
 
 int sanity(Options *op)
 {
-    char *descr;
-    int major, minor, patch;
+    char *descr, *version;
+    int ret;
 
     /* check that there's a driver installed at all */
 
-    descr = get_installed_driver_version_and_descr(op, &major, &minor, &patch);
+    ret = get_installed_driver_version_and_descr(op, &version, &descr);
     
-    if (!descr) {
+    if (!ret) {
         ui_error(op, "Unable to find any installed NVIDIA driver.  The sanity "
                  "check feature is only intended to be used with an existing "
                  "NVIDIA driver installation.");
@@ -60,9 +60,9 @@ int sanity(Options *op)
     }
 
     ui_message(op, "The currently installed driver is: '%s' "
-               "(version: %d.%d-%d).  nvidia-installer will now check "
+               "(version: %s).  nvidia-installer will now check "
                "that all installed files still exist.",
-               descr, major, minor, patch);
+               descr, version);
 
     /* check that all the files are still where we placed them */
 
@@ -91,11 +91,12 @@ int sanity(Options *op)
      *   etc).
      */
     
-    ui_message(op, "'%s' (version: %d.%d-%d) appears to be installed "
-               "correctly.", descr, major, minor, patch);
+    ui_message(op, "'%s' (version: %s) appears to be installed "
+               "correctly.", descr, version);
     
     nvfree(descr);
-    
+    nvfree(version);
+
     return TRUE;
     
 } /* sanity() */

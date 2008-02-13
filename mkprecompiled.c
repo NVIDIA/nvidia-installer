@@ -14,13 +14,7 @@
  *
  * -i, --interface=<filename>
  * -o, --output=<filename>
- *
- * --major-version=<major>
- * --minor-version=<minor>
- * --patch-version=<patch>
- *
  * -u, --unpack=<filename>
- *
  * -d, --description=<kernel description>
  *
  * There is nothing specific to the NVIDIA graphics driver in this
@@ -32,12 +26,10 @@
  * the first 8 bytes are: "NVIDIA  "
  *
  * the next 4 bytes (unsigned) are: CRC of the kernel interface module
+ * 
+ * the next 4 bytes (unsigned) are: the length of the version string (v)
  *
- * the next 4 bytes (unsigned) are: major version
- *
- * the next 4 bytes (unsigned) are: minor version
- *
- * the next 4 bytes (unsigned) are: patch version
+ * the next v bytes are the version string
  *
  * the next 4 bytes (unsigned) are: the length of the description (n)
  *
@@ -70,7 +62,7 @@
 #define _GNU_SOURCE /* XXX not portable */
 #include <getopt.h>
 
-#define CONSTANT_LENGTH (8 + 4 + 12 + 4 + 4)
+#define CONSTANT_LENGTH (8 + 4 + 4 + 4 + 4)
 
 typedef unsigned int uint32;
 typedef unsigned char uint8;
@@ -85,9 +77,7 @@ typedef struct {
     char *unpack;
     char *description;
     char *proc_version_string;
-    uint32 major;
-    uint32 minor;
-    uint32 patch;
+    char *version;
     uint8  info;
     uint8  match;
 } Options;
@@ -241,10 +231,8 @@ void print_help(void)
     printf("-v, --proc-version=<string>\n");
     printf("  /proc/version string for target kernel.\n\n");
 
-    printf("--major=<major version number>\n");
-    printf("--minor=<minor version number>\n");
-    printf("--patch=<patch version number>\n\n");
-
+    printf("--version=<version string>\n\n");
+    
     printf("--info\n");
     printf("  Print the description and version number of the file\n");
     printf("  specified by the unpack option.\n\n");
@@ -271,9 +259,6 @@ Options *parse_commandline(int argc, char *argv[])
     Options *op;
     int c, option_index = 0;
 
-#define MAJOR_VERSION_OPTION 1
-#define MINOR_VERSION_OPTION 2
-#define PATCH_VERSION_OPTION 3
 #define INFO_OPTION          4
     
     static struct option long_options[] = {
@@ -283,9 +268,7 @@ Options *parse_commandline(int argc, char *argv[])
         { "description",  1, 0, 'd'                  },
         { "help",         0, 0, 'h'                  },
         { "proc-version", 1, 0, 'v'                  },
-        { "major",        1, 0, MAJOR_VERSION_OPTION },
-        { "minor",        1, 0, MINOR_VERSION_OPTION },
-        { "patch",        1, 0, PATCH_VERSION_OPTION },
+        { "version",      1, 0, 'V'                  },
         { "info",         0, 0, INFO_OPTION          },
         { "match",        0, 0, 'm'                  },
         { 0,              0, 0, 0                    }
@@ -306,12 +289,7 @@ Options *parse_commandline(int argc, char *argv[])
         case 'd': op->description = optarg; break;
         case 'h': print_help(); exit(0); break;
         case 'v': op->proc_version_string = optarg; break;
-        case MAJOR_VERSION_OPTION:
-            op->major = atoi(optarg); break;
-        case MINOR_VERSION_OPTION:
-            op->minor = atoi(optarg); break;
-        case PATCH_VERSION_OPTION:
-            op->patch = atoi(optarg); break;
+        case 'V': op->version = optarg; break;
         case INFO_OPTION:
             op->info = 1; break;
         case 'm':
@@ -344,6 +322,11 @@ Options *parse_commandline(int argc, char *argv[])
     
     if (!op->info && !op->match && !op->output) {
         fprintf(stderr, "Output file not specified.\n");
+        exit(1);
+    }
+
+    if (!op->version) {
+        fprintf(stderr, "Driver version string not specified.\n");
         exit(1);
     }
 
@@ -482,19 +465,21 @@ int pack(Options *op)
     int fd, offset, src_fd;
     uint8 *out, *src, data[4];
     uint32 crc;
-    int description_len, proc_version_len, interface_len, total_len;
+    int version_len, description_len, proc_version_len;
+    int interface_len, total_len;
     
     /*
      * get the lengths of the description, the proc version string,
      * and the interface file.
      */
 
+    version_len = strlen(op->version);
     description_len = strlen(op->description);
     proc_version_len = strlen(op->proc_version_string);
     interface_len = nv_get_file_length(op->interface);
     
     total_len = CONSTANT_LENGTH +
-        description_len + proc_version_len + interface_len;
+        version_len + description_len + proc_version_len + interface_len;
     
     /* compute the crc of the kernel interface */
 
@@ -528,17 +513,14 @@ int pack(Options *op)
 
     /* write the version */
 
-    encode_uint32(op->major, data);
+    encode_uint32(version_len, data);
     memcpy(&(out[offset]), data, 4);
     offset += 4;
-
-    encode_uint32(op->minor, data);
-    memcpy(&(out[offset]), data, 4);
-    offset += 4;
-
-    encode_uint32(op->patch, data);
-    memcpy(&(out[offset]), data, 4);
-    offset += 4;
+    
+    if (version_len) {
+        memcpy(&(out[offset]), op->version, version_len);
+        offset += version_len;
+    }
 
     /* write the description */
 
@@ -593,8 +575,8 @@ int unpack(Options *op)
 {
     int dst_fd, fd, ret, offset, len = 0;
     char *buf, *dst;
-    uint32 crc, major, minor, patch, val, size;
-    char *description, *proc_version_string;
+    uint32 crc, val, size;
+    char *version, *description, *proc_version_string;
 
     fd = dst_fd = 0;
     buf = dst = NULL;
@@ -635,10 +617,17 @@ int unpack(Options *op)
     
     /* read the version */
 
-    major = decode_uint32(buf + offset + 0);
-    minor = decode_uint32(buf + offset + 4);
-    patch = decode_uint32(buf + offset + 8);
-    offset += 12;
+    val = decode_uint32(buf + offset);
+    offset += 4;
+
+    if (val > 0) {
+        version = nv_alloc(val+1);
+        memcpy(version, buf + offset, val);
+        version[val] = '\0';
+    } else {
+        version = NULL;
+    }
+    offset += val;
 
     /* read the description */
 
@@ -677,7 +666,7 @@ int unpack(Options *op)
     
     if (op->info) {
         printf("description: %s\n", description);
-        printf("version: %d.%d-%d\n", major, minor, patch);
+        printf("version: %s\n", version);
         printf("crc: %u\n", crc);
         printf("proc version: %s\n", proc_version_string);
         return 0;

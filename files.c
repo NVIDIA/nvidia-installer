@@ -866,35 +866,26 @@ int get_prefixes (Options *op)
 
 int add_kernel_module_to_package(Options *op, Package *p)
 {
-    int n, len;
+    char *file, *name, *dst;
 
-    n = p->num_entries;
-    
-    p->entries =
-        (PackageEntry *) nvrealloc(p->entries, (n + 1) * sizeof(PackageEntry));
+    file = nvstrcat(p->kernel_module_build_directory, "/",
+                    p->kernel_module_filename, NULL);
 
-    len = strlen(p->kernel_module_build_directory) +
-        strlen(p->kernel_module_filename) + 2;
-    p->entries[n].file = (char *) nvalloc(len);
-    snprintf(p->entries[n].file, len, "%s/%s",
-             p->kernel_module_build_directory, p->kernel_module_filename);
-    
-    p->entries[n].path = NULL;
-    p->entries[n].target = NULL;
-    p->entries[n].flags = FILE_TYPE_KERNEL_MODULE;
-    p->entries[n].mode = 0644;
-    
-    p->entries[n].name = strrchr(p->entries[n].file, '/');
-    if (p->entries[n].name) p->entries[n].name++;
-    if (!p->entries[n].name) p->entries[n].name = p->entries[n].file;
-    
-    len = strlen(op->kernel_module_installation_path) +
-        strlen(p->kernel_module_filename) + 2;
-    p->entries[n].dst = (char *) nvalloc(len);
-    snprintf (p->entries[n].dst, len, "%s/%s",
-              op->kernel_module_installation_path, p->kernel_module_filename);
-    
-    p->num_entries++;
+    name = strrchr(file, '/');
+    if (name) name++;
+    if (!name) name = file;
+
+    dst = nvstrcat(op->kernel_module_installation_path, "/",
+                   p->kernel_module_filename, NULL);
+
+    add_package_entry(p,
+                      file,
+                      NULL, /* path */
+                      name,
+                      NULL, /* target */
+                      dst,
+                      FILE_TYPE_KERNEL_MODULE,
+                      0644);
 
     return TRUE;
 
@@ -1402,7 +1393,6 @@ int copy_directory_contents(Options *op, const char *src, const char *dst)
 int pack_precompiled_kernel_interface(Options *op, Package *p)
 {
     char *cmd, time_str[256], *proc_version_string;
-    char major[16], minor[16], patch[16];
     char *result, *descr;
     time_t t;
     struct utsname buf;
@@ -1423,12 +1413,6 @@ int pack_precompiled_kernel_interface(Options *op, Package *p)
 
     proc_version_string = read_proc_version(op);
 
-    /* get the version strings */
-
-    snprintf(major, 16, "%d", p->major);
-    snprintf(minor, 16, "%d", p->minor);
-    snprintf(patch, 16, "%d", p->patch);
-    
     /* use the uname string as the description */
 
     uname(&buf);
@@ -1444,12 +1428,10 @@ int pack_precompiled_kernel_interface(Options *op, Package *p)
                    PRECOMPILED_KERNEL_INTERFACE_FILENAME,
                    " --output=", p->precompiled_kernel_interface_directory,
                    "/", PRECOMPILED_KERNEL_INTERFACE_FILENAME,
-                   "-", p->version_string, ".", time_str,
+                   "-", p->version, ".", time_str,
                    " --description=\"", descr, "\"",
                    " --proc-version=\"", proc_version_string, "\"",
-                   " --major=", major,
-                   " --minor=", minor,
-                   " --patch=", patch, NULL);
+                   " --version=", p->version, NULL);
 
     /* execute the command */
     
@@ -1712,7 +1694,7 @@ done:
 
 void process_libGL_la_files(Options *op, Package *p)
 {
-    int i, n;
+    int i;
     char *tmpfile;
 
     char *tokens[3] = { "__LIBGL_PATH__", "__GENERATED_BY__", NULL };
@@ -1744,22 +1726,25 @@ void process_libGL_la_files(Options *op, Package *p)
 
             if (tmpfile != NULL) {
                 /* add this new file to the package */
-                
-                n = p->num_entries;
-                
-                p->entries =
-                    (PackageEntry *) nvrealloc(p->entries,
-                                               (n + 1) * sizeof(PackageEntry));
-                p->entries[n].file = tmpfile;
-                p->entries[n].path = p->entries[i].path;
-                p->entries[n].target = NULL;
-                p->entries[n].flags = ((p->entries[i].flags & FILE_CLASS_MASK)
-                                        | FILE_TYPE_LIBGL_LA); 
-                p->entries[n].mode = p->entries[i].mode;
-                
-                p->entries[n].name = nvstrdup(p->entries[i].name);
-                
-                p->num_entries++;
+
+                /*
+                 * XXX 'name' is the basename (non-directory part) of
+                 * the file to be installed; normally, 'name' just
+                 * points into 'file', but in this case 'file' is
+                 * mkstemp(3)-generated, so doesn't have the same
+                 * basename; instead, we just strdup the name from the
+                 * template package entry; yes, 'name' will get leaked
+                 */
+
+                add_package_entry(p,
+                                  tmpfile,
+                                  p->entries[i].path,
+                                  nvstrdup(p->entries[i].name),
+                                  NULL, /* target */
+                                  NULL, /* dst */
+                                  ((p->entries[i].flags & FILE_CLASS_MASK) |
+                                   FILE_TYPE_LIBGL_LA),
+                                  p->entries[i].mode);
             }
 
             nvfree(replacements[0]);
@@ -1781,7 +1766,7 @@ void process_libGL_la_files(Options *op, Package *p)
 
 void process_dot_desktop_files(Options *op, Package *p)
 {
-    int i, n;
+    int i;
     char *tmpfile;
 
     char *tokens[3] = { "__UTILS_PATH__", "__PIXMAP_PATH__", NULL };
@@ -1817,22 +1802,25 @@ void process_dot_desktop_files(Options *op, Package *p)
                                             replacements);
             if (tmpfile != NULL) {
                 /* add this new file to the package */
-                
-                n = p->num_entries;
-                
-                p->entries =
-                    (PackageEntry *) nvrealloc(p->entries,
-                                               (n + 1) * sizeof(PackageEntry));
-                p->entries[n].file = tmpfile;
-                p->entries[n].path = p->entries[i].path;
-                p->entries[n].target = NULL;
-                p->entries[n].flags = ((p->entries[i].flags & FILE_CLASS_MASK)
-                                        | FILE_TYPE_DOT_DESKTOP); 
-                p->entries[n].mode = p->entries[i].mode;
-                
-                p->entries[n].name = nvstrdup(p->entries[i].name);
-                
-                p->num_entries++;
+
+                /*
+                 * XXX 'name' is the basename (non-directory part) of
+                 * the file to be installed; normally, 'name' just
+                 * points into 'file', but in this case 'file' is
+                 * mkstemp(3)-generated, so doesn't have the same
+                 * basename; instead, we just strdup the name from the
+                 * template package entry; yes, 'name' will get leaked
+                 */
+
+                add_package_entry(p,
+                                  tmpfile,
+                                  p->entries[i].path,
+                                  nvstrdup(p->entries[i].name),
+                                  NULL, /* target */
+                                  NULL, /* dst */
+                                  ((p->entries[i].flags & FILE_CLASS_MASK) |
+                                   FILE_TYPE_DOT_DESKTOP),
+                                  p->entries[i].mode);
             }
         }
     }
@@ -1970,6 +1958,66 @@ static char *get_xdg_data_dir(void)
 }
 
 
+
+/*
+ * extract_x_path() - take a comma-separated list of directories, and
+ * extract the next available directory in the list.  Assign the
+ * 'next' pointer so that it points to where we should continue during
+ * the next call of extract_x_path().
+ *
+ * On success, return a pointer to the next directory in the string,
+ * and update the 'next' pointer.  When we have exhausted the list,
+ * NULL is returned.
+ *
+ * Note that this will destructively replace commas with NULL
+ * terminators in the string.
+ */
+
+static char *extract_x_path(char *str, char **next)
+{
+    char *start;
+    
+    /*
+     * choose where to start in the string: either we start at the
+     * beginning, or we start immediately after where we found a comma
+     * last time
+     */
+
+    start = str;
+    
+    if (*next) start = *next;
+    
+    /* skip past any commas at the start */
+
+    while (*start == ',') start++;
+    
+    /* if we hit the end of the string, return now */
+
+    if (*start == '\0') return NULL;
+    
+    /*
+     * find the next comma in the string; if we find one, change it to
+     * a NULL terminator (and move 'next' to the character immediately
+     * after the comma); if we don't find a comma, move the 'next'
+     * pointer to the end of the string, so that we terminate on the
+     * next call to extract_x_path()
+     */
+
+    *next = strchr(start, ',');
+
+    if (*next) {
+        **next = '\0';
+        (*next)++;
+    } else {
+        *next = strchr(start, '\0');
+    }
+    
+    return start;
+    
+} /* extract_x_path() */
+
+
+
 /*
  * get_x_paths_helper() - helper function for determining the X
  * library and module paths; returns 'TRUE' if we had to guess at the
@@ -1983,7 +2031,7 @@ static int get_x_paths_helper(Options *op,
                               char *name,
                               char **path)
 {
-    char *dir, *cmd;
+    char *dirs, *cmd, *dir, *next;
     int ret, guessed = 0;
 
     /*
@@ -2012,31 +2060,43 @@ static int get_x_paths_helper(Options *op,
      */
     if (op->utils[XSERVER]) {
 
-        dir = NULL;
+        dirs = NULL;
         cmd = nvstrcat(op->utils[XSERVER], " ", xserver_cmd, NULL);
-        ret = run_command(op, cmd, &dir, FALSE, 0, TRUE);
+        ret = run_command(op, cmd, &dirs, FALSE, 0, TRUE);
         nvfree(cmd);
 
-        if ((ret == 0) && dir) {
+        if ((ret == 0) && dirs) {
+            
+            next = NULL;
 
-            if (directory_exists(op, dir)) {
+            dir = extract_x_path(dirs, &next);
+            
+            while (dir) {
+                
+                if (directory_exists(op, dir)) {
+                    
+                    ui_expert(op, "X %s path '%s' determined from `%s %s`",
+                              name, dir, op->utils[XSERVER], xserver_cmd);
+                    
+                    *path = nvstrdup(dir);
+                    
+                    nvfree(dirs);
+                    
+                    return FALSE;
+                    
+                } else {
+                    ui_warn(op, "You appear to be using a modular X.Org "
+                            "release, but the X %s installation "
+                            "path, '%s', reported by `%s %s` does not exist.  "
+                            "Please check your X.Org installation.",
+                            name, dir, op->utils[XSERVER], xserver_cmd);
+                }
 
-                ui_expert(op, "X %s path '%s' determined from `%s %s`",
-                        name, dir, op->utils[XSERVER], xserver_cmd);
-
-                *path = dir;
-                return FALSE;
-
-            } else {
-                ui_warn(op, "You appear to be using a modular X.Org "
-                        "release, but the X %s installation "
-                        "path reported by `%s %s` does not exist.  "
-                        "Please check your X.Org installation.",
-                        name, op->utils[XSERVER], xserver_cmd);
+                dir = extract_x_path(dirs, &next);
             }
         }
 
-        nvfree(dir);
+        nvfree(dirs);
     }
 
     /*
@@ -2046,33 +2106,45 @@ static int get_x_paths_helper(Options *op,
      */
     if (op->utils[PKG_CONFIG]) {
 
-        dir = NULL;
+        dirs = NULL;
         cmd = nvstrcat(op->utils[PKG_CONFIG], " ",
                 pkg_config_cmd, NULL);
-        ret = run_command(op, cmd, &dir, FALSE, 0, TRUE);
+        ret = run_command(op, cmd, &dirs, FALSE, 0, TRUE);
         nvfree(cmd);
 
-        if ((ret == 0) && dir) {
+        if ((ret == 0) && dirs) {
 
-            if (directory_exists(op, dir)) {
+            next = NULL;
+            
+            dir = extract_x_path(dirs, &next);
+ 
+            while (dir) {
+                
+                if (directory_exists(op, dir)) {
 
-                ui_expert(op, "X %s path '%s' determined from `%s %s`",
-                        name, dir, op->utils[PKG_CONFIG],
-                        pkg_config_cmd);
+                    ui_expert(op, "X %s path '%s' determined from `%s %s`",
+                              name, dir, op->utils[PKG_CONFIG],
+                              pkg_config_cmd);
 
-                *path = dir;
-                return FALSE;
+                    *path = nvstrdup(dir);
+                    
+                    nvfree(dirs);
+                    
+                    return FALSE;
+                
+                } else {
+                    ui_warn(op, "You appear to be using a modular X.Org "
+                            "release, but the X %s installation "
+                            "path, '%s', reported by `%s %s` does not exist.  "
+                            "Please check your X.Org installation.",
+                            name, dir, op->utils[PKG_CONFIG], pkg_config_cmd);
+                }
 
-            } else {
-                ui_warn(op, "You appear to be using a modular X.Org "
-                        "release, but the X %s installation "
-                        "path reported by `%s %s` does not exist.  "
-                        "Please check your X.Org installation.",
-                        name, op->utils[PKG_CONFIG], pkg_config_cmd);
+                dir = extract_x_path(dirs, &next);
             }
         }
 
-        nvfree(dir);
+        nvfree(dirs);
     }
 
     /*

@@ -65,6 +65,8 @@ static void find_conflicting_kernel_modules(Options *op,
 
 static void find_existing_files(Package *p, FileList *l, unsigned int);
 
+static void condense_file_list(Package *p, FileList *l);
+
 static void add_command (CommandList *c, int cmd, ...);
 
 static void add_file_to_list(const char*, const char*, FileList*);
@@ -180,7 +182,7 @@ CommandList *build_command_list(Options *op, Package *p)
     
     /* condense the file list */
 
-    condense_file_list(l);
+    condense_file_list(p, l);
     
     /* check the conflicting file list for any installed files */
 
@@ -715,10 +717,10 @@ static void find_conflicting_libraries(Options *op,
  * brute-force algorithm.
  */
 
-void condense_file_list(FileList *l)
+static void condense_file_list(Package *p, FileList *l)
 {
     char **s = NULL;
-    int n = 0, i, j, match;
+    int n = 0, i, j, keep;
 
     struct stat stat_buf, *stat_bufs;
 
@@ -740,12 +742,27 @@ void condense_file_list(FileList *l)
      */
 
     for (i = 0; i < l->num; i++) {
-        match = FALSE;
+        keep = TRUE;
 
         if (lstat(l->filename[i], &stat_buf) == -1)
             continue;
-        
-        for (j = 0; j < n; j++) {
+
+        /*
+         * check if this file is in the package we're trying to
+         * install; we don't want to remove files that are in the
+         * package; symlinks may have tricked us into looking for
+         * conflicting files inside our unpacked .run file.
+         */
+
+        for (j = 0; j < p->num_entries; j++) {
+            if ((p->entries[j].device == stat_buf.st_dev) &&
+                (p->entries[j].inode == stat_buf.st_ino)) {
+                keep = FALSE;
+                break;
+            }
+        }
+
+        for (j = 0; keep && (j < n); j++) {
 
             /*
              * determine if the two files are the same by comparing
@@ -754,12 +771,12 @@ void condense_file_list(FileList *l)
 
             if ((stat_buf.st_dev == stat_bufs[j].st_dev) &&
                 (stat_buf.st_ino == stat_bufs[j].st_ino)) {
-                match = TRUE;
+                keep = FALSE;
                 break;
             }
         }
-        
-        if (!match) {
+
+        if (keep) {
             s = (char **) nvrealloc(s, sizeof(char *) * (n + 1));
             s[n] = nvstrdup(l->filename[i]);
             stat_bufs[n] = stat_buf;

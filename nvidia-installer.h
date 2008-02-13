@@ -222,15 +222,21 @@ typedef struct __package_entry {
     unsigned int flags;
     mode_t mode;
 
+    ino_t inode;
+    dev_t device;   /*
+                     * inode of the file after extraction from the
+                     * package; this is needed to compare against the
+                     * files on the user's system that we consider for
+                     * removal, so that symlink loops don't confuse us
+                     * into deleting the files from the package.
+                     */
 } PackageEntry;
 
 
 typedef struct __package {
 
-    int major, minor, patch;
-
     char *description;
-    char *version_string;
+    char *version;
     char *kernel_module_filename;
     char *kernel_interface_filename;
     char *kernel_module_name;
@@ -466,6 +472,14 @@ void log_printf(Options *op, const int wb,
 int  install_from_cwd(Options *op);
 int  add_this_kernel(Options *op);
 
+void add_package_entry(Package *p,
+                       char *file,
+                       char *path,
+                       char *name,
+                       char *target,
+                       char *dst,
+                       unsigned int flags,
+                       mode_t mode);
 /* XXX */
 
 typedef TextRows *(*FormatTextRows)(const char*, const char*, int, int);
