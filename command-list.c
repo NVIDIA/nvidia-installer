@@ -174,6 +174,7 @@ CommandList *build_command_list(Options *op, Package *p)
     /*
      * find any existing files that clash with what we're going to
      * install
+     * DON'T include files of type FILE_TYPE_NEWSYM
      */
     
     find_existing_files(p, l, installable_files | FILE_TYPE_SYMLINK);
@@ -239,7 +240,21 @@ CommandList *build_command_list(Options *op, Package *p)
     /* create any needed symbolic links */
     
     for (i = 0; i < p->num_entries; i++) {
-        if (p->entries[i].flags & FILE_TYPE_SYMLINK) {
+        if ((p->entries[i].flags & FILE_TYPE_SYMLINK) ||
+            (p->entries[i].flags & FILE_TYPE_NEWSYM)) {
+            /* if it's a NEWSYM and the file already exists, don't add a command
+             * for it */
+            if (p->entries[i].flags & FILE_TYPE_NEWSYM) {
+                struct stat buf;
+                if(!stat(p->entries[i].dst, &buf) || errno != ENOENT) {
+                    ui_expert(op, "Not creating a symlink from %s to %s "
+                                  "because a file already exists at that path "
+                                  "or the path is inaccessible.",
+                                  p->entries[i].dst, p->entries[i].target);
+                    continue;
+                }
+            }
+
             add_command(c, SYMLINK_CMD, p->entries[i].dst,
                         p->entries[i].target);
         }

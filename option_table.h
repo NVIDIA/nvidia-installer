@@ -127,18 +127,21 @@ static const NVOption __options[] = {
 
     { "x-module-path", X_MODULE_PATH_OPTION, NVOPT_HAS_ARGUMENT,
       "The path under which the NVIDIA X server modules will be installed.  "
-      "If `pkg-config --variable=moduledir xorg-server` is successful and "
-      "returns a directory that exists, then that is the default; otherwise, "
-      "this value defaults to the X library path (see the '--x-library-path' "
-      "option) plus '" DEFAULT_X_MODULEDIR "' or '" XORG7_DEFAULT_X_MODULEDIR
-      "' if nvidia-installer detects that X.Org >= 7.0 is installed." },
+      "If this option is not specified, nvidia-installer uses the following "
+      "search order and selects the first valid directory it finds: 1) "
+      "`X -showDefaultModulePath`, 2) `pkg-config --variable=moduledir "
+      "xorg-server`, or 3) the X library path (see the '--x-library-path' "
+      "option) plus either '" DEFAULT_X_MODULEDIR "' (for X servers older "
+      "than X.Org 7.0) or '" XORG7_DEFAULT_X_MODULEDIR "' (for X.Org 7.0 or "
+      "later)." },
 
     { "x-library-path", X_LIBRARY_PATH_OPTION, NVOPT_HAS_ARGUMENT,
       "The path under which the NVIDIA X libraries will be installed.  "
-      "If `pkg-config --variable=libdir xorg-server` is successful and "
-      "returns a directory that exists, then that is the default; otherwise, "
-      "this value defaults to the X prefix (see the '--x-prefix' option) "
-      "plus '" DEFAULT_LIBDIR "' on 32bit systems, and '"
+      "If this option is not specified, nvidia-installer uses the following "
+      "search order and selects the first valid directory it finds: 1) "
+      "`X -showDefaultLibPath`, 2) `pkg-config --variable=libdir "
+      "xorg-server`, or 3) the X prefix (see the '--x-prefix' option) "
+      "plus '" DEFAULT_LIBDIR "' on 32bit systems, and either '"
       DEFAULT_64BIT_LIBDIR "' or '" DEFAULT_LIBDIR "' on 64bit systems, "
       "depending on the installed Linux distribution." },
 

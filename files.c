@@ -49,8 +49,7 @@
 
 
 static char *get_xdg_data_dir(void);
-static int   get_x_library_path(Options *op);
-static int   get_x_module_path(Options *op);
+static void  get_x_library_and_module_paths(Options *op);
 
 
 /*
@@ -523,6 +522,7 @@ int set_destinations(Options *op, Package *p)
 
         case FILE_TYPE_XMODULE_SHARED_LIB:
         case FILE_TYPE_XMODULE_SYMLINK:
+        case FILE_TYPE_XMODULE_NEWSYM:
             prefix = op->x_module_path;
             dir = "";
             path = p->entries[i].path;
@@ -752,9 +752,8 @@ int get_prefixes (Options *op)
      * after the default prefixes/paths are assigned.
      */
 
-    if (!get_x_library_path(op) || !get_x_module_path(op)) {
-        return FALSE;
-    }
+    get_x_library_and_module_paths(op);
+    
 
     if (op->expert) {
         ret = ui_get_input(op, op->x_library_path,
@@ -1979,168 +1978,175 @@ static char *get_xdg_data_dir(void)
 
 
 /*
- * get_x_library_path() - assign op->x_library_path if it is not
- * already set.
+ * get_x_paths_helper() - helper function for determining the X
+ * library and module paths; returns 'TRUE' if we had to guess at the
+ * path
  */
 
-static int get_x_library_path(Options *op)
+static int get_x_paths_helper(Options *op,
+                              int library,
+                              char *xserver_cmd,
+                              char *pkg_config_cmd,
+                              char *name,
+                              char **path)
 {
-    char *cmd, *dir = NULL;
-    int ret;
+    char *dir, *cmd;
+    int ret, guessed = 0;
 
     /*
      * if the path was already specified (i.e.: by a command
-     * line option), then we are done.
+     * line option), then we are done with this iteration
      */
-
-    if (op->x_library_path != NULL)
-        return TRUE;
-
-    if (!op->utils[PKG_CONFIG]) {
-        if (op->modular_xorg) {
-            ui_warn(op, "You appear to be using a modular X.Org "
-                    "release, but nvidia-installer could not find the "
-                    "`pkg-config` utility required to determine the "
-                    "correct X library installation path.  Please "
-                    "install the `pkg-config` utility and the X.Org "
-                    "SDK/development package for your distribution.");
-        }
-    } else {
-        /* ask pkg-config */
-
-        cmd = nvstrcat(op->utils[PKG_CONFIG],
-                       " --variable=libdir xorg-server", NULL);
-
-        ret = run_command(op, cmd, &dir, FALSE, 0, TRUE);
-        nvfree(cmd);
-
-        if ((ret != 0) || (dir == NULL)) {
-            if (op->modular_xorg) {
-                ui_warn(op, "You appear to be using a modular X.Org "
-                        "release, but nvidia-installer was unable to "
-                        "determine the correct X library "
-                        "installation path with the `pkg-config` "
-                        "utility.  Please install the X.Org SDK/"
-                        "development package for your distribution.");
+    
+    if (*path != NULL) {
+        return FALSE;
+    }
+    
+    /*
+     * if this is a modular X server, then attempt to determine the
+     * path through the various query mechanisms
+     */
+    
+    if (op->modular_xorg) {
+        
+        /*
+         * first, try the X server commandline option; this is the
+         * recommended query mechanism as of X.Org 7.2
+         */
+        
+        if (op->utils[XSERVER]) {
+                
+            dir = NULL;
+            cmd = nvstrcat(op->utils[XSERVER], " ", xserver_cmd, NULL);
+            ret = run_command(op, cmd, &dir, FALSE, 0, TRUE);
+            nvfree(cmd);
+            
+            if ((ret == 0) && dir) {
+                
+                if (directory_exists(op, dir)) {
+                    
+                    ui_expert(op, "X %s path '%s' determined from `%s %s`",
+                              name, dir, op->utils[XSERVER], xserver_cmd);
+                    
+                    *path = dir;
+                    return FALSE;
+                        
+                } else {
+                    ui_warn(op, "You appear to be using a modular X.Org "
+                            "release, but the X %s installation "
+                            "path reported by `%s %s` does not exist.  "
+                            "Please check your X.Org installation.",
+                            name, op->utils[XSERVER], xserver_cmd);
+                }
             }
-        } else {
-            if (!directory_exists(op, dir) &&
-                op->modular_xorg) {
-                ui_warn(op, "You appear to be using a modular X.Org "
-                        "release, but the X library installation "
-                        "path reported by `pkg-config "
-                        "--variable=libdir xorg-server` does "
-                        "not exist.  Please check your X.Org installation.");
-            } else {
-                op->x_library_path = dir;
-                return TRUE;
-            }
+            
+            nvfree(dir);
         }
         
-        nvfree(dir);
+        /*
+         * then, try the pkg-config command; this was the the
+         * pseudo-recommended query mechanism between X.Org 7.0 and
+         * X.Org 7.2
+         */
+        
+        if (op->utils[PKG_CONFIG]) {
+            
+            dir = NULL;
+            cmd = nvstrcat(op->utils[PKG_CONFIG], " ",
+                           pkg_config_cmd, NULL);
+            ret = run_command(op, cmd, &dir, FALSE, 0, TRUE);
+            nvfree(cmd);
+            
+            if ((ret == 0) && dir) {
+                
+                if (directory_exists(op, dir)) {
+                    
+                    ui_expert(op, "X %s path '%s' determined from `%s %s`",
+                              name, dir, op->utils[PKG_CONFIG],
+                              pkg_config_cmd);
+                    
+                    *path = dir;
+                    return FALSE;
+                        
+                } else {
+                    ui_warn(op, "You appear to be using a modular X.Org "
+                            "release, but the X %s installation "
+                            "path reported by `%s %s` does not exist.  "
+                            "Please check your X.Org installation.",
+                            name, op->utils[PKG_CONFIG], pkg_config_cmd);
+                }
+            }
+            
+            nvfree(dir);
+        }
+        
+        /*
+         * neither of the above mechanisms yielded a usable path; fall
+         * through to constructing the path by hand; record that we
+         * have to guess the path so that we can print a warning when
+         * we are done
+         */
+            
+        guessed = TRUE;
     }
-
-    /* build the X library path */
-
-    op->x_library_path = nvstrcat(op->x_prefix, "/", op->x_libdir, NULL);
-
-    remove_trailing_slashes(op->x_library_path);
-    collapse_multiple_slashes(op->x_library_path);
-
-    if (op->modular_xorg) {
-        ui_warn(op, "nvidia-installer was unable to determine the "
-                "correct X library installation path and will "
-                "install the NVIDIA X libraries to '%s'.",
-                op->x_library_path);
+    
+    
+    /* build the path */
+    
+    if (library) {
+        *path = nvstrcat(op->x_prefix, "/", op->x_libdir, NULL);
+    } else {
+        *path = nvstrcat(op->x_library_path, "/", op->x_moddir, NULL);
     }
-
-    return TRUE;
-
-} /* get_x_library_path() */
+    
+    remove_trailing_slashes(*path);
+    collapse_multiple_slashes(*path);
+    
+    return guessed;
+}
 
 
 /*
- * get_x_module_path() - assign op->x_module_path if it is not
- * already set.
+ * get_x_library_and_module_paths() - assign op->x_library_path and
+ * op->x_module_path; this cannot fail.
  */
 
-static int get_x_module_path(Options *op)
+static void get_x_library_and_module_paths(Options *op)
 {
-    char *cmd, *dir = NULL;
-    int ret;
-
+    int guessed = FALSE;
+    
     /*
-     * if the path was already specified (ie: by a commandline
-     * option), then we are done
+     * get the library path, and then get the module path; note that
+     * the module path depends on already having the library path
      */
-
-    if (op->x_module_path) {
-        return TRUE;
-    }
-
-    if (!op->utils[PKG_CONFIG]) {
-        if (op->modular_xorg) {
-            ui_warn(op, "You appear to be using a modular X.Org "
-                    "release, but nvidia-installer could not find the "
-                    "`pkg-config` utility required to determine the "
-                    "correct X module installation path.  Please "
-                    "install the `pkg-config` utility and the X.Org "
-                    "SDK/development package for your distribution.");
-        }
-    } else {
-        /* ask pkg-config */
-
-        cmd = nvstrcat(op->utils[PKG_CONFIG],
-                       " --variable=moduledir xorg-server",
-                       NULL);
-
-        ret = run_command(op, cmd, &dir, FALSE, 0, TRUE);
-        nvfree(cmd);
-
-        if ((ret != 0) || (dir == NULL)) {
-            if (op->modular_xorg) {
-                ui_warn(op, "You appear to be using a modular X.Org "
-                        "release, but nvidia-installer was unable to "
-                        "determine the correct X module "
-                        "installation path with the `pkg-config` "
-                        "utility.  Please install the X.Org SDK/"
-                        "development package for your distribution.");
-            }
-        } else {
-            if (!directory_exists(op, dir) &&
-                op->modular_xorg) {
-                ui_warn(op, "You appear to be using a modular X.Org "
-                        "release, but the X module installation "
-                        "path reported by `pkg-config "
-                        "--variable=moduledir xorg-server` does "
-                        "not exist.  Please check your X.Org installation.");
-            } else {
-                op->x_module_path = dir;
-                return TRUE;
-            }
-        }
-        
-        nvfree(dir);
-    }
-
-    /* build the X module path */
-
-    op->x_module_path =
-        nvstrcat(op->x_library_path, "/", op->x_moddir, NULL);
-
-    remove_trailing_slashes(op->x_module_path);
-    collapse_multiple_slashes(op->x_module_path);
-
-    if (op->modular_xorg) {
-        ui_warn(op, "nvidia-installer was unable to determine the "
-                "correct X module installation path and will "
-                "install the NVIDIA X driver components to '%s'.  "
-                "If X fails to find the NVIDIA X driver module, "
-                "please correct any `pkg-config` problems warned "
-                "about earlier and reinstall the driver.",
-                op->x_module_path);
+    
+    guessed |= get_x_paths_helper(op,
+                                  TRUE,
+                                  "-showDefaultLibPath",
+                                  "--variable=libdir xorg-server",
+                                  "library",
+                                  &op->x_library_path);
+    
+    guessed |= get_x_paths_helper(op,
+                                  FALSE,
+                                  "-showDefaultModulePath",
+                                  "--variable=moduledir xorg-server",
+                                  "module",
+                                  &op->x_module_path);
+    
+    /*
+     * done assigning op->x_library_path and op->x_module_path; if we
+     * had to guess at either of the paths, print a warning
+     */
+    
+    if (guessed) {
+        ui_warn(op, "nvidia-installer was forced to guess the X library "
+                "path '%s' and X module path '%s'; these paths were not "
+                "queryable from the system.  If X fails to find the "
+                "NVIDIA X driver module, please install the `pkg-config` "
+                "utility and the X.Org SDK/development package for your "
+                "distribution and reinstall the driver.",
+                op->x_library_path, op->x_module_path);
     }
     
-    return TRUE;
-
-} /* get_x_module_path() */
+} /* get_x_library_and_module_paths() */

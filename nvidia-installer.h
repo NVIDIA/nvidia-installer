@@ -302,7 +302,9 @@ typedef struct {
 #define FILE_TYPE_UTILITY_SYMLINK    0x00020000
 #define FILE_TYPE_XMODULE_SHARED_LIB 0x00040000
 #define FILE_TYPE_XMODULE_SYMLINK    0x00080000
-#define FILE_TYPE_MANPAGE            0x00100000
+/* Create a symlink only if the file doesn't exist */
+#define FILE_TYPE_XMODULE_NEWSYM     0x00100000
+#define FILE_TYPE_MANPAGE            0x00200000
 
 /* file class: this is used to distinguish OpenGL libraries */
 
@@ -334,6 +336,7 @@ typedef struct {
 
 #define FILE_TYPE_HAVE_PATH        (FILE_TYPE_XMODULE_LIB        | \
                                     FILE_TYPE_XMODULE_SYMLINK    | \
+                                    FILE_TYPE_XMODULE_NEWSYM     | \
                                     FILE_TYPE_MANPAGE            | \
                                     FILE_TYPE_OPENGL_HEADER      | \
                                     FILE_TYPE_TLS_LIB            | \
@@ -355,6 +358,11 @@ typedef struct {
                                     FILE_TYPE_TLS_SYMLINK        | \
                                     FILE_TYPE_XMODULE_SYMLINK    | \
                                     FILE_TYPE_UTILITY_SYMLINK)
+
+#define FILE_TYPE_NEWSYM           (FILE_TYPE_XMODULE_NEWSYM)
+
+#define FILE_TYPE_HAVE_TARGET      (FILE_TYPE_SYMLINK            | \
+                                    FILE_TYPE_NEWSYM)
 
 #define FILE_TYPE_RTLD_CHECKED     (FILE_TYPE_OPENGL_LIB         | \
                                     FILE_TYPE_TLS_LIB)
