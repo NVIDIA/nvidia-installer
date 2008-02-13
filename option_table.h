@@ -13,6 +13,7 @@ typedef struct {
 enum {
     XFREE86_PREFIX_OPTION = 1,
     OPENGL_PREFIX_OPTION,
+    OPENGL_LIBDIR_OPTION,
     KERNEL_INCLUDE_PATH_OPTION,
     KERNEL_INSTALL_PATH_OPTION,
     UNINSTALL_OPTION,
@@ -27,6 +28,7 @@ enum {
     SANITY_OPTION,
     ADVANCED_OPTIONS_ARGS_ONLY_OPTION,
     UTILITY_PREFIX_OPTION,
+    UTILITY_LIBDIR_OPTION,
     ADD_THIS_KERNEL_OPTION,
     RPM_FILE_LIST_OPTION,
     NO_RUNLEVEL_CHECK_OPTION,
@@ -38,11 +40,15 @@ enum {
     KERNEL_OUTPUT_PATH_OPTION,
     NO_RECURSION_OPTION,
     FORCE_TLS_COMPAT32_OPTION,
+    COMPAT32_CHROOT_OPTION,
     COMPAT32_PREFIX_OPTION,
+    COMPAT32_LIBDIR_OPTION,
     UPDATE_OPTION,
     FORCE_SELINUX_OPTION,
     NO_SIGWINCH_WORKAROUND_OPTION,
     X_MODULE_PATH_OPTION,
+    DOCUMENTATION_PREFIX_OPTION,
+    X_LIBRARY_PATH_OPTION,
     NO_KERNEL_MODULE_OPTION
 };
 
@@ -109,9 +115,10 @@ static const NVOption __options[] = {
 
     { "x-prefix", X_PREFIX_OPTION, NVOPT_HAS_ARGUMENT,
       "The prefix under which the X components of the "
-      "NVIDIA driver will be installed; the default is: '"
-      DEFAULT_XFREE86_INSTALLATION_PREFIX
-      "'.  Only under rare circumstances should this option be used." },
+      "NVIDIA driver will be installed; the default is '" DEFAULT_X_PREFIX
+      "' unless nvidia-installer detects that Xorg >= 7.0 is installed, "
+      "in which case the default is '" XORG7_DEFAULT_X_PREFIX "'.  Only "
+      "under rare circumstances should this option be used." },
 
     { "xfree86-prefix", XFREE86_PREFIX_OPTION, NVOPT_HAS_ARGUMENT,
       "This is a deprecated synonym for --x-prefix." },
@@ -120,37 +127,80 @@ static const NVOption __options[] = {
       "The path under which the NVIDIA X server modules will be installed.  "
       "If `pkg-config --variable=moduledir xorg-server` is successful and "
       "returns a directory that exists, then that is the default; otherwise, "
-      "this value defaults to the X prefix (which defaults to '"
-      DEFAULT_XFREE86_INSTALLATION_PREFIX "', but can be overridden with the "
-      "'--x-prefix' option) plus \"lib/modules\"." },
+      "this value defaults to the X library path (see the '--x-library-path' "
+      "option) plus '" DEFAULT_X_MODULEDIR "' or '" XORG7_DEFAULT_X_MODULEDIR
+      "' if nvidia-installer detects that Xorg >= 7.0 is installed." },
+
+    { "x-library-path", X_LIBRARY_PATH_OPTION, NVOPT_HAS_ARGUMENT,
+      "The path under which the NVIDIA X libraries will be installed.  "
+      "If `pkg-config --variable=libdir xorg-server` is successful and "
+      "returns a directory that exists, then that is the default; otherwise, "
+      "this value defaults to the X prefix (see the '--x-prefix' option) "
+      "plus '" DEFAULT_LIBDIR "' on 32bit systems, and '"
+      DEFAULT_64BIT_LIBDIR "' or '" DEFAULT_LIBDIR "' on 64bit systems, "
+      "depending on the installed Linux distribution." },
 
     { "opengl-prefix", OPENGL_PREFIX_OPTION, NVOPT_HAS_ARGUMENT,
       "The prefix under which the OpenGL components of the "
-      "NVIDIA driver will be installed; the default is: '"
-      DEFAULT_OPENGL_INSTALLATION_PREFIX
+      "NVIDIA driver will be installed; the default is: '" DEFAULT_OPENGL_PREFIX
       "'.  Only under rare circumstances should this option be used.  "
       "The Linux OpenGL ABI (http://oss.sgi.com/projects/ogl-sample/ABI/) "
       "mandates this default value." },
 
+    { "opengl-libdir", OPENGL_LIBDIR_OPTION, NVOPT_HAS_ARGUMENT,
+      "The path relative to the OpenGL library installation prefix under "
+      "which the NVIDIA OpenGL components will be installed.  The "
+      "default is '" DEFAULT_LIBDIR "' on 32bit systems, and '"
+      DEFAULT_64BIT_LIBDIR "' or '" DEFAULT_LIBDIR "' on 64bit systems, "
+      "depending on the installed Linux distribution.  Only under very rare "
+      "circumstances should this option be used." },
+
 #if defined(NV_X86_64)
+    { "compat32-chroot", COMPAT32_CHROOT_OPTION, NVOPT_HAS_ARGUMENT,
+      "The top-level prefix (chroot) relative to which the 32bit "
+      "compatibility OpenGL libraries will be installed on Linux/x86-64 "
+      "systems; this option is unset by default, the 32bit OpenGL "
+      "library installation prefix (see below) and the 32bit library "
+      "path alone determine the target location.  Only under very rare "
+      "circumstances should this option be used." },
+
     { "compat32-prefix", COMPAT32_PREFIX_OPTION, NVOPT_HAS_ARGUMENT,
-      "The path relative to which the 32bit compatibility "
-      "libraries will be installed on x86-64 systems; this option "
-      "is unset by default, the OpenGL prefix alone determines "
-      "the target location.  Only under very rare circumstances "
-      "should this option need to be used." },
+      "The prefix under which the 32bit compatibility OpenGL components "
+      "of the NVIDIA driver will be installed; the default is: '"
+      DEFAULT_OPENGL_PREFIX "'.  Only under rare circumstances should "
+      "this option be used." },
+
+    { "compat32-libdir", COMPAT32_LIBDIR_OPTION, NVOPT_HAS_ARGUMENT,
+      "The path relative to the 32bit compatibility prefix under which the "
+      "32bit compatibility OpenGL components of the NVIDIA driver will "
+      "be installed.  The default is '" DEFAULT_LIBDIR "' or '"
+      UBUNTU_DEFAULT_COMPAT32_LIBDIR "', depending on the installed Linux "
+      "distribution.  Only under very rare circumstances should this "
+      "option be used." },
 #endif /* NV_X86_64 */
 
     { "installer-prefix", INSTALLER_PREFIX_OPTION, NVOPT_HAS_ARGUMENT,
       "The prefix under which the installer binary will be "
-      "installed; the default is: '" DEFAULT_INSTALLER_INSTALLATION_PREFIX
-      "'.  Note: use the \"--utility-prefix\" option instead." },
+      "installed; the default is: '" DEFAULT_UTILITY_PREFIX "'.  Note: please "
+      "use the '--utility-prefix' option instead." },
 
     { "utility-prefix", UTILITY_PREFIX_OPTION, NVOPT_HAS_ARGUMENT,
-      "The prefix under which the various NVIDIA utilities "
-      "(nvidia-installer, nvidia-settings, nvidia-xconfig, "
-      "nvidia-bug-report.sh) will be installed; the default is: '"
-      DEFAULT_UTILITY_INSTALLATION_PREFIX "'." },
+      "The prefix under which the NVIDIA utilities (nvidia-installer, "
+      "nvidia-settings, nvidia-xconfig, nvidia-bug-report.sh) and the NVIDIA "
+      "utility libraries will be installed; the default is: '"
+      DEFAULT_UTILITY_PREFIX "'." },
+
+    { "utility-libdir", UTILITY_LIBDIR_OPTION, NVOPT_HAS_ARGUMENT,
+      "The path relative to the utility installation prefix under which the "
+      "NVIDIA utility libraries will be installed.  The default is '"
+      DEFAULT_LIBDIR "' on 32bit systems, and '" DEFAULT_64BIT_LIBDIR
+      "' or '" DEFAULT_LIBDIR "' on 64bit " "systems, depending on the "
+      "installed Linux distribution." },
+
+    { "documentation-prefix", DOCUMENTATION_PREFIX_OPTION, NVOPT_HAS_ARGUMENT,
+      "The prefix under which the documentation files for the NVIDIA "
+      "driver will be installed.  The default is: '"
+      DEFAULT_DOCUMENTATION_PREFIX "'." },
 
     { "kernel-include-path", KERNEL_INCLUDE_PATH_OPTION, NVOPT_HAS_ARGUMENT,
       "The directory containing the kernel include files that "
@@ -236,11 +286,10 @@ static const NVOption __options[] = {
       "different thread local storage (TLS) mechanisms: 'classic tls' "
       "which is used on systems with glibc 2.2 or older, and 'new tls' "
       "which is used on systems with tls-enabled glibc 2.3 or newer.  "
-      "The nvidia-installer will select the OpenGL "
-      "libraries appropriate for your system; however, you may use "
-      "this option to force the installer to install one library "
-      "type or another.  Valid values for [FORCE-TLS] are 'new' and "
-      "'classic'." },
+      "nvidia-installer will select the OpenGL libraries appropriate "
+      "for your system; however, you may use this option to force the "
+      "installer to install one library type or another.  Valid values "
+      "for [FORCE-TLS] are 'new' and 'classic'." },
 
 #if defined(NV_X86_64)
     { "force-tls-compat32", FORCE_TLS_COMPAT32_OPTION, NVOPT_HAS_ARGUMENT,

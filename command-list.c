@@ -99,65 +99,71 @@ CommandList *build_command_list(Options *op, Package *p)
     l = (FileList *) nvalloc(sizeof(FileList));
     c = (CommandList *) nvalloc(sizeof(CommandList));
 
-    /* find any possible conflicting libraries */
+    /* find any possibly conflicting libraries and/or modules */
     
     if (!op->kernel_module_only) {
-
-        if (!is_symbolic_link_to(DEFAULT_XFREE86_INSTALLATION_PREFIX,
-                       DEFAULT_OPENGL_INSTALLATION_PREFIX)
-                && !is_symbolic_link_to(DEFAULT_XFREE86_INSTALLATION_PREFIX,
-                               op->opengl_prefix)) {
-            find_conflicting_xfree86_libraries
-                (op, DEFAULT_XFREE86_INSTALLATION_PREFIX, l);
-        }
-    
-        if (strcmp(DEFAULT_XFREE86_INSTALLATION_PREFIX,
-                   op->xfree86_prefix) != 0) {
-            if (!is_symbolic_link_to(op->xfree86_prefix,
-                            DEFAULT_OPENGL_INSTALLATION_PREFIX)
-                    && !is_symbolic_link_to(op->xfree86_prefix, op->opengl_prefix))
-                find_conflicting_xfree86_libraries(op, op->xfree86_prefix, l);
-        }
-
         /*
-         * Note that searching op->x_module_path may produce
-         * duplicates of conflicting files we found above; this is OK
-         * because condense_file_list() will remove any duplicates.
+         * Note that searching the various paths may produce duplicate
+         * entries for conflicting files; this is OK because we will take
+         * care of these duplicates in condense_file_list().
          */
-        
+
+        ui_status_begin(op, "Searching for conflicting X files:", "Searching");
+
+        ui_status_update(op, 0.16f, DEFAULT_X_PREFIX);
+        find_conflicting_xfree86_libraries(op, DEFAULT_X_PREFIX, l);
+        ui_status_update(op, 0.32f, XORG7_DEFAULT_X_PREFIX);
+        find_conflicting_xfree86_libraries(op, XORG7_DEFAULT_X_PREFIX, l);
+        ui_status_update(op, 0.48f, op->x_prefix);
+        find_conflicting_xfree86_libraries(op, op->x_prefix, l);
+
+        ui_status_update(op, 0.64f, op->x_module_path);
         find_conflicting_xfree86_libraries_fullpath(op, op->x_module_path, l);
-        
-        find_conflicting_opengl_libraries
-            (op, DEFAULT_OPENGL_INSTALLATION_PREFIX, l);
-    
-        if (strcmp(DEFAULT_OPENGL_INSTALLATION_PREFIX, op->opengl_prefix) != 0)
-            find_conflicting_opengl_libraries(op, op->opengl_prefix, l);
+        ui_status_update(op, 0.80f, op->x_library_path);
+        find_conflicting_xfree86_libraries_fullpath(op, op->x_library_path, l);
+
+        ui_status_end(op, "done.");
+
+        ui_status_begin(op, "Searching for conflicting OpenGL files:", "Searching");
+
+        ui_status_update(op, 0.20f, DEFAULT_X_PREFIX);
+        find_conflicting_opengl_libraries(op, DEFAULT_X_PREFIX, l);
+        ui_status_update(op, 0.40f, op->x_prefix);
+        find_conflicting_opengl_libraries(op, op->x_prefix, l);
+        ui_status_update(op, 0.60f, DEFAULT_OPENGL_PREFIX);
+        find_conflicting_opengl_libraries(op, DEFAULT_OPENGL_PREFIX, l);
+        ui_status_update(op, 0.80f, op->opengl_prefix);
+        find_conflicting_opengl_libraries(op, op->opengl_prefix, l);
+
+        ui_status_end(op, "done.");
 
 #if defined(NV_X86_64)
-        if (op->compat32_prefix != NULL) {
-            char *prefix = nvstrcat(op->compat32_prefix,
-                                    DEFAULT_OPENGL_INSTALLATION_PREFIX, NULL);
+        if (op->compat32_chroot != NULL) {
+            char *prefix;
+
+            ui_status_begin(op, "Searching for conflicting compat32 files:", "Searching");
+
+            prefix = nvstrcat(op->compat32_chroot, DEFAULT_X_PREFIX, NULL);
+            ui_status_update(op, 0.20f, prefix);
             find_conflicting_opengl_libraries(op, prefix, l);
             nvfree(prefix);
 
-            if (strcmp(DEFAULT_OPENGL_INSTALLATION_PREFIX,
-                op->opengl_prefix) != 0) {
-                prefix = nvstrcat(op->compat32_prefix, op->opengl_prefix, NULL);
-                find_conflicting_opengl_libraries(op, prefix, l);
-                nvfree(prefix);
-            }
-
-            prefix = nvstrcat(op->compat32_prefix,
-                              DEFAULT_XFREE86_INSTALLATION_PREFIX, NULL);
+            prefix = nvstrcat(op->compat32_chroot, op->x_prefix, NULL);
+            ui_status_update(op, 0.40f, prefix);
             find_conflicting_opengl_libraries(op, prefix, l);
             nvfree(prefix);
 
-            if (strcmp(DEFAULT_XFREE86_INSTALLATION_PREFIX,
-                op->xfree86_prefix) != 0) {
-                prefix = nvstrcat(op->compat32_prefix, op->xfree86_prefix, NULL);
-                find_conflicting_opengl_libraries(op, prefix, l);
-                nvfree(prefix);
-            }
+            prefix = nvstrcat(op->compat32_chroot, DEFAULT_OPENGL_PREFIX, NULL);
+            ui_status_update(op, 0.60f, prefix);
+            find_conflicting_opengl_libraries(op, prefix, l);
+            nvfree(prefix);
+
+            prefix = nvstrcat(op->compat32_chroot, op->compat32_prefix, NULL);
+            ui_status_update(op, 0.80f, prefix);
+            find_conflicting_opengl_libraries(op, prefix, l);
+            nvfree(prefix);
+
+            ui_status_end(op, "done.");
         }
 #endif /* NV_X86_64 */
     }
@@ -220,7 +226,8 @@ CommandList *build_command_list(Options *op, Package *p)
         }
         
         if (op->selinux_enabled && 
-            (p->entries[i].flags & FILE_TYPE_SHARED_LIB)) {
+            ((p->entries[i].flags & FILE_TYPE_SHARED_LIB) ||
+             (p->entries[i].flags & FILE_TYPE_XMODULE_SHARED_LIB))) {
             tmp = nvstrcat(op->utils[CHCON], " -t shlib_t ", p->entries[i].dst, 
                            NULL);
             add_command(c, RUN_CMD, tmp);
@@ -465,6 +472,7 @@ static ConflictingFileInfo __xfree86_libs[] = {
     { "libglx.",        7  /* strlen("libglx.") */       },
     { "libXvMCNVIDIA",  13 /* strlen("libXvMCNVIDIA") */ },
     { "libnvidia-cfg.", 14 /* strlen("libnvidia-cfg.") */ },
+    { "nvidia_drv.",    11 /* strlen("nvidia_drv.") */   },
     { NULL, 0 }
 };
 

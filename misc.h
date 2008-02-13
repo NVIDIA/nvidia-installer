@@ -102,7 +102,7 @@ int find_system_utils(Options *op);
 int find_module_utils(Options *op);
 int check_selinux(Options *op);
 int check_proc_modprobe_path(Options *op);
-int check_development_tools(Options *op);
+int check_development_tools(Options *op, Package *p);
 int nvid_version (const char *str, int *major, int *minor, int *patch);
 int continue_after_error(Options *op, const char *fmt, ...);
 int do_install(Options *op, Package *p, CommandList *c);
@@ -116,6 +116,7 @@ void collapse_multiple_slashes(char *s);
 int is_symbolic_link_to(const char *path, const char *dest);
 Distribution get_distribution(Options *op);
 int check_for_running_x(Options *op);
+int check_for_modular_xorg(Options *op);
 int check_for_nvidia_graphics_devices(Options *op, Package *p);
 int run_nvidia_xconfig(Options *op);
 

@@ -344,18 +344,18 @@ static int install_kernel_module(Options *op,  Package *p)
 
     } else {
         /*
+         * make sure the required development tools are present on
+         * this system before attempting to verify the compiler and
+         * trying to build a custom kernel interface.
+         */
+        if (!check_development_tools(op, p)) return FALSE;
+
+        /*
          * make sure that the selected or default system compiler
          * is compatible with the target kernel; the user may choose
          * to override the check.
          */
         if (!check_cc_version(op, p)) return FALSE;
-
-        /*
-         * make sure the required development tools are present on
-         * this system before attempting to verify the compiler and
-         * trying to build a custom kernel interface.
-         */
-        if (!check_development_tools(op)) return FALSE;
 
         /*
          * we do not have a prebuilt kernel interface; thus we'll need
@@ -635,6 +635,8 @@ static Package *parse_manifest (Options *op)
                 p->entries[n].flags |= FILE_TYPE_UTILITY_LIB;
             else if (strcmp(flag, "DOCUMENTATION") == 0)
                 p->entries[n].flags |= FILE_TYPE_DOCUMENTATION;
+            else if (strcmp(flag, "MANPAGE") == 0)
+                p->entries[n].flags |= FILE_TYPE_MANPAGE;
             else if (strcmp(flag, "OPENGL_SYMLINK") == 0)
                 p->entries[n].flags |= FILE_TYPE_OPENGL_SYMLINK;
             else if (strcmp(flag, "XLIB_SYMLINK") == 0)

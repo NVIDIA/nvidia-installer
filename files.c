@@ -48,7 +48,9 @@
 #include "precompiled.h"
 
 
-static int get_x_module_path(Options *op);
+static char *get_xdg_data_dir(void);
+static int   get_x_library_path(Options *op);
+static int   get_x_module_path(Options *op);
 
 
 /*
@@ -482,65 +484,13 @@ void select_tls_class(Options *op, Package *p)
 
 int set_destinations(Options *op, Package *p)
 {
-    char *prefix, *path, *name, *s;
+    char *name, *s;
+    char *prefix, *dir, *path;
     char *xdg_data_dir;
     int i;
     s = NULL;
     
     for (i = 0; i < p->num_entries; i++) {
-
-#if defined(NV_X86_64)
-        if (p->entries[i].flags & FILE_TYPE_HAVE_PATH) {
-            if ((op->distro == DEBIAN || op->distro == UBUNTU) &&
-                (s = strstr(p->entries[i].path, "lib64"))) {
-                /*
-                 * XXX Debian GNU/Linux for Linux/x86-64 doesn't follow
-                 * the "lib64" convention used by other distributors.
-                 * The 64-bit libraries are installed in ../lib. Ubuntu
-                 * Linux inherited this layout.
-                 */
-
-                /*
-                 * The default 64-bit destination path is ../lib64.
-                 * Get the length of the string following "lib64", then
-                 * move this remainder over the "64".
-                 */
-                int j, len = strlen(s+5);
-                for (j = 0; j <= len; j++) s[j+3] = s[j+5];
-
-            } else if (((op->distro == UBUNTU) ||
-                        (op->distro == GENTOO)) &&
-                       (p->entries[i].flags & FILE_CLASS_COMPAT32) &&
-                       (s = strstr(p->entries[i].path, "lib"))) {
-                /*
-                 * XXX Ubuntu for Linux/x86-64 doesn't follow the "lib"
-                 * convention used by other distributors; the 32-bit
-                 * libraries are installed in ../lib32, instead. Patch
-                 * up the destination path accordingly.
-                 *
-                 * Sadly, the same thing is also true for Gentoo Linux.
-                 */
-
-                /*
-                 * The default 32-bit destination path is ../lib.
-                 * If this entry's path ends with "lib", go ahead and
-                 * replace it with ../lib32, else replace the "lib"
-                 * in the path with "lib32".
-                 */
-                if (*(s+3) == '\0') {
-                    path = p->entries[i].path;
-                    p->entries[i].path = nvstrcat(path, "32", NULL);
-                    free(path);
-                } else if ((s+4) != NULL) {
-                    *(s+3) = '\0';
-                    path = p->entries[i].path;
-                    p->entries[i].path = nvstrcat(path, "32/", s+4, NULL);
-                    free(path);
-                } else
-                    p->entries[i].dst = NULL;
-            }
-        }
-#endif /* NV_X86_64 */
 
         switch (p->entries[i].flags & FILE_TYPE_MASK) {
             
@@ -554,39 +504,59 @@ int set_destinations(Options *op, Package *p)
             
         case FILE_TYPE_OPENGL_LIB:
         case FILE_TYPE_OPENGL_SYMLINK:
-            prefix = op->opengl_prefix;
-            path = p->entries[i].path;
+            if (p->entries[i].flags & FILE_CLASS_COMPAT32) {
+                prefix = op->compat32_prefix;
+                dir = op->compat32_libdir;
+            } else {
+                prefix = op->opengl_prefix;
+                dir = op->opengl_libdir;
+            }
+            path = "";
             break;
             
         case FILE_TYPE_XLIB_SHARED_LIB:
         case FILE_TYPE_XLIB_STATIC_LIB:
         case FILE_TYPE_XLIB_SYMLINK:
-            prefix = op->xfree86_prefix;
-            path = p->entries[i].path;
+            prefix = op->x_library_path;
+            dir = path = "";
             break;
 
         case FILE_TYPE_XMODULE_SHARED_LIB:
         case FILE_TYPE_XMODULE_STATIC_LIB:
         case FILE_TYPE_XMODULE_SYMLINK:
             prefix = op->x_module_path;
+            dir = "";
             path = p->entries[i].path;
             break;
 
         case FILE_TYPE_TLS_LIB:
         case FILE_TYPE_TLS_SYMLINK:
-            prefix = op->opengl_prefix;
+            if (p->entries[i].flags & FILE_CLASS_COMPAT32) {
+                prefix = op->compat32_prefix;
+                dir = op->compat32_libdir;
+            } else {
+                prefix = op->opengl_prefix;
+                dir = op->opengl_libdir;
+            }
             path = p->entries[i].path;
             break;
 
         case FILE_TYPE_UTILITY_LIB:
         case FILE_TYPE_UTILITY_SYMLINK:
             prefix = op->utility_prefix;
-            path = p->entries[i].path;
+            dir = op->utility_libdir;
+            path = "";
             break;
 
         case FILE_TYPE_LIBGL_LA:
-            prefix = op->opengl_prefix;
-            path = p->entries[i].path;
+            if (p->entries[i].flags & FILE_CLASS_COMPAT32) {
+                prefix = op->compat32_prefix;
+                dir = op->compat32_libdir;
+            } else {
+                prefix = op->opengl_prefix;
+                dir = op->opengl_libdir;
+            }
+            path = "";
             break;
 
             /*
@@ -598,40 +568,44 @@ int set_destinations(Options *op, Package *p)
 
         case FILE_TYPE_OPENGL_HEADER:
             prefix = op->opengl_prefix;
-            path = OPENGL_HEADER_DST_PATH;
-            break;
-            
-        case FILE_TYPE_DOCUMENTATION:
-            prefix = op->opengl_prefix;
+            dir = op->opengl_incdir;
             path = p->entries[i].path;
             break;
         
         case FILE_TYPE_INSTALLER_BINARY:
-            prefix = op->installer_prefix;
-            path = INSTALLER_BINARY_DST_PATH;
+            prefix = op->utility_prefix;
+            dir = op->utility_bindir;
+            path = "";
             break;
             
+        case FILE_TYPE_DOCUMENTATION:
+            prefix = op->documentation_prefix;
+            dir = op->documentation_docdir;
+            path = p->entries[i].path;
+            break;
+
+        case FILE_TYPE_MANPAGE:
+            prefix = op->documentation_prefix;
+            dir = op->documentation_mandir;
+            path = p->entries[i].path;
+            break;
+
         case FILE_TYPE_UTILITY_BINARY:
             prefix = op->utility_prefix;
-            path = UTILITY_BINARY_DST_PATH;
+            dir = op->utility_bindir;
+            path = "";
             break;
 
         case FILE_TYPE_DOT_DESKTOP:
-            /*
-             * If XDG_DATA_DIRS is set, then derive the installation path
-             * from the first entry; complies with:
-             *   http://www.freedesktop.org/Standards/basedir-spec
-             */
-            xdg_data_dir = getenv("XDG_DATA_DIRS");
-            if (xdg_data_dir) xdg_data_dir = nvstrdup(strtok(xdg_data_dir, ":"));
-
-            if (xdg_data_dir != NULL) {
+            xdg_data_dir = get_xdg_data_dir();
+            if (xdg_data_dir) {
                 prefix = xdg_data_dir;
-                path = nvstrdup("applications");
+                dir = nvstrdup("applications");
             } else {
-                prefix = op->opengl_prefix;
-                path = DOT_DESKTOP_DST_PATH;
+                prefix = op->utility_prefix;
+                dir = op->dot_desktopdir;
             }
+            path = "";
             break;
 
         case FILE_TYPE_KERNEL_MODULE:
@@ -653,14 +627,20 @@ int set_destinations(Options *op, Package *p)
             p->entries[i].dst = NULL;
             continue;
         }
+
+        if ((prefix == NULL) || (dir == NULL) || (path == NULL)) {
+            p->entries[i].dst = NULL;
+            continue;
+        }
         
         name = p->entries[i].name;
 
-        p->entries[i].dst = nvstrcat(prefix, "/", path, "/", name, NULL);
+        p->entries[i].dst = nvstrcat(prefix, "/", dir, "/", path, "/", name, NULL);
+        collapse_multiple_slashes(p->entries[i].dst);
 
 #if defined(NV_X86_64)
         if ((p->entries[i].flags & FILE_CLASS_COMPAT32) &&
-            (op->compat32_prefix != NULL)) {
+            (op->compat32_chroot != NULL)) {
 
             /*
              * prepend an additional prefix; this is currently only
@@ -669,7 +649,7 @@ int set_destinations(Options *op, Package *p)
              */
 
             char *dst = p->entries[i].dst;
-            p->entries[i].dst = nvstrcat(op->compat32_prefix, dst, NULL);
+            p->entries[i].dst = nvstrcat(op->compat32_chroot, dst, NULL);
 
             nvfree(dst);
         }
@@ -755,27 +735,41 @@ int get_prefixes (Options *op)
     char *ret;
  
     if (op->expert) {
-        ret = ui_get_input(op, op->xfree86_prefix,
+        ret = ui_get_input(op, op->x_prefix,
                            "X installation prefix (only under "
                            "rare circumstances should this be changed "
                            "from the default)");
         if (ret && ret[0]) {
-            op->xfree86_prefix = ret; 
-            if (!confirm_path(op, op->xfree86_prefix)) return FALSE;
+            op->x_prefix = ret; 
+            if (!confirm_path(op, op->x_prefix)) return FALSE;
         }
     }
 
-    remove_trailing_slashes(op->xfree86_prefix);
-    ui_expert(op, "X installation prefix is: '%s'", op->xfree86_prefix);
+    remove_trailing_slashes(op->x_prefix);
+    ui_expert(op, "X installation prefix is: '%s'", op->x_prefix);
     
     /*
-     * assign the X module path; this must be done after
-     * op->xfree86_prefix is assigned
+     * assign the X module and library paths; this must be done
+     * after the default prefixes/paths are assigned.
      */
 
-    if (!get_x_module_path(op)) {
+    if (!get_x_library_path(op) || !get_x_module_path(op)) {
         return FALSE;
     }
+
+    if (op->expert) {
+        ret = ui_get_input(op, op->x_library_path,
+                           "X library installation path (only under "
+                           "rare circumstances should this be changed "
+                           "from the default)");
+        if (ret && ret[0]) {
+            op->x_library_path = ret; 
+            if (!confirm_path(op, op->x_library_path)) return FALSE;
+        }
+    }
+
+    remove_trailing_slashes(op->x_library_path);
+    ui_expert(op, "X library installation path is: '%s'", op->x_library_path);
 
     if (op->expert) {
         ret = ui_get_input(op, op->x_module_path,
@@ -805,10 +799,57 @@ int get_prefixes (Options *op)
     remove_trailing_slashes(op->opengl_prefix);
     ui_expert(op, "OpenGL installation prefix is: '%s'", op->opengl_prefix);
 
+
+    if (op->expert) {
+        ret = ui_get_input(op, op->documentation_prefix,
+                           "Documentation installation prefix (only under "
+                           "rare circumstances should this be changed "
+                           "from the default)");
+        if (ret && ret[0]) {
+            op->documentation_prefix = ret;
+            if (!confirm_path(op, op->documentation_prefix)) return FALSE;
+        }
+    }
+
+    remove_trailing_slashes(op->documentation_prefix);
+    ui_expert(op, "Documentation installation prefix is: '%s'", op->documentation_prefix);
+
+
+    if (op->expert) {
+        ret = ui_get_input(op, op->utility_prefix,
+                           "Utility installation prefix (only under "
+                           "rare circumstances should this be changed "
+                           "from the default)");
+        if (ret && ret[0]) {
+            op->utility_prefix = ret;
+            if (!confirm_path(op, op->utility_prefix)) return FALSE;
+        }
+    }
+
+    remove_trailing_slashes(op->utility_prefix);
+    ui_expert(op, "Utility installation prefix is: '%s'", op->utility_prefix);
+
 #if defined(NV_X86_64)
     if (op->expert) {
+        ret = ui_get_input(op, op->compat32_chroot,
+                           "Compat32 installation chroot (only under "
+                           "rare circumstances should this be "
+                           "changed from the default)");
+        if (ret && ret[0]) {
+            op->compat32_chroot = ret;
+            if (!confirm_path(op, op->compat32_chroot)) return FALSE;
+        }
+    }
+
+    remove_trailing_slashes(op->compat32_chroot);
+    ui_expert(op, "Compat32 installation chroot is: '%s'",
+              op->compat32_chroot);
+
+    if (op->expert) {
         ret = ui_get_input(op, op->compat32_prefix,
-                           "Compat32 installation prefix");
+                           "Compat32 installation prefix (only under "
+                           "rare circumstances should this be "
+                           "changed from the default)");
         if (ret && ret[0]) {
             op->compat32_prefix = ret;
             if (!confirm_path(op, op->compat32_prefix)) return FALSE;
@@ -820,19 +861,6 @@ int get_prefixes (Options *op)
               op->compat32_prefix);
 #endif /* NV_X86_64 */
 
-    if (op->expert) {
-        ret = ui_get_input(op, op->installer_prefix,
-                           "Installer installation prefix");
-        if (ret && ret[0]) {
-            op->installer_prefix = ret;
-            if (!confirm_path(op, op->installer_prefix)) return FALSE;
-        }
-    }
-    
-    remove_trailing_slashes(op->installer_prefix);
-    ui_expert(op, "Installer installation prefix is: '%s'",
-              op->installer_prefix);
-    
     return TRUE;
     
 } /* get_prefixes() */
@@ -1707,8 +1735,13 @@ void process_libGL_la_files(Options *op, Package *p)
     for (i = 0; i < package_num_entries; i++) {
         if ((p->entries[i].flags & FILE_TYPE_LIBGL_LA)) {
     
-            replacements[0] = nvstrcat(op->opengl_prefix,
-                                       "/", p->entries[i].path, NULL);
+            if (p->entries[i].flags & FILE_CLASS_COMPAT32) {
+                replacements[0] = nvstrcat(op->compat32_prefix,
+                                           "/", op->compat32_libdir, NULL);
+            } else {
+                replacements[0] = nvstrcat(op->opengl_prefix,
+                                           "/", op->opengl_libdir, NULL);
+            }
 
             /* invalidate the template file */
 
@@ -1751,7 +1784,7 @@ void process_libGL_la_files(Options *op, Package *p)
 /*
  * process_dot_desktop_files() - for any .desktop files in the
  * package, copy them to a temporary file, replacing __UTILS_PATH__
- * and __LIBGL_PATH__ as appropriate.  Then, add the new file to
+ * and __PIXMAP_PATH__ as appropriate.  Then, add the new file to
  * the package list.
  */
 
@@ -1760,23 +1793,34 @@ void process_dot_desktop_files(Options *op, Package *p)
     int i, n;
     char *tmpfile;
 
-    char *tokens[3] = { "__UTILS_PATH__", "__DOCS_PATH__", NULL };
+    char *tokens[3] = { "__UTILS_PATH__", "__PIXMAP_PATH__", NULL };
     char *replacements[3] = { NULL, NULL, NULL };
 
     int package_num_entries = p->num_entries;
 
+    replacements[0] = nvstrcat(op->utility_prefix,
+                               "/", op->utility_bindir, NULL);
+
+    remove_trailing_slashes(replacements[0]);
+    collapse_multiple_slashes(replacements[0]);
+
     for (i = 0; i < package_num_entries; i++) {
         if ((p->entries[i].flags & FILE_TYPE_DOT_DESKTOP)) {
     
-            replacements[0] = nvstrcat(op->utility_prefix,
-                                       "/", UTILITY_BINARY_DST_PATH, NULL);
-            replacements[1] = nvstrcat(op->opengl_prefix,
-                                        "/", DOCUMENTATION_DST_PATH, NULL);
-
             /* invalidate the template file */
 
             p->entries[i].flags &= ~FILE_TYPE_MASK;
             p->entries[i].dst = NULL;
+
+            nvfree(replacements[1]);
+
+            replacements[1] = nvstrcat(op->documentation_prefix,
+                                       "/", op->documentation_docdir,
+                                       "/", p->entries[i].path,
+                                       NULL);
+
+            remove_trailing_slashes(replacements[1]);
+            collapse_multiple_slashes(replacements[1]);
 
             tmpfile = process_template_file(op, &p->entries[i], tokens,
                                             replacements);
@@ -1799,11 +1843,12 @@ void process_dot_desktop_files(Options *op, Package *p)
                 
                 p->num_entries++;
             }
-
-            nvfree(replacements[0]);
-            nvfree(replacements[1]);
         }
     }
+
+    nvfree(replacements[0]);
+    nvfree(replacements[1]);
+
 } /* process_dot_desktop_files() */
 
 
@@ -1832,16 +1877,197 @@ int set_security_context(Options *op, const char *filename)
 } /* set_security_context() */
 
 
+/*
+ * get_default_prefixes_and_paths() - assign the default prefixes and
+ * paths depending on the architecture, distribution and the Xorg
+ * version installed on the system.
+ */
+
+void get_default_prefixes_and_paths(Options *op)
+{
+    char *default_libdir;
+    
+#if defined(NV_X86_64)
+    if ((op->distro == DEBIAN) ||
+        (op->distro == UBUNTU)) {
+        default_libdir = DEBIAN_DEFAULT_64BIT_LIBDIR;
+    } else {
+        default_libdir = DEFAULT_64BIT_LIBDIR;
+    }
+#else
+    default_libdir = DEFAULT_LIBDIR;
+#endif
+
+    if (!op->opengl_prefix)
+        op->opengl_prefix = DEFAULT_OPENGL_PREFIX;
+    if (!op->opengl_libdir)
+        op->opengl_libdir = default_libdir;
+    if (!op->opengl_incdir)
+        op->opengl_incdir = DEFAULT_INCDIR;
+
+    if (!op->x_prefix) {
+        if (op->modular_xorg) {
+            op->x_prefix = XORG7_DEFAULT_X_PREFIX;
+        } else {
+            op->x_prefix = DEFAULT_X_PREFIX;
+        }
+    }
+    if (!op->x_libdir)
+        op->x_libdir = default_libdir;
+    if (!op->x_moddir) {
+        if (op->modular_xorg) {
+            op->x_moddir = XORG7_DEFAULT_X_MODULEDIR ;
+        } else {
+            op->x_moddir = DEFAULT_X_MODULEDIR;
+        }
+    }
+
+#if defined(NV_X86_64)
+    if (op->distro == DEBIAN && !op->compat32_chroot)
+        op->compat32_chroot = DEBIAN_DEFAULT_COMPAT32_CHROOT;
+
+    if (!op->compat32_prefix)
+        op->compat32_prefix = DEFAULT_OPENGL_PREFIX;
+
+    if (!op->compat32_libdir) {
+        if ((op->distro == UBUNTU) ||
+            (op->distro == GENTOO)) {
+            op->compat32_libdir = UBUNTU_DEFAULT_COMPAT32_LIBDIR;
+        } else {
+            op->compat32_libdir = DEFAULT_LIBDIR;
+        }
+    }
+#endif
+
+    if (!op->utility_prefix)
+        op->utility_prefix = DEFAULT_UTILITY_PREFIX;
+    if (!op->utility_libdir)
+        op->utility_libdir = default_libdir;
+    if (!op->utility_bindir)
+        op->utility_bindir = DEFAULT_BINDIR;
+
+    if (!op->dot_desktopdir)
+        op->dot_desktopdir = DEFAULT_DOT_DESKTOPDIR;
+
+    if (!op->documentation_prefix)
+        op->documentation_prefix = DEFAULT_DOCUMENTATION_PREFIX;
+    if (!op->documentation_docdir)
+        op->documentation_docdir = DEFAULT_DOCDIR;
+    if (!op->documentation_mandir)
+        op->documentation_mandir = DEFAULT_MANDIR;
+
+} /* get_default_prefixes_and_paths() */
+
 
 /*
- * get_x_module_path() - assign op->x_module_path if it is not already
- * set
+ * get_xdg_data_dir() - determine if the XDG_DATA_DIRS environment
+ * variable is set; if set and not empty, return the first path
+ * in the list, else return NULL.
+ */
+
+static char *get_xdg_data_dir(void)
+{
+    /*
+     * If XDG_DATA_DIRS is set, then derive the installation path
+     * from the first entry; complies with:
+     *   http://www.freedesktop.org/Standards/basedir-spec
+     */
+    char *xdg_data_dir = getenv("XDG_DATA_DIRS");
+    if ((xdg_data_dir != NULL) && strlen(xdg_data_dir))
+        return nvstrdup(strtok(xdg_data_dir, ":"));
+    return NULL;
+}
+
+
+/*
+ * get_x_library_path() - assign op->x_library_path if it is not
+ * already set.
+ */
+
+static int get_x_library_path(Options *op)
+{
+    char *cmd, *dir = NULL;
+    int ret;
+
+    /*
+     * if the path was already specified (i.e.: by a command
+     * line option), then we are done.
+     */
+
+    if (op->x_library_path != NULL)
+        return TRUE;
+
+    if (!op->utils[PKG_CONFIG]) {
+        if (op->modular_xorg) {
+            ui_warn(op, "You appear to be using a modular Xorg "
+                    "release, but nvidia-installer could not find the "
+                    "`pkg-config` utility required to determine the "
+                    "correct X library installation path.  Please "
+                    "install the `pkg-config` utility and the Xorg "
+                    "SDK/development package for your distribution.");
+        }
+    } else {
+        /* ask pkg-config */
+
+        cmd = nvstrcat(op->utils[PKG_CONFIG],
+                       " --variable=libdir xorg-server", NULL);
+
+        ret = run_command(op, cmd, &dir, FALSE, 0, TRUE);
+        nvfree(cmd);
+
+        if ((ret != 0) || (dir == NULL)) {
+            if (op->modular_xorg) {
+                ui_warn(op, "You appear to be using a modular Xorg "
+                        "release, but nvidia-installer was unable to "
+                        "determine the correct X library "
+                        "installation path with the `pkg-config` "
+                        "utility.  Please install the Xorg SDK/"
+                        "development package for your distribution.");
+            }
+        } else {
+            if (!directory_exists(op, dir) &&
+                op->modular_xorg) {
+                ui_warn(op, "You appear to be using a modular Xorg "
+                        "release, but the X library installation "
+                        "path reported by `pkg-config "
+                        "--variable=libdir xorg-server` does "
+                        "not exist.  Please check your Xorg installation.");
+            } else {
+                op->x_library_path = dir;
+                return TRUE;
+            }
+        }
+        
+        nvfree(dir);
+    }
+
+    /* build the X library path */
+
+    op->x_library_path = nvstrcat(op->x_prefix, "/", op->x_libdir, NULL);
+
+    remove_trailing_slashes(op->x_library_path);
+    collapse_multiple_slashes(op->x_library_path);
+
+    if (op->modular_xorg) {
+        ui_warn(op, "nvidia-installer was unable to determine the "
+                "correct X library installation path and will "
+                "install the NVIDIA X libraries to '%s'.",
+                op->x_library_path);
+    }
+
+    return TRUE;
+
+} /* get_x_library_path() */
+
+
+/*
+ * get_x_module_path() - assign op->x_module_path if it is not
+ * already set.
  */
 
 static int get_x_module_path(Options *op)
 {
-    char *dir = NULL;
-    char *lib;
+    char *cmd, *dir = NULL;
     int ret;
 
     /*
@@ -1853,40 +2079,69 @@ static int get_x_module_path(Options *op)
         return TRUE;
     }
 
-    /* ask pkg-config */
-
-    ret = run_command(op, "pkg-config --variable=moduledir xorg-server",
-                      &dir, FALSE, 0, TRUE);
-    
-    if ((ret == 0) && directory_exists(op, dir)) {
-        op->x_module_path = dir;
-        return TRUE;
-    }
-    
-    nvfree(dir);
-    
-    /* build the X module path from the xfree86_prefix */
-    
-    /*
-     * XXX kludge to determine the correct 'lib' vs 'lib64' path;
-     * normally, on 64-bit distributions, the X modules get installed
-     * in "<xprefix>/lib64/modules".  However, on Debian, Ubuntu, or
-     * any 32-bit distribution, we use "<xprefix>/lib/modules"
-     */
-
-#if defined(NV_X86_64)
-    if ((op->distro == DEBIAN || op->distro == UBUNTU)) {
-        lib = "lib";
+    if (!op->utils[PKG_CONFIG]) {
+        if (op->modular_xorg) {
+            ui_warn(op, "You appear to be using a modular Xorg "
+                    "release, but nvidia-installer could not find the "
+                    "`pkg-config` utility required to determine the "
+                    "correct X module installation path.  Please "
+                    "install the `pkg-config` utility and the Xorg "
+                    "SDK/development package for your distribution.");
+        }
     } else {
-        lib = "lib64";
-    }
-#else
-    lib = "lib";   
-#endif
-    
-    op->x_module_path = nvstrcat(op->xfree86_prefix,
-                                 "/", lib, "/modules", NULL);
+        /* ask pkg-config */
 
+        cmd = nvstrcat(op->utils[PKG_CONFIG],
+                       " --variable=moduledir xorg-server",
+                       NULL);
+
+        ret = run_command(op, cmd, &dir, FALSE, 0, TRUE);
+        nvfree(cmd);
+
+        if ((ret != 0) || (dir == NULL)) {
+            if (op->modular_xorg) {
+                ui_warn(op, "You appear to be using a modular Xorg "
+                        "release, but nvidia-installer was unable to "
+                        "determine the correct X module "
+                        "installation path with the `pkg-config` "
+                        "utility.  Please install the Xorg SDK/"
+                        "development package for your distribution.");
+            }
+        } else {
+            if (!directory_exists(op, dir) &&
+                op->modular_xorg) {
+                ui_warn(op, "You appear to be using a modular Xorg "
+                        "release, but the X module installation "
+                        "path reported by `pkg-config "
+                        "--variable=moduledir xorg-server` does "
+                        "not exist.  Please check your Xorg installation.");
+            } else {
+                op->x_module_path = dir;
+                return TRUE;
+            }
+        }
+        
+        nvfree(dir);
+    }
+
+    /* build the X module path */
+
+    op->x_module_path =
+        nvstrcat(op->x_library_path, "/", op->x_moddir, NULL);
+
+    remove_trailing_slashes(op->x_module_path);
+    collapse_multiple_slashes(op->x_module_path);
+
+    if (op->modular_xorg) {
+        ui_warn(op, "nvidia-installer was unable to determine the "
+                "correct X module installation path and will "
+                "install the NVIDIA X driver components to '%s'.  "
+                "If X fails to find the NVIDIA X driver module, "
+                "please correct any `pkg-config` problems warned "
+                "about earlier and reinstall the driver.",
+                op->x_module_path);
+    }
+    
     return TRUE;
 
 } /* get_x_module_path() */

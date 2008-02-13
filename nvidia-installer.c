@@ -235,20 +235,12 @@ Options *parse_commandline(int argc, char *argv[])
     
     /* statically initialized strings */
     
-    op->xfree86_prefix = DEFAULT_XFREE86_INSTALLATION_PREFIX;
-    op->opengl_prefix = DEFAULT_OPENGL_INSTALLATION_PREFIX;
-    op->utility_prefix = DEFAULT_UTILITY_INSTALLATION_PREFIX;
     op->proc_mount_point = DEFAULT_PROC_MOUNT_POINT;
     op->log_file_name = DEFAULT_LOG_FILE_NAME;
     op->ftp_site = DEFAULT_FTP_SITE;
 
     op->tmpdir = get_tmpdir(op);
     op->distro = get_distribution(op);
-
-#if defined(NV_X86_64)
-    if (op->distro == DEBIAN)
-        op->compat32_prefix = DEBIAN_COMPAT32_INSTALLATION_PREFIX;
-#endif
 
     op->logging = TRUE; /* log by default */
     op->opengl_headers = TRUE; /* We now install our GL headers by default */
@@ -302,17 +294,31 @@ Options *parse_commandline(int argc, char *argv[])
             
         case XFREE86_PREFIX_OPTION:
         case X_PREFIX_OPTION:
-            op->xfree86_prefix = optarg; break;
+            op->x_prefix = optarg; break;
+        case X_LIBRARY_PATH_OPTION:
+            op->x_library_path = optarg; break;
         case X_MODULE_PATH_OPTION:
             op->x_module_path = optarg; break;
         case OPENGL_PREFIX_OPTION:
             op->opengl_prefix = optarg; break;
+        case OPENGL_LIBDIR_OPTION:
+            op->opengl_libdir = optarg; break;
+#if defined(NV_X86_64)
+        case COMPAT32_CHROOT_OPTION:
+            op->compat32_chroot = optarg; break;
         case COMPAT32_PREFIX_OPTION:
             op->compat32_prefix = optarg; break;
+        case COMPAT32_LIBDIR_OPTION:
+            op->compat32_libdir = optarg; break;
+#endif
+        case DOCUMENTATION_PREFIX_OPTION:
+            op->documentation_prefix = optarg; break;
         case INSTALLER_PREFIX_OPTION:
             op->installer_prefix = optarg; break;
         case UTILITY_PREFIX_OPTION:
             op->utility_prefix = optarg; break;
+        case UTILITY_LIBDIR_OPTION:
+            op->utility_libdir = optarg; break;
         case KERNEL_SOURCE_PATH_OPTION:
             op->kernel_source_path = optarg; break;
         case KERNEL_OUTPUT_PATH_OPTION:
@@ -348,6 +354,7 @@ Options *parse_commandline(int argc, char *argv[])
                 exit(1);
             }
             break;
+#if defined(NV_X86_64)
         case FORCE_TLS_COMPAT32_OPTION:
             if (strcasecmp(optarg, "new") == 0)
                 op->which_tls_compat32 = FORCE_NEW_TLS;
@@ -362,6 +369,7 @@ Options *parse_commandline(int argc, char *argv[])
                 exit(1);
             }
             break;
+#endif
         case SANITY_OPTION:
             op->sanity = TRUE;
             break;
@@ -513,7 +521,16 @@ int main(int argc, char *argv[])
     if (!find_system_utils(op)) goto done;
     if (!find_module_utils(op)) goto done;
     if (!check_selinux(op)) goto done;
+
+    /* check if we need to worry about modular Xorg */
+
+    op->modular_xorg =
+        check_for_modular_xorg(op);
     
+    /* get the default installation prefixes/paths */
+
+    get_default_prefixes_and_paths(op);
+
     /* get the latest available driver version */
 
     if (op->latest) {
