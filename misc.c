@@ -49,7 +49,6 @@
 
 static int check_symlink(Options*, const char*, const char*, const char*);
 static int check_file(Options*, const char*, const mode_t, const uint32);
-static char *find_system_util(const char *util);
 
 
 /*
@@ -300,7 +299,7 @@ int check_runlevel(Options *op)
                         "this may cause problems.  For example: some "
                         "distributions that use devfs do not run the devfs "
                         "daemon in runlevel 1, making it difficult for "
-                        "nvidia-installer to correctly setup the kernel "
+                        "`nvidia-installer` to correctly setup the kernel "
                         "module configuration files.  It is recommended "
                         "that you quit installation now and switch to "
                         "runlevel 3 (`telinit 3`) before installing.\n\n"
@@ -683,6 +682,78 @@ int find_module_utils(Options *op)
 
 
 /*
+ * check_proc_modprobe_path() - check if the modprobe path reported
+ * via /proc matches the one determined earlier; also check if it can
+ * be accessed/executed.
+ */
+
+#define PROC_MODPROBE_PATH_FILE "/proc/sys/kernel/modprobe"
+
+int check_proc_modprobe_path(Options *op)
+{
+    FILE *fp;
+    char *buf = NULL;
+
+    fp = fopen(PROC_MODPROBE_PATH_FILE, "r");
+    if (fp) {
+        buf = fget_next_line(fp, NULL);
+        fclose(fp);
+    }
+
+    if (buf && strcmp(buf, op->utils[MODPROBE])) {
+        if (access(buf, F_OK | X_OK) == 0) {
+            ui_warn(op, "The path to the `modprobe` utility reported by "
+                    "'%s', `%s`, differs from the path determined by "
+                    "`nvidia-installer`, `%s`.  Please verify that `%s` "
+                    "works correctly and correct the path in '%s' if "
+                    "it does not.",
+                    PROC_MODPROBE_PATH_FILE, buf, op->utils[MODPROBE],
+                    buf, PROC_MODPROBE_PATH_FILE);
+            return TRUE;
+        } else {
+           ui_error(op, "The path to the `modprobe` utility reported by "
+                    "'%s', `%s`, differs from the path determined by "
+                    "`nvidia-installer`, `%s`, and does not appear to "
+                    "point to a valid `modprobe` binary.  Please correct "
+                    "the path in '%s'.",
+                    PROC_MODPROBE_PATH_FILE, buf, op->utils[MODPROBE],
+                    PROC_MODPROBE_PATH_FILE);
+           return FALSE;
+        }
+    } else if (!buf && strcmp("/sbin/modprobe", op->utils[MODPROBE])) {
+        if (access(buf, F_OK | X_OK) == 0) {
+            ui_warn(op, "The file '%s' is unavailable, the X server will "
+                    "use `/sbin/modprobe` as the path to the `modprobe` "
+                    "utility.  This path differs from the one determined "
+                    "by `nvidia-installer`, `%s`.  Please verify that "
+                    "`/sbin/modprobe` works correctly or mount the /proc "
+                    "file system and verify that '%s' reports the "
+                    "correct path.",
+                    PROC_MODPROBE_PATH_FILE, op->utils[MODPROBE],
+                    PROC_MODPROBE_PATH_FILE);
+            return TRUE;
+        } else {
+           ui_error(op, "The file '%s' is unavailable, the X server will "
+                    "use `/sbin/modprobe` as the path to the `modprobe` "
+                    "utility.  This path differs from the one determined "
+                    "by `nvidia-installer`, `%s`, and does not appear to "
+                    "point to a valid `modprobe` binary.  Please create "
+                    "a symbolic link from `/sbin/modprobe` to `%s` or "
+                    "mount the /proc file system and verify that '%s' "
+                    "reports the correct path.",
+                    PROC_MODPROBE_PATH_FILE, op->utils[MODPROBE],
+                    op->utils[MODPROBE], PROC_MODPROBE_PATH_FILE);
+           return FALSE;
+        }
+    }
+    nvfree(buf);
+
+    return TRUE;
+
+} /* check_proc_modprobe_path() */
+
+
+/*
  * check_development_tools() - check if the development tools needed
  * to build custom kernel interfaces are available.
  */
@@ -705,7 +776,7 @@ int check_development_tools(Options *op)
         if (!tool) {
             ui_error(op, "Unable to find the development tool `%s` in "
                      "your path; please make sure that you have the "
-                     "package '%s' installed. If %s is installed on your "
+                     "package '%s' installed.  If %s is installed on your "
                      "system, then please check that `%s` is in your "
                      "PATH.",
                      needed_tools[i].tool, needed_tools[i].package,
@@ -727,7 +798,7 @@ int check_development_tools(Options *op)
  * utility is returned.  On failure NULL is returned.
  */
 
-static char *find_system_util(const char *util)
+char *find_system_util(const char *util)
 {
     char *buf, *path, *file, *x, *y;
     
@@ -1457,7 +1528,7 @@ static int rtld_test_internal(Options *op, Package *p,
                      "library '%s' (expected: '%s', found: '%s').  "
                      "The most likely reason for this is that conflicting "
                      "OpenGL libraries are installed in a location "
-                     "not inspected by nvidia-installer.  Please be sure "
+                     "not inspected by `nvidia-installer`.  Please be sure "
                      "you have uninstalled any third-party OpenGL and "
                      "third-party graphics driver packages.",
                      p->entries[i].name, name,

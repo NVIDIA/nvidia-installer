@@ -340,9 +340,9 @@ static void print_advanced_options_args_only(int args_only)
     fmtoutp(TAB, "Disable use of color in the ncurses user interface.");
     fmtout("");
     
-    fmtout("--opengl-headers");
-    fmtoutp(TAB, "Normally, installation does not install NVIDIA's OpenGL "
-            "header files.  This option enables installation of the NVIDIA "
+    fmtout("--no-opengl-headers");
+    fmtoutp(TAB, "Normally, installation will install NVIDIA's OpenGL "
+            "header files.  This option disables installation of the NVIDIA "
             "OpenGL header files.");
     fmtout("");
 
@@ -412,7 +412,7 @@ static void print_advanced_options_args_only(int args_only)
             "conflicting files, rather than back them up.");
     fmtout("");
 
-    fmtout("--no-network");
+    fmtout("-N, --no-network");
     fmtoutp(TAB, "This option instructs the installer to not attempt to "
             "connect to the NVIDIA ftp site (for updated precompiled kernel "
             "interfaces, for example).");
@@ -472,7 +472,7 @@ Options *parse_commandline(int argc, char *argv[])
 #define LOG_FILE_NAME_OPTION            8
 #define HELP_ARGS_ONLY_OPTION           9
 #define TMPDIR_OPTION                   10
-#define OPENGL_HEADERS_OPTION           11
+#define NO_OPENGL_HEADERS_OPTION        11
 #define INSTALLER_PREFIX_OPTION         12
 #define FORCE_TLS_OPTION                13
 #define SANITY_OPTION                   14                 
@@ -481,16 +481,15 @@ Options *parse_commandline(int argc, char *argv[])
 #define ADD_THIS_KERNEL_OPTION          17
 #define RPM_FILE_LIST_OPTION            18
 #define NO_RUNLEVEL_CHECK_OPTION        19
-#define NO_NETWORK_OPTION               20
-#define PRECOMPILED_KERNEL_INTERFACES_PATH 21
-#define NO_ABI_NOTE_OPTION              22
-#define KERNEL_SOURCE_PATH_OPTION       23
-#define NO_RPMS_OPTION                  24
-#define X_PREFIX_OPTION                 25
-#define KERNEL_OUTPUT_PATH_OPTION       26
-#define NO_RECURSION_OPTION             27
-#define FORCE_TLS_COMPAT32_OPTION       28
-#define COMPAT32_PREFIX_OPTION          29
+#define PRECOMPILED_KERNEL_INTERFACES_PATH 20
+#define NO_ABI_NOTE_OPTION              21
+#define KERNEL_SOURCE_PATH_OPTION       22
+#define NO_RPMS_OPTION                  23
+#define X_PREFIX_OPTION                 24
+#define KERNEL_OUTPUT_PATH_OPTION       25
+#define NO_RECURSION_OPTION             26
+#define FORCE_TLS_COMPAT32_OPTION       27
+#define COMPAT32_PREFIX_OPTION          28
 
 
     static struct option long_options[] = {
@@ -528,14 +527,14 @@ Options *parse_commandline(int argc, char *argv[])
         { "log-file-name",            1, NULL, LOG_FILE_NAME_OPTION       },
         { "help-args-only",           0, NULL, HELP_ARGS_ONLY_OPTION      },
         { "tmpdir",                   1, NULL, TMPDIR_OPTION              },
-        { "opengl-headers",           0, NULL, OPENGL_HEADERS_OPTION      },
+        { "no-opengl-headers",        0, NULL, NO_OPENGL_HEADERS_OPTION   },
         { "force-tls",                1, NULL, FORCE_TLS_OPTION           },
         { "force-tls-compat32",       1, NULL, FORCE_TLS_COMPAT32_OPTION  },
         { "sanity",                   0, NULL, SANITY_OPTION              },
         { "add-this-kernel",          0, NULL, ADD_THIS_KERNEL_OPTION     },
         { "rpm-file-list",            1, NULL, RPM_FILE_LIST_OPTION       },
         { "no-runlevel-check",        0, NULL, NO_RUNLEVEL_CHECK_OPTION   },
-        { "no-network",               0, NULL, NO_NETWORK_OPTION          },
+        { "no-network",               0, NULL, 'N'                        },
         { "no-abi-note",              0, NULL, NO_ABI_NOTE_OPTION         },
         { "no-rpms",                  0, NULL, NO_RPMS_OPTION             },
         { "no-recursion",             0, NULL, NO_RECURSION_OPTION        },
@@ -566,10 +565,11 @@ Options *parse_commandline(int argc, char *argv[])
 #endif
 
     op->logging = TRUE; /* log by default */
+    op->opengl_headers = TRUE; /* We now install our GL headers by default */
 
     while (1) {
         
-        c = getopt_long(argc, argv, "afg:evdinclm:qk:shAbK",
+        c = getopt_long(argc, argv, "afg:evdinclm:qk:shAbKN",
                         long_options, &option_index);
         if (c == -1)
             break;
@@ -637,8 +637,8 @@ Options *parse_commandline(int argc, char *argv[])
             print_help_args_only(TRUE); exit(0); break;
         case TMPDIR_OPTION:
             op->tmpdir = optarg; break;
-        case OPENGL_HEADERS_OPTION:
-            op->opengl_headers = TRUE; break;
+        case NO_OPENGL_HEADERS_OPTION:
+            op->opengl_headers = FALSE; break;
         case FORCE_TLS_OPTION:
             if (strcasecmp(optarg, "new") == 0)
                 op->which_tls = FORCE_NEW_TLS;
@@ -681,7 +681,7 @@ Options *parse_commandline(int argc, char *argv[])
         case NO_RUNLEVEL_CHECK_OPTION:
             op->no_runlevel_check = TRUE;
             break;
-        case NO_NETWORK_OPTION:
+        case 'N':
             op->no_network = TRUE;
             break;
         case PRECOMPILED_KERNEL_INTERFACES_PATH:

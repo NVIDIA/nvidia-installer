@@ -85,8 +85,10 @@ char *fget_next_line(FILE *fp, int *eof);
 char *get_next_line(char *buf, char **e);
 int run_command(Options *op, const char *cmd, char **data,
                 int output, int status, int redirect);
+char *find_system_util(const char *util);
 int find_system_utils(Options *op);
 int find_module_utils(Options *op);
+int check_proc_modprobe_path(Options *op);
 int check_development_tools(Options *op);
 int nvid_version (const char *str, int *major, int *minor, int *patch);
 int continue_after_error(Options *op, const char *fmt, ...);

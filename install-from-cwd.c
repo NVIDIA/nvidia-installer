@@ -83,7 +83,7 @@ int install_from_cwd(Options *op)
     static const char edit_your_xf86config[] =
         "Please update your XF86Config or xorg.conf file as "
         "appropriate; see the file /usr/share/doc/"
-        "NVIDIA_GLX-1.0/README for details.";
+        "NVIDIA_GLX-1.0/README.txt for details.";
 
     static const char suse_edit_your_xf86config[] =
         "On SuSE Linux/United Linux please use SaX2 now to enable "
@@ -116,11 +116,19 @@ int install_from_cwd(Options *op)
      * they really want to overwrite the existing installation
      */
 
+    /* print warning message if a legacy gpu is detected in the system */
+    
+    check_for_legacy_gpu(op, p);
+
     if (!check_for_existing_driver(op, p)) return FALSE;
     
     /* determine where to install the kernel module */
     
     if (!determine_kernel_module_installation_path(op)) goto failed;
+
+    /* check '/proc/sys/kernel/modprobe' */
+
+    if (!check_proc_modprobe_path(op)) return FALSE;
 
     /*
      * do nvchooser-style logic to decide if we have a prebuilt kernel

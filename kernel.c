@@ -34,6 +34,8 @@
 #include <dirent.h>
 #include <fcntl.h>
 #include <sys/mman.h>
+#include <string.h>
+#include <limits.h>
 
 #include "nvidia-installer.h"
 #include "kernel.h"
@@ -43,6 +45,7 @@
 #include "precompiled.h"
 #include "snarf.h"
 #include "crc.h"
+#include "nvLegacy.h"
 
 /* local prototypes */
 
@@ -782,7 +785,10 @@ int check_kernel_module_version(Options *op, Package *p)
     int eof;
 
     fp = fopen(NVIDIA_VERSION_PROC_FILE, "r");
+    if (!fp)
+        return FALSE;
     buf = fget_next_line(fp, &eof);
+    fclose(fp);
     
     if (!nvid_version(buf, &proc_major, &proc_minor, &proc_patch)) {
         free(buf);
@@ -1476,6 +1482,87 @@ int check_cc_version(Options *op, Package *p)
              
 } /* check_cc_version() */
 
+
+
+/*
+ * check_for_legacy_gpu() - run 'lspci -n' and check if any of the returned pci_id 
+ * corresponds to a legacy gpu. If so, print a warning message for each of them, 
+ * and returns TRUE.
+ * Does not print any warning message and returns FALSE if no legacy GPU has been
+ * detected.
+ */
+
+int check_for_legacy_gpu(Options *op, Package *p)
+{
+    char *cmd = NULL, *data, *tok, *file;
+    int ret;
+    unsigned int pci_id;
+    char hexdigits[] = "0123456789abcdef";
+    int hex[UCHAR_MAX];
+    int i;
+    int found=FALSE;
+  
+    // lspci not being in the path should not prevent the installation  
+    file=find_system_util("lspci");
+    if (file==NULL) 
+        return FALSE;
+    
+    cmd = nvstrcat(file, " -n | ",
+                       op->utils[CUT], " -d' ' -f4", NULL);
+    ret = run_command(op, cmd, &data, FALSE, 0, TRUE);
+    free(cmd);
+    free(file);
+    
+    if (ret != 0)
+        return FALSE;
+    
+    /* Convert to lower case then we can do insensitive string comparison */
+    nvstrtolower(data);
+    
+    /* Initialize tables for string->hex conversion */
+    for (i = 0; i < UCHAR_MAX; i++) 
+        hex[i] = 0;
+    for (i = 0; hexdigits[i] != '\0'; i++)
+        hex[(int)hexdigits[i]] = i;
+    
+    tok = strtok(data, "\n");
+    while(tok) {
+        if(strlen(tok)<9)
+            break;
+        
+        /* Check vendor id */ 
+        if(strncmp(tok, "10de", 4)) {
+            tok = strtok(NULL, "\n");
+            continue;
+        }
+        
+        /* Construct pci_id */
+        pci_id = (hex[(int)tok[5]] << 12) + 
+                 (hex[(int)tok[6]] << 8 ) +
+                 (hex[(int)tok[7]] << 4 ) + 
+                 (hex[(int)tok[8]]);
+        
+        for(i=0;i< sizeof(LegacyList) / sizeof(LEGACY_INFO); i++)
+        {
+            if(pci_id==LegacyList[i].uiDevId)
+            {
+                    ui_warn(op, "The NVIDIA %s GPU installed in this system is "
+                                "supported through the NVIDIA Legacy drivers. Please "
+                                "visit http://www.nvidia.com/object/linux.html for more "
+                                "information.  The %s NVIDIA driver will ignore "
+                                "this GPU. ",
+                                LegacyList[i].AdapterString, p->version_string);
+                    found = TRUE;
+            }
+        }
+        
+        tok = strtok(NULL, "\n");
+    }
+    
+    free(data);
+    return found;
+             
+} /* check_for_legacy_gpu() */
 
 
 /*
