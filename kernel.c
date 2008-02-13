@@ -1491,12 +1491,12 @@ int check_cc_version(Options *op, Package *p)
     CC = getenv("CC");
     if (!CC) CC = "cc";
     
-    ui_log(op, "Performing CC test with CC=\"%s\".", CC);
+    ui_log(op, "Performing CC version check with CC=\"%s\".", CC);
 
     cmd = nvstrcat("sh ", p->kernel_module_build_directory,
                    "/conftest.sh ", CC, " ", CC, " ",
                    "DUMMY_SOURCE DUMMY_OUTPUT ",
-                   "cc_sanity_check just_msg", NULL);
+                   "cc_version_check just_msg", NULL);
 
     ret = run_command(op, cmd, &result, FALSE, 0, TRUE);
 
@@ -1504,7 +1504,7 @@ int check_cc_version(Options *op, Package *p)
 
     if (ret == 0) return TRUE;
 
-    ret = ui_yes_no(op, TRUE, "gcc-version-check failed:\n\n%s\n\n"
+    ret = ui_yes_no(op, TRUE, "The CC version check failed:\n\n%s\n\n"
                     "If you know what you are doing and want to "
                     "ignore the gcc version check, select \"No\" to "
                     "continue installation.  Otherwise, select \"Yes\" to "

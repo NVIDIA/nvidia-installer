@@ -58,6 +58,17 @@ static FILE *log_file_stream;
     __tls_str; \
 })
 
+#define SELINUXSTR(x) ({ \
+    const char *__selinux_str = NULL; \
+    switch (x) { \
+        case SELINUX_FORCE_YES: __selinux_str = "yes"; break; \
+        case SELINUX_FORCE_NO: __selinux_str = "no"; break; \
+        case SELINUX_DEFAULT: __selinux_str = "default"; break; \
+        default: __selinux_str = "(not specified)"; \
+    } \
+    __selinux_str; \
+})
+
 /*
  * log_init() - if logging is enabled, initialize the log file; if
  * initializing the log file fails, print an error to stderr and
@@ -102,11 +113,11 @@ void log_init(Options *op)
                BOOLSTR(op->uninstall));
     log_printf(op, TRUE, NULL, "  driver info             : %s",
                BOOLSTR(op->driver_info));
-    log_printf(op, TRUE, NULL, "  no precompiled interface: %s",
-               BOOLSTR(op->no_precompiled_interface));
+    log_printf(op, TRUE, NULL, "  precompiled interfaces  : %s",
+               BOOLSTR(!op->no_precompiled_interface));
     log_printf(op, TRUE, NULL, "  no ncurses color        : %s",
                BOOLSTR(op->no_ncurses_color));
-    log_printf(op, TRUE, NULL, "  query latest driver ver : %s",
+    log_printf(op, TRUE, NULL, "  query latest version    : %s",
                BOOLSTR(op->latest));
     log_printf(op, TRUE, NULL, "  OpenGL header files     : %s",
                BOOLSTR(op->opengl_headers));
@@ -114,6 +125,8 @@ void log_init(Options *op)
                BOOLSTR(op->no_questions));
     log_printf(op, TRUE, NULL, "  silent                  : %s",
                BOOLSTR(op->silent));
+    log_printf(op, TRUE, NULL, "  no recursion            : %s",
+               BOOLSTR(op->no_recursion));
     log_printf(op, TRUE, NULL, "  no backup               : %s",
                BOOLSTR(op->no_backup));
     log_printf(op, TRUE, NULL, "  kernel module only      : %s",
@@ -130,20 +143,42 @@ void log_init(Options *op)
                BOOLSTR(op->no_abi_note));
     log_printf(op, TRUE, NULL, "  no RPMs                 : %s",
                BOOLSTR(op->no_rpms));
+    log_printf(op, TRUE, NULL, "  no kernel module        : %s",
+               BOOLSTR(op->no_kernel_module));
+    log_printf(op, TRUE, NULL, "  force SELinux           : %s",
+               SELINUXSTR(op->selinux_option));
+    log_printf(op, TRUE, NULL, "  no X server check       : %s",
+               BOOLSTR(op->no_x_check));
     log_printf(op, TRUE, NULL, "  force tls               : %s",
                TLSSTR(op->which_tls));
+#if defined(NV_X86_64)
     log_printf(op, TRUE, NULL, "  force compat32 tls      : %s",
                TLSSTR(op->which_tls_compat32));
+#endif
     log_printf(op, TRUE, NULL, "  X install prefix        : %s",
-               STRSTR(op->xfree86_prefix));
+               STRSTR(op->x_prefix));
+    log_printf(op, TRUE, NULL, "  X library install path  : %s",
+               STRSTR(op->x_library_path));
+    log_printf(op, TRUE, NULL, "  X module install path   : %s",
+               STRSTR(op->x_module_path));
     log_printf(op, TRUE, NULL, "  OpenGL install prefix   : %s",
                STRSTR(op->opengl_prefix));
+    log_printf(op, TRUE, NULL, "  OpenGL install libdir   : %s",
+               STRSTR(op->opengl_libdir));
+#if defined(NV_X86_64)
+    log_printf(op, TRUE, NULL, "  compat32 install chroot : %s",
+               STRSTR(op->compat32_chroot));
     log_printf(op, TRUE, NULL, "  compat32 install prefix : %s",
                STRSTR(op->compat32_prefix));
-    log_printf(op, TRUE, NULL, "  installer install prefix: %s",
-               STRSTR(op->installer_prefix));
+    log_printf(op, TRUE, NULL, "  compat32 install libdir : %s",
+               STRSTR(op->compat32_libdir));
+#endif
     log_printf(op, TRUE, NULL, "  utility install prefix  : %s",
                STRSTR(op->utility_prefix));
+    log_printf(op, TRUE, NULL, "  utility install libdir  : %s",
+               STRSTR(op->utility_libdir));
+    log_printf(op, TRUE, NULL, "  doc install prefix      : %s",
+               STRSTR(op->documentation_prefix));
     log_printf(op, TRUE, NULL, "  kernel name             : %s",
                STRSTR(op->kernel_name));
     log_printf(op, TRUE, NULL, "  kernel include path     : %s",

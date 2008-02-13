@@ -53,6 +53,8 @@ typedef enum {
     CHCON = MAX_SYSTEM_UTILS,
     SELINUX_ENABLED,
     GETENFORCE,
+    PKG_CONFIG,
+    XSERVER,
     MAX_SYSTEM_OPTIONAL_UTILS
 } SystemOptionalUtils;
 
@@ -130,13 +132,34 @@ typedef struct __options {
     int selinux_option;
     int selinux_enabled;
     int sigwinch_workaround;
+    int no_x_check;
 
-    char *xfree86_prefix;
-    char *x_module_path;
     char *opengl_prefix;
+    char *opengl_libdir;
+    char *opengl_incdir;
+
+    char *x_prefix;
+    char *x_libdir;
+    char *x_moddir;
+    char *x_module_path;
+    char *x_library_path;
+
+    char *compat32_chroot;
     char *compat32_prefix;
-    char *installer_prefix;
+    char *compat32_libdir;
+
     char *utility_prefix;
+    char *utility_libdir;
+    char *utility_bindir;
+    char *installer_prefix;
+
+    char *dot_desktopdir;
+
+    char *documentation_prefix;
+    char *documentation_docdir;
+    char *documentation_mandir;
+
+    int modular_xorg;
 
     char *kernel_source_path;
     char *kernel_output_path;
@@ -277,6 +300,7 @@ typedef struct {
 #define FILE_TYPE_XMODULE_STATIC_LIB 0x00040000
 #define FILE_TYPE_XMODULE_SHARED_LIB 0x00080000
 #define FILE_TYPE_XMODULE_SYMLINK    0x00100000
+#define FILE_TYPE_MANPAGE            0x00200000
 
 /* file class: this is used to distinguish OpenGL libraries */
 
@@ -298,6 +322,7 @@ typedef struct {
                                     FILE_TYPE_TLS_LIB            | \
                                     FILE_TYPE_UTILITY_LIB        | \
                                     FILE_TYPE_DOCUMENTATION      | \
+                                    FILE_TYPE_MANPAGE            | \
                                     FILE_TYPE_OPENGL_HEADER      | \
                                     FILE_TYPE_KERNEL_MODULE      | \
                                     FILE_TYPE_INSTALLER_BINARY   | \
@@ -306,17 +331,13 @@ typedef struct {
                                     FILE_TYPE_XMODULE_LIB        | \
                                     FILE_TYPE_DOT_DESKTOP)
 
-#define FILE_TYPE_HAVE_PATH        (FILE_TYPE_OPENGL_LIB         | \
-                                    FILE_TYPE_OPENGL_SYMLINK     | \
-                                    FILE_TYPE_LIBGL_LA           | \
-                                    FILE_TYPE_XLIB_LIB           | \
-                                    FILE_TYPE_XLIB_SYMLINK       | \
+#define FILE_TYPE_HAVE_PATH        (FILE_TYPE_XMODULE_LIB        | \
+                                    FILE_TYPE_XMODULE_SYMLINK    | \
+                                    FILE_TYPE_MANPAGE            | \
+                                    FILE_TYPE_OPENGL_HEADER      | \
                                     FILE_TYPE_TLS_LIB            | \
                                     FILE_TYPE_TLS_SYMLINK        | \
-                                    FILE_TYPE_UTILITY_LIB        | \
-                                    FILE_TYPE_UTILITY_SYMLINK    | \
-                                    FILE_TYPE_XMODULE_LIB        | \
-                                    FILE_TYPE_XMODULE_SYMLINK    | \
+                                    FILE_TYPE_DOT_DESKTOP        | \
                                     FILE_TYPE_DOCUMENTATION)
 
 #define FILE_TYPE_HAVE_ARCH        (FILE_TYPE_OPENGL_LIB         | \
@@ -358,22 +379,64 @@ typedef struct {
 
 #define PRECOMPILED_KERNEL_INTERFACE_FILENAME "precompiled-nv-linux.o"
 
-#define DEFAULT_XFREE86_INSTALLATION_PREFIX "/usr/X11R6"
-#define DEFAULT_OPENGL_INSTALLATION_PREFIX "/usr"
-#define DEFAULT_INSTALLER_INSTALLATION_PREFIX "/usr"
-#define DEFAULT_UTILITY_INSTALLATION_PREFIX "/usr"
-#define DEBIAN_COMPAT32_INSTALLATION_PREFIX "/emul/ia32-linux"
+
+/*
+ * These are the default installation prefixes and the default
+ * paths relative to the prefixes. Some of the defaults are
+ * overriden on some distributions or when the new modular Xorg
+ * is detected, all prefixes/paths can be overriden from the
+ * command line.
+ */
+#define DEFAULT_OPENGL_PREFIX           "/usr"
+#define DEFAULT_X_PREFIX                "/usr/X11R6"
+#define DEFAULT_UTILITY_PREFIX          "/usr"
+#define DEFAULT_DOCUMENTATION_PREFIX    "/usr"
+
+#define DEFAULT_LIBDIR                  "lib"
+#define DEFAULT_64BIT_LIBDIR            "lib64"
+#define DEFAULT_BINDIR                  "bin"
+#define DEFAULT_INCDIR                  "include"
+#define DEFAULT_X_MODULEDIR             "modules"
+#define DEFAULT_DOT_DESKTOPDIR          "share/applications"
+#define DEFAULT_DOCDIR                  "share/doc"
+#define DEFAULT_MANDIR                  "share/man"
+
+/*
+ * As of Xorg 7.x, X components need not be installed relative
+ * to a special top-level directory, they can be integrated
+ * more tightly with the rest of the system. The system must be
+ * queried for the installation paths, but in the event that
+ * this fails, the fallbacks below are chosen.
+ */
+#define XORG7_DEFAULT_X_PREFIX          "/usr"
+#define XORG7_DEFAULT_X_MODULEDIR       "xorg/modules"
+
+/*
+ * Debian GNU/Linux for x86-64 installs 32-bit compatibility
+ * libraries relative to a chroot-like top-level directory; the
+ * prefix below is prepended to the full paths.
+ */
+#define DEBIAN_DEFAULT_COMPAT32_CHROOT  "/emul/ia32-linux"
+
+/*
+ * Debian GNU/Linux and Ubuntu do not follow the lib64 library
+ * path naming convention used by other distributors. 64-bit
+ * libraries are placed under ../lib.
+ */
+#define DEBIAN_DEFAULT_64BIT_LIBDIR     "lib"
+
+/*
+ * Ubuntu GNU/Linux and Gentoo Linux do not follow the "lib"
+ * library path naming convention used for 32-bit compatibility
+ * libraries by other distributors. These libraries are
+ * placed under ../lib32.
+ */
+#define UBUNTU_DEFAULT_COMPAT32_LIBDIR  "lib32"
 
 
 #define DEFAULT_PROC_MOUNT_POINT "/proc"
 
 #define DEFAULT_FTP_SITE "ftp://download.nvidia.com"
-
-#define OPENGL_HEADER_DST_PATH "include/GL"
-#define INSTALLER_BINARY_DST_PATH "bin"
-#define UTILITY_BINARY_DST_PATH "bin"
-#define DOCUMENTATION_DST_PATH "share/doc/NVIDIA_GLX-1.0"
-#define DOT_DESKTOP_DST_PATH "share/applications"
 
 #define LICENSE_FILE "LICENSE"
 

@@ -98,14 +98,14 @@ int install_from_cwd(Options *op)
     ui_set_title(op, "%s (%d.%d-%d)", p->description,
                  p->major, p->minor, p->patch);
 
-    /* make sure the kernel module is unloaded */
-    
-    if (!check_for_unloaded_kernel_module(op, p)) goto failed;
-    
     /* check that we are not running any X server */
 
     if (!check_for_running_x(op)) goto failed;
 
+    /* make sure the kernel module is unloaded */
+    
+    if (!check_for_unloaded_kernel_module(op, p)) goto failed;
+    
     /* ask the user to accept the license */
     
     if (!get_license_acceptance(op)) return FALSE;
@@ -318,18 +318,18 @@ static int install_kernel_module(Options *op,  Package *p)
 
     } else {
         /*
+         * make sure the required development tools are present on
+         * this system before attempting to verify the compiler and
+         * trying to build a custom kernel interface.
+         */
+        if (!check_development_tools(op, p)) return FALSE;
+
+        /*
          * make sure that the selected or default system compiler
          * is compatible with the target kernel; the user may choose
          * to override the check.
          */
         if (!check_cc_version(op, p)) return FALSE;
-
-        /*
-         * make sure the required development tools are present on
-         * this system before attempting to verify the compiler and
-         * trying to build a custom kernel interface.
-         */
-        if (!check_development_tools(op)) return FALSE;
 
         /*
          * we do not have a prebuilt kernel interface; thus we'll need
@@ -607,6 +607,8 @@ static Package *parse_manifest (Options *op)
                 p->entries[n].flags |= FILE_TYPE_TLS_LIB;
             else if (strcmp(flag, "DOCUMENTATION") == 0)
                 p->entries[n].flags |= FILE_TYPE_DOCUMENTATION;
+            else if (strcmp(flag, "MANPAGE") == 0)
+                p->entries[n].flags |= FILE_TYPE_MANPAGE;
             else if (strcmp(flag, "OPENGL_SYMLINK") == 0)
                 p->entries[n].flags |= FILE_TYPE_OPENGL_SYMLINK;
             else if (strcmp(flag, "XLIB_SYMLINK") == 0)

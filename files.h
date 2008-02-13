@@ -62,5 +62,6 @@ char *process_template_file(Options *op, PackageEntry *pe,
 void process_libGL_la_files(Options *op, Package *p);
 void process_dot_desktop_files(Options *op, Package *p);
 int set_security_context(Options *op, const char *filename);
+void get_default_prefixes_and_paths(Options *op);
 
 #endif /* __NVIDIA_INSTALLER_FILES_H__ */

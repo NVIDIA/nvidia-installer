@@ -682,7 +682,7 @@ int read_text_file(const char *filename, char **buf)
  * XXX requiring ld may cause problems
  */
 
-#define EXTRA_PATH "/bin:/usr/bin:/sbin:/usr/sbin"
+#define EXTRA_PATH "/bin:/usr/bin:/sbin:/usr/sbin:/usr/X11R6/bin:/usr/bin/X11"
 
 int find_system_utils(Options *op)
 {
@@ -702,7 +702,9 @@ int find_system_utils(Options *op)
     const struct { const char *util, *package; } optional_utils[] = {
         { "chcon",          "selinux" },
         { "selinuxenabled", "selinux" },
-        { "getenforce",     "selinux" }
+        { "getenforce",     "selinux" },
+        { "pkg-config",     "pkg-config" },
+        { "X",              "xserver" }
     };
     
     int i, j;
@@ -884,7 +886,7 @@ int check_proc_modprobe_path(Options *op)
  * to build custom kernel interfaces are available.
  */
 
-int check_development_tools(Options *op)
+int check_development_tools(Options *op, Package *p)
 {
 #define MAX_TOOLS 2
     const struct { char *tool, *package; } needed_tools[] = {
@@ -892,12 +894,23 @@ int check_development_tools(Options *op)
         { "make", "make" }
     };
 
-    int i;
-    char *tool;
+    int i, ret;
+    char *tool, *cmd, *CC, *result;
+
+    CC = getenv("CC");
 
     ui_expert(op, "Checking development tools:");
 
-    for (i = 0; i < MAX_TOOLS; i++) {
+    /*
+     * Check if the required toolchain components are installed on
+     * the system.  Note that we skip the check for `cc` if the
+     * user specified the CC environment variable; we do this because
+     * `cc` may not be present in the path, nor the compiler named
+     * in $CC, but the installation may still succeed. $CC is sanity
+     * checked below.
+     */
+
+    for (i = (CC != NULL) ? 1 : 0; i < MAX_TOOLS; i++) {
         tool = find_system_util(needed_tools[i].tool);
         if (!tool) {
             ui_error(op, "Unable to find the development tool `%s` in "
@@ -915,7 +928,7 @@ int check_development_tools(Options *op)
 
     /*
      * Check if the libc development headers are installed; we need
-     * these to build the gcc version check utility.
+     * these to build the CC version check utility.
      */
     if (access("/usr/include/stdio.h", F_OK) == -1) {
         ui_error(op, "You do not appear to have libc header files "
@@ -924,7 +937,26 @@ int check_development_tools(Options *op)
         return FALSE;
     }
 
-    return TRUE;
+    if (!CC) CC = "cc";
+
+    ui_log(op, "Performing CC sanity check with CC=\"%s\".", CC);
+
+    cmd = nvstrcat("sh ", p->kernel_module_build_directory,
+                   "/conftest.sh ", CC, " ", CC, " ",
+                   "DUMMY_SOURCE DUMMY_OUTPUT ",
+                   "cc_sanity_check just_msg", NULL);
+
+    ret = run_command(op, cmd, &result, FALSE, 0, TRUE);
+
+    nvfree(cmd);
+
+    if (ret == 0) return TRUE;
+
+    ui_error(op, "The CC sanity check failed:\n\n%s\n", result);
+
+    nvfree(result);
+
+    return FALSE;
 
 } /* check_development_tools() */
 
@@ -1152,17 +1184,17 @@ void should_install_compat32_files(Options *op, Package *p)
                 "Install NVIDIA's 32-bit compatibility OpenGL "
                 "libraries?");
 
-    if (install_compat32_files && op->compat32_prefix &&
-          access(op->compat32_prefix, F_OK) < 0) {
+    if (install_compat32_files && (op->compat32_chroot != NULL) &&
+          access(op->compat32_chroot, F_OK) < 0) {
         install_compat32_files = ui_yes_no(op, FALSE,
             "The NVIDIA 32-bit compatibility OpenGL libraries are "
-            "to be installed relative to the prefix '%s'; however, "
-            "this directory does not exit.  Please consult your "
-            "distribution's documentation to confirm the correct "
-            "installation prefix for 32-bit compatiblity libraries."
-            "\n\nDo you wish to install the 32-bit NVIDIA OpenGL "
-            "compatibility libraries anyway?",
-            op->compat32_prefix);
+            "to be installed relative to the top-level prefix (chroot) "
+            "'%s'; however, this directory does not exist.  Please "
+            "consult your distribution's documentation to confirm the "
+            "correct top-level installation prefix for 32-bit "
+            "compatiblity libraries.\n\nDo you wish to install the "
+            "32-bit NVIDIA OpenGL compatibility libraries anyway?",
+            op->compat32_chroot);
     }
     
     if (!install_compat32_files) {
@@ -1872,21 +1904,93 @@ Distribution get_distribution(Options *op)
 } /* get_distribution() */
 
 
+/*
+ * check_for_modular_xorg() - run the X binary with the '-version'
+ * command line option and extract the version in an attempt to
+ * determine if it's part of a modular Xorg release. If the version
+ * can't be determined, we assume it's not.
+ */
+
+#define OLD_VERSION_FORMAT "(protocol Version %d, revision %d, vendor release %d)"
+#define NEW_VERSION_FORMAT "X Protocol Version %d, Revision %d, Release %d."
+
+int check_for_modular_xorg(Options *op)
+{
+    char *cmd = NULL, *ptr, *data = NULL;
+    int modular_xorg = FALSE;
+    int dummy, release;
+
+    if (!op->utils[XSERVER])
+        goto done;
+
+    cmd = nvstrcat(op->utils[XSERVER], " -version", NULL);
+
+    if (run_command(op, cmd, &data, FALSE, 0, TRUE) ||
+        (data == NULL)) {
+        goto done;
+    }
+
+    /*
+     * Check if this is an XFree86 release that identifies
+     * itself as such in the version string.
+     */
+    if (strstr(data, "XFree86 Version"))
+        goto done;
+
+    /*
+     * Check if this looks like an XFree86 release older
+     * than XFree86 4.3.0.
+     */
+    if ((ptr = strstr(data, "(protocol Version")) != NULL &&
+        sscanf(ptr, OLD_VERSION_FORMAT, &dummy, &dummy, &release) == 3) {
+        goto done;
+    }
+
+    /*
+     * Check if this looks like an XFree86 release between
+     * XFree86 4.2 and 4.5, or an Xorg release.
+     */
+
+    if ((ptr = strstr(data, "X Protocol Version")) != NULL &&
+        sscanf(ptr, NEW_VERSION_FORMAT, &dummy, &dummy, &release) == 3) {
+        modular_xorg = (release >= 7);
+        goto done;
+    }
+
+    /*
+     * If all else fails, check if this is an Xorg release
+     * that identifies itself as such.
+     */
+    if ((ptr = strstr(data, "X Window System Version")) &&
+        sscanf(ptr, "X Window System Version %d.", &release) == 1) {
+        modular_xorg = (release >= 7);
+    }
+
+done:
+    nvfree(data);
+    nvfree(cmd);
+
+    return modular_xorg;
+
+} /* check_for_modular_xorg() */
+
 
 /*
  * check_for_running_x() - running any X server (even with a
  * non-NVIDIA driver) can cause stability problems, so check that
  * there is no X server running.  To do this, scan for any
  * /tmp/.X[n]-lock files, where [n] is the number of the X Display
- * (we'll just check for 0-7).  If any X server is running, print an
- * error message and return FALSE.  If no X server is running, return
- * TRUE.
+ * (we'll just check for 0-7). Get the pid contained in this X lock file,
+ * this is the pid of the running X server. If any X server is running, 
+ * print an error message and return FALSE.  If no X server is running, 
+ * return TRUE.
  */
 
 int check_for_running_x(Options *op)
 {
-    char path[14];
-    int i;
+    char path[14], *buf;
+    char procpath[17]; /* contains /proc/%d, accounts for 32-bit values of pid */
+    int i, pid;
 
     /*
      * If we are installing for a non-running kernel *and* we are only
@@ -1901,15 +2005,24 @@ int check_for_running_x(Options *op)
     
     for (i = 0; i < 8; i++) {
         snprintf(path, 14, "/tmp/.X%1d-lock", i);
-        if (access(path, R_OK) == 0) {
-            ui_log(op, "The file '%s' exists... an X server appears to be "
-                   "running", path);
-            ui_error(op, "You appear to be running an X server; please exit "
-                     "X before installing.  For further details, please see "
-                     "the section INSTALLING THE NVIDIA DRIVER in the README "
-                     "available on the Linux driver download page at "
-                     "www.nvidia.com.");
-            return FALSE;
+        if (read_text_file(path, &buf) == TRUE) {
+            sscanf(buf, "%d", &pid);
+            nvfree(buf);
+            snprintf(procpath, 17, "/proc/%d", pid);
+            if (access(procpath, F_OK) == 0) {
+                ui_log(op, "The file '%s' exists and appears to contain the "
+                           "process ID '%d' of a runnning X server.", path, pid);
+                if (op->no_x_check) {
+                    ui_log(op, "Continuing per the '--no-x-check' option.");
+                } else {
+                    ui_error(op, "You appear to be running an X server; please "
+                                 "exit X before installing.  For further details, "
+                                 "please see the section INSTALLING THE NVIDIA "
+                                 "DRIVER in the README available on the Linux driver "
+                                 "download page at www.nvidia.com.");
+                    return FALSE;
+                }
+            }
         }
     }
     
