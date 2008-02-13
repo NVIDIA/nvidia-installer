@@ -55,6 +55,7 @@
 
 static Package *parse_manifest(Options *op);
 static int install_kernel_module(Options *op,  Package *p);
+static void free_package(Package *p);
 
 
 /*
@@ -96,9 +97,8 @@ int install_from_cwd(Options *op)
     
     if ((p = parse_manifest(op)) == NULL) goto failed;
     
-    ui_set_title(op, "%s (%d.%d-%d)", p->description,
-                 p->major, p->minor, p->patch);
-
+    ui_set_title(op, "%s (%s)", p->description, p->version);
+    
     /* 
      * warn the user if "legacy" GPUs are installed in this system
      * and if no supported GPU is found, at all.
@@ -116,14 +116,14 @@ int install_from_cwd(Options *op)
     
     /* ask the user to accept the license */
     
-    if (!get_license_acceptance(op)) return FALSE;
+    if (!get_license_acceptance(op)) goto exit_install;
     
     /*
      * determine the current NVIDIA version (if any); ask the user if
      * they really want to overwrite the existing installation
      */
 
-    if (!check_for_existing_driver(op, p)) return FALSE;
+    if (!check_for_existing_driver(op, p)) goto exit_install;
 
     /* attempt to build a kernel module for the target kernel */
 
@@ -211,7 +211,9 @@ int install_from_cwd(Options *op)
 
     /* call the ui to get approval for the list of commands */
     
-    if (!ui_approve_command_list(op, c, "%s", p->description)) return FALSE;
+    if (!ui_approve_command_list(op, c, "%s", p->description)) {
+        goto exit_install;
+    }
     
     /* initialize the backup log file */
 
@@ -238,7 +240,7 @@ int install_from_cwd(Options *op)
     if (op->kernel_module_only) {
         ui_message(op, "Installation of the kernel module for the %s "
                    "(version %s) is now complete.",
-                   p->description, p->version_string);
+                   p->description, p->version);
     } else {
         
         /* ask the user if they would like to run nvidia-xconfig */
@@ -257,7 +259,7 @@ int install_from_cwd(Options *op)
         if (ret) {
             ui_message(op, "Your X configuration file has been successfully "
                        "updated.  Installation of the %s (version: %s) is now "
-                       "complete.", p->description, p->version_string);
+                       "complete.", p->description, p->version);
         } else {
             
             if ((op->distro == SUSE) || (op->distro == UNITED_LINUX)) {
@@ -268,14 +270,21 @@ int install_from_cwd(Options *op)
             
             ui_message(op, "Installation of the %s (version: %s) is now "
                        "complete.  %s", p->description,
-                       p->version_string, msg);
+                       p->version, msg);
         }
     }
     
+    free_package(p);
+
     return TRUE;
     
  failed:
 
+    /*
+     * something bad happened during installation; print an error
+     * message and return FALSE
+     */
+    
     if (op->logging) {
         ui_error(op, "Installation has failed.  Please see the file '%s' "
                  "for details.  You may find suggestions on fixing "
@@ -287,6 +296,18 @@ int install_from_cwd(Options *op)
                  "on fixing installation problems in the README available "
                  "on the Linux driver download page at www.nvidia.com.");
     }
+    
+    /* fall through into exit_install... */
+
+ exit_install:
+
+    /*
+     * we are exiting installation; this can happen for reasons that
+     * do not merit the error message (e.g., the user declined the
+     * license agreement)
+     */
+    
+    free_package(p);
     
     return FALSE;
 
@@ -411,6 +432,8 @@ int add_this_kernel(Options *op)
 
     if (!pack_precompiled_kernel_interface(op, p)) goto failed;
     
+    free_package(p);
+
     return TRUE;
 
  failed:
@@ -418,6 +441,8 @@ int add_this_kernel(Options *op)
     ui_error(op, "Unable to add a precompiled kernel interface for the "
              "running kernel.");
     
+    free_package(p);
+
     return FALSE;
     
 } /* add_this_kernel() */
@@ -431,7 +456,7 @@ int add_this_kernel(Options *op)
  * The first nine lines of the .manifest file are:
  *
  *   - a description string
- *   - a version string of the form "major.minor-patch"
+ *   - a version string
  *   - the kernel module file name
  *   - the kernel interface file name
  *   - the kernel module name (what `rmmod` and `modprobe` should use)
@@ -458,7 +483,7 @@ static Package *parse_manifest (Options *op)
 {
     char *buf, *c, *flag , *tmpstr;
     int done, n, line;
-    int fd, len = 0;
+    int fd, ret, len = 0;
     struct stat stat_buf;
     Package *p;
     char *manifest = MAP_FAILED, *ptr;
@@ -490,10 +515,8 @@ static Package *parse_manifest (Options *op)
     /* the second line is the version */
     
     line++;
-    p->version_string = get_next_line(ptr, &ptr, manifest, len);
-    if (!p->version_string) goto invalid_manifest_file;
-    if (!nvid_version(p->version_string, &p->major, &p->minor, &p->patch))
-        goto invalid_manifest_file;
+    p->version = get_next_line(ptr, &ptr, manifest, len);
+    if (!p->version) goto invalid_manifest_file;
     
     /* new third line is the kernel interface filename */
 
@@ -574,7 +597,10 @@ static Package *parse_manifest (Options *op)
     
     do {
         buf = get_next_line(ptr, &ptr, manifest, len);
-        if ((!buf) || (buf[0] == '\0')) {
+        if (!buf) {
+            done = TRUE;
+        } else if (buf[0] == '\0') {
+            free(buf);
             done = TRUE;
         } else {
             
@@ -590,23 +616,29 @@ static Package *parse_manifest (Options *op)
                 goto fail;
             }
             
+            /* initialize the new entry */
+
+            memset(&p->entries[n], 0, sizeof(PackageEntry));
+
             /* read the file name and permissions */
 
             c = buf;
 
             p->entries[n].file = read_next_word(buf, &c);
+
+            if (!p->entries[n].file) goto invalid_manifest_file;
+
             tmpstr = read_next_word(c, &c);
             
-            /* if any of them were NULL, fail */
-
-            if (!p->entries[n].file || !tmpstr) goto invalid_manifest_file;
+            if (!tmpstr) goto invalid_manifest_file;
             
             /* translate the mode string into an octal mode */
             
-            if (!mode_string_to_mode(op, tmpstr, &p->entries[n].mode)) {
-                goto invalid_manifest_file;
-            }
+            ret = mode_string_to_mode(op, tmpstr, &p->entries[n].mode);
+
             free(tmpstr);
+
+            if (!ret) goto invalid_manifest_file;
             
             /* every file has a type field */
 
@@ -754,10 +786,63 @@ static Package *parse_manifest (Options *op)
     goto fail;
 
  fail:
-    if (p && p->entries) free(p->entries);
-    if (p) free(p);
+    free_package(p);
     if (manifest != MAP_FAILED) munmap(manifest, len);
     if (fd != -1) close(fd);
     return NULL;
        
 } /* parse_manifest() */
+
+
+
+/*
+ * free_package() - free the Package data structure
+ */
+
+static void free_package(Package *p)
+{
+    int i;
+
+    if (!p) return;
+    
+    nvfree(p->description);
+    nvfree(p->version);
+    nvfree(p->kernel_module_filename);
+    nvfree(p->kernel_interface_filename);
+    nvfree(p->kernel_module_name);
+    
+    if (p->bad_modules) {
+        for (i = 0; p->bad_modules[i]; i++) {
+            nvfree(p->bad_modules[i]);
+        }
+        nvfree((char *) p->bad_modules);
+    }
+
+    if (p->bad_module_filenames) {
+        for (i = 0; p->bad_module_filenames[i]; i++) {
+            nvfree(p->bad_module_filenames[i]);
+        }
+        nvfree((char *) p->bad_module_filenames);
+    }
+    
+    nvfree(p->kernel_module_build_directory);
+    
+    nvfree(p->precompiled_kernel_interface_directory);
+    
+    for (i = 0; i < p->num_entries; i++) {
+        nvfree(p->entries[i].file);
+        nvfree(p->entries[i].path);
+        nvfree(p->entries[i].target);
+        nvfree(p->entries[i].dst);
+
+        /*
+         * Note: p->entries[i].name just points into
+         * p->entries[i].file, so don't free p->entries[i].name
+         */
+    }
+
+    nvfree((char *) p->entries);
+
+    nvfree((char *) p);
+    
+} /* free_package() */

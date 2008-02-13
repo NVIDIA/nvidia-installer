@@ -47,6 +47,8 @@
 #include "kernel.h"
 
 
+static void free_file_list(FileList* l);
+
 static void find_conflicting_xfree86_libraries(Options *,
                                                const char *,
                                                FileList *);
@@ -190,6 +192,8 @@ CommandList *build_command_list(Options *op, Package *p)
             if (find_installed_file(op, l->filename[i])) {
                 ui_error(op, "The file '%s' already exists as part of this "
                          "driver installation.", l->filename[i]);
+                free_file_list(l);
+                free_command_list(op, c);
                 return NULL;
             }
         }
@@ -318,14 +322,32 @@ CommandList *build_command_list(Options *op, Package *p)
     }
 
     /* free the FileList */
-
-    for (i = 0; i < l->num; i++) free(l->filename[i]);
-    free(l->filename);
-    free(l);
+    free_file_list(l);
 
     return c;
 
 } /* build_command_list() */
+
+
+
+/*
+ * free_file_list() - free the file list
+ */
+
+static void free_file_list(FileList* l)
+{
+    int i;
+
+    if (!l) return;
+
+    for (i = 0; i < l->num; i++) {
+        nvfree(l->filename[i]);
+    }
+
+    nvfree((char *) l->filename);
+    nvfree((char *) l);
+    
+} /* free_file_list() */
 
 
 
@@ -402,7 +424,10 @@ int execute_command_list(Options *op, CommandList *c,
                          c->cmds[i].s0, data);
                 ret = continue_after_error(op, "Failed to execute `%s`",
                                            c->cmds[i].s0);
-                if (!ret) return FALSE;
+                if (!ret) {
+                    nvfree(data);
+                    return FALSE;
+                }
             }
             if (data) free(data);
             break;

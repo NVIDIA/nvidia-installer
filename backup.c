@@ -120,13 +120,15 @@ typedef struct {
 
 static BackupInfo *read_backup_log_file(Options *op);
 
+static void free_backup_info(BackupInfo *b);
+
 static int check_backup_log_entries(Options *op, BackupInfo *b);
 
 static int do_uninstall(Options *op);
 
 static int sanity_check_backup_log_entries(Options *op, BackupInfo *b);
 
-
+static char *create_backwards_compatible_version_string(const char *str);
 
 
 
@@ -141,6 +143,7 @@ static int sanity_check_backup_log_entries(Options *op, BackupInfo *b);
 
 int init_backup(Options *op, Package *p)
 {
+    char *version;
     FILE *log;
     
     /* remove the directory, if it already exists */
@@ -168,9 +171,13 @@ int init_backup(Options *op, Package *p)
 
     /* write the version and description */
 
-    fprintf(log, "%s\n", p->version_string);
-    fprintf(log, "%s\n", p->description);
+    version = create_backwards_compatible_version_string(p->version);
     
+    fprintf(log, "%s\n", version);
+    fprintf(log, "%s\n", p->description);
+
+    nvfree(version);
+        
     /* close the log file */
 
     if (fclose(log) != 0) {
@@ -494,9 +501,9 @@ static int do_uninstall(Options *op)
         "Your driver installation has been "
         "altered since it was initially installed; this may happen, "
         "for example, if you have since installed the NVIDIA driver through "
-        "a mechanism other than the nvidia-installer (such as rpm or "
-        "with the NVIDIA tarballs).  The nvidia-installer will "
-        "attempt to uninstall as best it can.";
+        "a mechanism other than nvidia-installer (such as your "
+        "distribution's native package management system).  "
+        "nvidia-installer will attempt to uninstall as best it can.";
     
     /* do we even have a backup directory? */
 
@@ -643,6 +650,8 @@ static int do_uninstall(Options *op)
         /* XXX what to do if this fails?... nothing */
     }
 
+    free_backup_info(b);
+
     return TRUE;
     
 } /* do_uninstall() */
@@ -743,6 +752,8 @@ static BackupInfo *read_backup_log_file(Options *op)
         b->e = (BackupLogEntry *)
             nvrealloc(b->e, sizeof(BackupLogEntry) * b->n);
 
+        memset(&b->e[b->n - 1], 0, sizeof(BackupLogEntry));
+
         e = &b->e[b->n - 1];
         e->num = num;
         e->filename = filename;
@@ -823,6 +834,33 @@ static BackupInfo *read_backup_log_file(Options *op)
     return NULL;
 
 } /* read_backup_log_file() */
+
+
+
+/*
+ * free_backup_info() - free the data associated with BackupInfo
+ */
+
+static void free_backup_info(BackupInfo *b)
+{
+    int i;
+
+    if (!b) return;
+    
+    nvfree(b->version);
+    nvfree(b->description);
+    
+    for (i = 0; i < b->n; i++) {
+        nvfree(b->e[i].filename);
+        nvfree(b->e[i].target);
+    }
+
+    nvfree((char *) b->e);
+    
+    nvfree((char *) b);
+
+} /* free_backup_info() */
+
 
 
 /*
@@ -982,12 +1020,14 @@ static int check_backup_log_entries(Options *op, BackupInfo *b)
  * XXX we should probably check the file permissions of BACKUP_LOG.
  */
 
-char *get_installed_driver_version_and_descr(Options *op, int *major,
-                                             int *minor, int *patch)
+int get_installed_driver_version_and_descr(Options *op,
+                                           char **pVersion, char **pDescr)
 {
     struct stat stat_buf;
     char *c, *version = NULL, *descr = NULL, *buf = NULL;
+    char *version_line = NULL;
     int length, fd = -1;
+    int ret = FALSE;
 
     if ((fd = open(BACKUP_LOG, O_RDONLY)) == -1) goto done;
     
@@ -1000,18 +1040,31 @@ char *get_installed_driver_version_and_descr(Options *op, int *major,
     buf = mmap(0, length, PROT_READ, MAP_FILE | MAP_SHARED, fd, 0);
     if (!buf) goto done;
     
-    version = get_next_line(buf, &c, buf, length);
-    if (!version) goto done;
+    version_line = get_next_line(buf, &c, buf, length);
+    if (!version_line) goto done;
 
-    if (!nvid_version(version, major, minor, patch)) goto done;
+    version = extract_version_string(version_line);
+
+    if (!version) goto done;
     
     descr = get_next_line(c, NULL, buf, length);
 
+    if (!descr) goto done;
+
+    *pVersion = strdup(version);
+    *pDescr = strdup(descr);
+    
+    ret = TRUE;
+    
  done:
-    if (version) free(version);
+    nvfree(version_line);
+    nvfree(version);
+    nvfree(descr);
+
     if (buf) munmap(buf, stat_buf.st_size);
     if (fd != -1) close(fd);
-    return descr;
+    
+    return ret;
 
 } /* get_installed_driver_version_and_descr() */
 
@@ -1033,38 +1086,44 @@ char *get_installed_driver_version_and_descr(Options *op, int *major,
 
 int check_for_existing_driver(Options *op, Package *p)
 {
-    int major, minor, patch;
-    char *descr;
+    char *descr = NULL;
+    char *version = NULL;
+    int ret = FALSE;
+    int localRet;
 
-    if (!check_for_existing_rpms(op)) return FALSE;
+    if (!check_for_existing_rpms(op)) goto done;
 
-    descr = get_installed_driver_version_and_descr(op, &major, &minor, &patch);
+    localRet = get_installed_driver_version_and_descr(op, &version, &descr);
 
     if (op->kernel_module_only) {
-        if (!descr) {
+        if (!localRet) {
             ui_error(op, "No NVIDIA driver is currently installed; the "
                      "'--kernel-module-only' option can only be used "
                      "to install the NVIDIA kernel module on top of an "
                      "existing driver installation.");
-            return FALSE;
+            goto done;
         } else {
-            if ((p->major != major) ||
-                (p->minor != minor) ||
-                (p->patch != patch)) {
+            if (strcmp(p->version, version) != 0) {
                 ui_error(op, "The '--kernel-module-only' option can only be "
                          "used to install a kernel module on top of an "
                          "existing driver installation of the same driver "
                          "version.  The existing driver installation is "
-                         "%d.%d-%d, but the kernel module is %d.%d-%d\n",
-                         major, minor, patch, p->major, p->minor, p->patch);
-                return FALSE;
+                         "%s, but the kernel module is %s.\n",
+                         version, p->version);
+                goto done;
             } else {
-                return TRUE;
+                ret = TRUE;
+                goto done;
             }
         }
     }
     
-    if (!descr) return TRUE;
+    /* no existing driver -- it is fine to continue with installation */
+
+    if (!localRet) {
+        ret = TRUE;
+        goto done;
+    }
 
     /*
      * XXX we could do a comparison, here, to check that the Package
@@ -1075,19 +1134,24 @@ int check_for_existing_driver(Options *op, Package *p)
      */
     
     if (!ui_yes_no(op, TRUE, "There appears to already be a driver installed "
-                   "on your system (version: %d.%d-%d).  As part of "
-                   "installing this driver (version: %d.%d-%d), the existing "
+                   "on your system (version: %s).  As part of "
+                   "installing this driver (version: %s), the existing "
                    "driver will be uninstalled.  Are you sure you want to "
                    "continue? ('no' will abort installation)",
-                   major, minor, patch, p->major, p->minor, p->patch)) {
+                   version, p->version)) {
         
-        free(descr);
         ui_log(op, "Installation aborted.");
-        return FALSE;
+        goto done;
     }
     
-    free(descr);
-    return TRUE;
+    ret = TRUE;
+
+ done:
+
+    nvfree(descr);
+    nvfree(version);
+    
+    return ret;
 
 } /* check_for_existing_driver() */
 
@@ -1103,11 +1167,12 @@ int check_for_existing_driver(Options *op, Package *p)
 
 int uninstall_existing_driver(Options *op, const int interactive)
 {
-    int major, minor, patch, ret;
-    char *descr;
+    int ret;
+    char *descr = NULL;
+    char *version = NULL;
     
-    descr = get_installed_driver_version_and_descr(op, &major, &minor, &patch);
-    if (!descr) {
+    ret = get_installed_driver_version_and_descr(op, &version, &descr);
+    if (!ret) {
         if (interactive) {
             ui_message(op, "There is no NVIDIA driver currently installed.");
         }
@@ -1118,17 +1183,18 @@ int uninstall_existing_driver(Options *op, const int interactive)
 
     if (ret) {
         if (interactive) {
-            ui_message(op, "Uninstallation of existing driver: %s (%d.%d-%d) "
-                       "is complete.", descr, major, minor, patch);
+            ui_message(op, "Uninstallation of existing driver: %s (%s) "
+                       "is complete.", descr, version);
         } else {
-            ui_log(op, "Uninstallation of existing driver: %s (%d.%d-%d) "
-                   "is complete.", descr, major, minor, patch);
+            ui_log(op, "Uninstallation of existing driver: %s (%s) "
+                   "is complete.", descr, version);
         }
     } else {
         ui_error(op, "Uninstallation failed.");
     }
     
-    free(descr);
+    nvfree(descr);
+    nvfree(version);
 
     return TRUE;
 
@@ -1143,19 +1209,21 @@ int uninstall_existing_driver(Options *op, const int interactive)
 
 int report_driver_information(Options *op)
 {
-    int major, minor, patch;
-    char *descr;
-
-    descr = get_installed_driver_version_and_descr(op, &major, &minor, &patch);
-    if (!descr) {
+    char *descr, *version;
+    int ret;
+    
+    ret = get_installed_driver_version_and_descr(op, &version, &descr);
+    if (!ret) {
         ui_message(op, "There is no NVIDIA driver currently installed.");
         return FALSE;
     }
 
     ui_message(op, "The currently installed driver is: '%s' "
-               "(version: %d.%d-%d).", descr, major, minor, patch);
+               "(version: %s).", descr, version);
     
-    free(descr);
+    nvfree(descr);
+    nvfree(version);
+
     return TRUE;
     
 } /* report_driver_information() */
@@ -1176,7 +1244,9 @@ int test_installed_files(Options *op)
     
     ret = sanity_check_backup_log_entries(op, b);
     
-    /* XXX should free resources associated with b */
+    /* free resources associated with b */
+    
+    free_backup_info(b);
 
     return ret;
     
@@ -1193,7 +1263,7 @@ int find_installed_file(Options *op, char *filename)
 {
     BackupInfo *b;
     BackupLogEntry *e;
-    int i;
+    int i, ret = FALSE;
     
     if ((b = read_backup_log_file(op)) == NULL) return FALSE;
 
@@ -1204,13 +1274,14 @@ int find_installed_file(Options *op, char *filename)
             /* XXX should maybe compare inodes rather than
                filenames? */
 
-            return TRUE;
+            ret =  TRUE;
+            break;
         }
     }
 
-    /* XXX need to free b */
+    free_backup_info(b);
 
-    return FALSE;
+    return ret;
 
 } /* find_installed_file() */
 
@@ -1330,3 +1401,61 @@ static int sanity_check_backup_log_entries(Options *op, BackupInfo *b)
     return ret;
     
 } /* sanity_check_backup_log_entries */
+
+
+
+/*
+ * create_backwards_compatible_version_string() - given the version
+ * string 'str', generate a version string to write to the backup log
+ * file that can be read by older nvidia-installers that assumed the
+ * X.Y-ZZZZ version format.
+ *
+ * Fortunately, old nvidia-installers' version parsing didn't care if
+ * there were extra digits beyond the four Z's (e.g., it could be
+ * X.Y-ZZZZZ, or X.Y-ZZZZZZZZ); they would just look for the first 4
+ * Z's if they needed to parse the version.
+ *
+ * So, the strategy is to take the new version string, remove any
+ * periods, and print that out as the old style version, followed by
+ * the real version string in parenthesis; e.g.,
+ *
+ *  "1.0-105917 (105.9.17)"
+ *
+ * In this way, an old nvidia-installer will atleast be able to parse
+ * the string, even though it may not understand it, but a new
+ * nvidia-installer can be smart and pull out the new version string.
+ */
+
+static char *create_backwards_compatible_version_string(const char *str)
+{
+    char *version, *scratch, *s, *t;
+    int len;
+
+    /*
+     * create a scratch string by duping the passed in str, but
+     * collapse the scratch string by only retaining the digits; e.g.,
+     * "105.9.17" --> "105917"
+     */
+    
+    scratch = nvstrdup(str);
+
+    for (s = t = scratch; *t; t++) {
+        if (isdigit(*t)) {
+            *s++ = *t;
+        }
+    }
+    
+    *s = '\0';
+
+    /* allocate a new string to contain the result */
+
+    len = strlen(str);
+    version = nvalloc((len * 2) + 16);
+    
+    sprintf(version, "1.0-%s (%s)", scratch, str);
+    
+    nvfree(scratch);
+
+    return version;
+    
+} /* create_backwards_compatible_version_string() */

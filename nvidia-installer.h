@@ -229,10 +229,8 @@ typedef struct __package_entry {
 
 typedef struct __package {
 
-    int major, minor, patch;
-
     char *description;
-    char *version_string;
+    char *version;
     char *kernel_module_filename;
     char *kernel_interface_filename;
     char *kernel_module_name;

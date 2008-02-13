@@ -60,7 +60,7 @@ static const LEGACY_INFO LegacyList[] = {
     { 0x0177,   2,      "GeForce4 460 Go" },
     { 0x0178,   2,      "Quadro4 550 XGL" },
     { 0x0179,   2,      "GeForce4 440 Go 64M" },
-    { 0x017A,   2,      "Quadro NVS" },
+    { 0x017A,   2,      "Quadro NVS 400" },
     { 0x017C,   2,      "Quadro4 500 GoGL" },
     { 0x017D,   2,      "GeForce4 410 Go 16M" },
     { 0x0181,   2,      "GeForce4 MX 440 with AGP8X" },
