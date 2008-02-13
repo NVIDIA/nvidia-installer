@@ -655,6 +655,18 @@ int test_kernel_module(Options *op, Package *p)
         sysctl(name, 2, NULL, 0, &new_loglevel, len);
     }
 
+    /*
+     * On Linux 2.6 we depend on the AGPGART frontend module unless
+     * the kernel was configured without support for the Linux AGP
+     * GART driver. Preload it here to satisfy the dependency, which
+     * isn't resolved by `insmod`.
+     */
+    if (strncmp(get_kernel_name(op), "2.4", 3) != 0) {
+        cmd = nvstrcat(op->utils[MODPROBE], " -q agpgart", NULL);
+        run_command(op, cmd, NULL, FALSE, 0, TRUE);
+        nvfree(cmd);
+    }
+
     cmd = nvstrcat(op->utils[INSMOD], " ",
                    p->kernel_module_build_directory, "/",
                    p->kernel_module_filename, NULL);
