@@ -1008,51 +1008,6 @@ char *find_system_util(const char *util)
 
 
 /*
- * nvid_version() - parse the given nvid string for the version
- * number, and assign major, minor and patch.  Returns TRUE on
- * success, FALSE on failure.
- *
- * The version format is assumed to be: is X.Y-ZZZZ
- */
-
-int nvid_version (const char *str, int *major, int *minor, int *patch)
-{
-    char *s, *x;
-    int ret = FALSE;
-
-    s = nvstrdup(str);
-    x = s;
-
-    while (*x) {
-        if (((x[0]) && isdigit(x[0])) &&
-            ((x[1]) && (x[1] == '.')) &&
-            ((x[2]) && isdigit(x[2])) &&
-            ((x[3]) && (x[3] == '-')) &&
-            ((x[4]) && isdigit(x[4])) &&
-            ((x[5]) && isdigit(x[5])) &&
-            ((x[6]) && isdigit(x[6])) &&
-            ((x[7]) && isdigit(x[7]))) {
-            
-            x[1] = x[3] = x[8] = '\0';
-            
-            *major = atoi(&x[0]);
-            *minor = atoi(&x[2]);
-            *patch = atoi(&x[4]);
-            
-            ret = TRUE;
-            break;
-        }
-        x++;
-    }
-
-    free(s);
-    return ret;
-    
-} /* nvid_version() */
-
-
-
-/*
  * continue_after_error() - tell the user that an error has occured,
  * and ask them if they would like to continue.
  *
@@ -1087,10 +1042,10 @@ int do_install(Options *op, Package *p, CommandList *c)
     char *msg;
     int len, ret;
 
-    len = strlen(p->description) + strlen(p->version_string) + 64;
+    len = strlen(p->description) + strlen(p->version) + 64;
     msg = (char *) nvalloc(len);
     snprintf(msg, len, "Installing '%s' (%s):",
-             p->description, p->version_string);
+             p->description, p->version);
     
     ret = execute_command_list(op, c, msg, "Installing");
     
@@ -1103,6 +1058,175 @@ int do_install(Options *op, Package *p, CommandList *c)
     return TRUE;
 
 } /* do_install() */
+
+
+
+/*
+ * extract_version_string() - extract the NVIDIA driver version string
+ * from the given string.  On failure, return NULL; on success, return
+ * a malloced string containing just the version string.
+ *
+ * The version string can have one of two forms: either the old
+ * "X.Y.ZZZZ" format (e.g., "1.0-9742"), or the new format where it is
+ * just a collection of period-separated numbers (e.g., "105.17.2").
+ * The length and number of periods in the newer format is arbitrary.
+ *
+ * Furthermore, we expect the new version format to be enclosed either
+ * in parenthesis or whitespace (or be at the start or end of the
+ * input string) and be atleast 5 characters long.  This allows us to
+ * distinguish the version string from other numbers such as the year
+ * or the old version format in input strings like this:
+ *
+ *  "NVIDIA UNIX x86 Kernel Module  105.17.2  Fri Dec 15 09:54:45 PST 2006"
+ *  "1.0-105917 (105.9.17)"
+ */
+
+char *extract_version_string(const char *str)
+{
+    char c, *copiedString, *start, *end, *x, *version = NULL;
+    int state;
+
+    if (!str) return NULL;
+
+    copiedString = strdup(str);
+    x = copiedString;
+    
+    /*
+     * look for a block of only numbers and periods; the version
+     * string must be surrounded by either whitespace, or the
+     * start/end of the string; we use a small state machine to parse
+     * the string
+     */
+    
+    start = NULL;
+    end = NULL;
+
+#define STATE_IN_VERSION          0
+#define STATE_NOT_IN_VERSION      1
+#define STATE_LOOKING_FOR_VERSION 2
+#define STATE_FOUND_VERSION       3
+
+    state = STATE_LOOKING_FOR_VERSION;
+
+    while (*x) {
+        
+        c = *x;
+        
+        switch (state) {
+        
+            /*
+             * if we are LOOKING_FOR_VERSION, then finding a digit
+             * will put us inside the version, whitespace (or open
+             * parenthesis) will allow us to continue to look for the
+             * version, and any other character will cause us to stop
+             * looking for the version string
+             */
+    
+        case STATE_LOOKING_FOR_VERSION:
+            if (isdigit(c)) {
+                start = x;
+                state = STATE_IN_VERSION;
+            } else if (isspace(c) || (c == '(')) {
+                state = STATE_LOOKING_FOR_VERSION;
+            } else {
+                state = STATE_NOT_IN_VERSION;
+            }
+            break;
+            
+            /*
+             * if we are IN_VERSION, then a digit or period will keep
+             * us in the version, space (or close parenthesis) and
+             * more than 4 characters of version means we found the
+             * entire version string.  If we find any other character,
+             * then what we thought was the version string wasn't, so
+             * move to NOT_IN_VERSION.
+             */
+
+        case STATE_IN_VERSION:
+            if (isdigit(c) || (c == '.')) {
+                state = STATE_IN_VERSION;
+            } else if ((isspace(c) || (c == ')')) && ((x - start) >= 5)) {
+                end = x;
+                state = STATE_FOUND_VERSION;
+                goto exit_while_loop;
+            } else {
+                state = STATE_NOT_IN_VERSION;
+            }
+            break;
+            
+            /*
+             * if we are NOT_IN_VERSION, then space or open
+             * parenthesis will make us start looking for the version,
+             * and any other character just leaves us in the
+             * NOT_IN_VERSION state
+             */
+
+        case STATE_NOT_IN_VERSION:
+            if (isspace(c) || (c == '(')) {
+                state = STATE_LOOKING_FOR_VERSION;
+            } else {
+                state = STATE_NOT_IN_VERSION;
+            }
+            break;
+        }
+
+        x++;
+    }
+
+    /*
+     * the NULL terminator that broke us out of the while loop could
+     * be the end of the version string
+     */
+    
+    if ((state == STATE_IN_VERSION) && ((x - start) >= 5)) {
+        end = x;
+        state = STATE_FOUND_VERSION;
+    }
+    
+ exit_while_loop:
+    
+    /* if we found a version string above, copy it */
+
+    if (state == STATE_FOUND_VERSION) {
+        *end = '\0';
+        version = strdup(start);
+        goto done;
+    }
+    
+    
+    
+    /*
+     * we did not find a version string with the new format; look for
+     * a version of the old X.Y-ZZZZ format
+     */
+    
+    x = copiedString;
+
+    while (*x) {
+        if (((x[0]) && isdigit(x[0])) &&
+            ((x[1]) && (x[1] == '.')) &&
+            ((x[2]) && isdigit(x[2])) &&
+            ((x[3]) && (x[3] == '-')) &&
+            ((x[4]) && isdigit(x[4])) &&
+            ((x[5]) && isdigit(x[5])) &&
+            ((x[6]) && isdigit(x[6])) &&
+            ((x[7]) && isdigit(x[7]))) {
+            
+            x[8] = '\0';
+            
+            version = strdup(x);
+            goto done;
+        }
+        x++;
+    }
+
+ done:
+
+    free(copiedString);
+
+    return version;
+
+} /* extract_version_string() */
 
 
 
@@ -2082,7 +2206,7 @@ int check_for_nvidia_graphics_devices(Options *op, Package *p)
                             "through the NVIDIA legacy Linux graphics drivers.  Please "
                             "visit http://www.nvidia.com/object/unix.html for more "
                             "information.  The %s NVIDIA Linux graphics driver will "
-                            "ignore this GPU.", LegacyList[i].AdapterString, p->version_string);
+                            "ignore this GPU.", LegacyList[i].AdapterString, p->version);
                     found_legacy_device = TRUE;
                 }
             }
@@ -2098,7 +2222,7 @@ int check_for_nvidia_graphics_devices(Options *op, Package *p)
                  "%s NVIDIA Linux graphics driver installed in this system.  "
                  "For further details, please see the appendix SUPPORTED "
                  "NVIDIA GRAPHICS CHIPS in the README available on the Linux "
-                 "driver download page at www.nvidia.com.", p->version_string);
+                 "driver download page at www.nvidia.com.", p->version);
         return FALSE;
     }
 

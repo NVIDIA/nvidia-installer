@@ -41,8 +41,8 @@
 #include "update.h"
 
 
-static char *get_latest_driver_version_and_filename(Options *op,
-                                                    int *, int *, int *);
+static int get_latest_driver_version_and_filename(Options *op,
+                                                  char **, char **);
 
 
 
@@ -53,26 +53,38 @@ static char *get_latest_driver_version_and_filename(Options *op,
 
 int update(Options *op)
 {
-    char *descr, *filename, *tmpfile, *url, *cmd;
-    int x0, y0, z0, x1, y1, z1, ret, fd;
+    char *descr = NULL;
+    char *filename = NULL;
+    char *tmpfile = NULL;
+    char *url = NULL;
+    char *cmd;
+    char *installedVersion = NULL;
+    char *latestVersion = NULL;
+    int fd, installedRet, latestRet, localRet;
+    int ret = FALSE;
 
-    descr = get_installed_driver_version_and_descr(op, &x0, &y0, &z0);
+    installedRet = get_installed_driver_version_and_descr(op,
+                                                          &installedVersion,
+                                                          &descr);
     
-    filename = get_latest_driver_version_and_filename(op, &x1, &y1, &z1);
-    if (!filename) return FALSE;
-
-    if (descr && !op->force_update) {
+    latestRet = get_latest_driver_version_and_filename(op, &latestVersion,
+                                                       &filename);
+    if (!latestRet) {
+        goto done;
+    }
+    
+    if (installedRet && !op->force_update) {
 
         /*
          * if the currently installed driver version is the same as
          * the latest, don't update.
          */
-
-        if ((x0 == x1) && (y0 == y1) && (z0 == z1)) {
-            ui_message(op, "The latest %s (version %d.%d-%d) is already "
-                       "installed.", descr, x0, y0, z0);
-            nvfree(descr);
-            return TRUE;
+        
+        if (strcmp(installedVersion, latestVersion) == 0) {
+            ui_message(op, "The latest %s (version %s) is already "
+                       "installed.", descr, installedVersion);
+            ret = TRUE;
+            goto done;
         }
     }
     
@@ -81,20 +93,19 @@ int update(Options *op)
     tmpfile = nvstrcat(op->tmpdir, "/nv-update-XXXXXX", NULL);
     url = nvstrcat(op->ftp_site, "/XFree86/", INSTALLER_OS, "-",
                    INSTALLER_ARCH, "/", filename, NULL);
-    nvfree(filename);
-
+    
     /* create the temporary file */
 
     if ((fd = mkstemp(tmpfile)) == -1) {
         ui_error(op, "Unable to create temporary file (%s)", strerror(errno));
-        return FALSE;
+        goto done;
     }
 
     /* download the file */
 
     if (!snarf(op, url, fd, SNARF_FLAGS_STATUS_BAR)) {
         ui_error(op, "Unable to download driver %s.", url);
-        return FALSE;
+        goto done;
     }
     
     close(fd);
@@ -104,12 +115,12 @@ int update(Options *op)
     /* check the binary */
 
     cmd = nvstrcat("sh ", tmpfile, " --check", NULL);
-    ret = run_command(op, cmd, NULL, FALSE, FALSE, TRUE);
+    localRet = run_command(op, cmd, NULL, FALSE, FALSE, TRUE);
     nvfree(cmd);
 
-    if (ret != 0) {
-        ui_error(op, "The downloaded file does not pass its integrety check.");
-        return FALSE;
+    if (localRet != 0) {
+        ui_error(op, "The downloaded file does not pass its integrity check.");
+        goto done;
     }
 
     /*
@@ -122,7 +133,7 @@ int update(Options *op)
     /* execute `sh <downloaded file> <arguments>` */
 
     cmd = nvstrcat("sh ", tmpfile, " ", op->update_arguments, NULL);
-    ret = system(cmd);
+    localRet = system(cmd);
     nvfree(cmd);
     
     /* remove the downloaded file */
@@ -134,10 +145,22 @@ int update(Options *op)
      * function.
      */
 
-    exit(ret);
+    exit(localRet);
 
-    return TRUE;
+    ret = TRUE;
     
+ done:
+    
+    nvfree(installedVersion);
+    nvfree(descr);
+    nvfree(latestVersion);
+    nvfree(filename);
+    
+    nvfree(tmpfile);
+    nvfree(url);
+
+    return ret;
+
 } /* update() */
 
 
@@ -148,32 +171,42 @@ int update(Options *op)
 
 int report_latest_driver_version(Options *op)
 {
-    char *descr, *filename, *url;
-    int x0, y0, z0, x1, y1, z1;
+    char *descr = NULL;
+    char *filename = NULL;
+    char *url = NULL;
+    char *installedVersion = NULL;
+    char *latestVersion = NULL;
+    int installedRet, latestRet;
 
-    descr = get_installed_driver_version_and_descr(op, &x0, &y0, &z0);
+    installedRet = get_installed_driver_version_and_descr(op,
+                                                          &installedVersion,
+                                                          &descr);
     
-    filename = get_latest_driver_version_and_filename(op, &x1, &y1, &z1);
-
-    if (!filename) {
+    latestRet = get_latest_driver_version_and_filename(op, &latestVersion,
+                                                       &filename);
+    
+    if (!latestRet) {
         nvfree(descr);
+        nvfree(installedVersion);
         return FALSE;
     }
 
     url = nvstrcat(op->ftp_site, "/XFree86/", INSTALLER_OS, "-",
                    INSTALLER_ARCH, "/", filename, NULL);
     
-    if (descr) {
-        ui_message(op, "Currently installed version: %d.%d-%d; "
-                   "latest available version: %d.%d-%d; latest driver "
-                   "file: %s.", x0, y0, z0, x1, y1, z1, url);
-        nvfree(descr);
+    if (installedRet) {
+        ui_message(op, "Currently installed version: %s; "
+                   "latest available version: %s; latest driver "
+                   "file: %s.", installedVersion, latestVersion, url);
     } else {
-        ui_message(op, "Latest version: %d.%d-%d; latest driver file: %s.",
-                   x1, y1, z1, url);
+        ui_message(op, "Latest version: %s; latest driver file: %s.",
+                   latestVersion, url);
     }
     
+    nvfree(descr);
+    nvfree(installedVersion);
     nvfree(filename);
+    nvfree(latestVersion);
     nvfree(url);
     
     return TRUE;
@@ -216,20 +249,35 @@ char *append_update_arguments(char *s, int c, const char *arg,
 
 
 /*
- * get_latest_driver_version() - 
+ * get_latest_driver_version() - download and parse the latest.txt
+ * file; the format of this file is:
+ *
+ *   [old format version] [path to .run file]
+ *   [new format version]
+ *
+ * This is done for backwards compatibility -- old nvidia-installers
+ * will read only the first line and parse the old format version
+ * string; new nvidia-installers will try to find the version string
+ * on the second line.  If we are unable to find the version string on
+ * the second line, then fall back to the old format string on the
+ * first line.
  */
 
-static char *get_latest_driver_version_and_filename(Options *op, int *major,
-                                                    int *minor, int *patch)
+static int get_latest_driver_version_and_filename(Options *op,
+                                                  char **pVersion,
+                                                  char **pFileName)
 {
     int fd = -1;
     int length;
+    int ret = FALSE;
     char *tmpfile = NULL;
     char *url = NULL;
     char *str = (void *) -1;
     char *s = NULL;
     char *buf = NULL;
-    char *filename = NULL;
+    char *buf2 = NULL;
+    char *ptr;
+    char *version = NULL;
     struct stat stat_buf;
     
     tmpfile = nvstrcat(op->tmpdir, "/nv-latest-XXXXXX", NULL);
@@ -264,10 +312,20 @@ static char *get_latest_driver_version_and_filename(Options *op, int *major,
         goto done;
     }
     
-    buf = get_next_line(str, NULL, str, length);
+    
+    /*
+     * read in the first two lines from the file; the second line may
+     * optionally contain a version string with the new format
+     */
 
-    if (!nvid_version(buf, major, minor, patch)) {
-        ui_error(op, "Unable to determine latest NVIDIA %s-%s driver "
+    buf = get_next_line(str, &ptr, str, length);
+    buf2 = get_next_line(ptr, NULL, str, length);
+
+    version = extract_version_string(buf2);
+    if (!version) version = extract_version_string(buf);
+    
+    if (!version) {
+        ui_error(op, "Unable to determine latest NVIDIA driver "
                  "version (no version number found in %s)", url);
         goto done;
     }
@@ -281,19 +339,24 @@ static char *get_latest_driver_version_and_filename(Options *op, int *major,
     }
 
     s++;
-    filename = nvstrdup(s);
+    *pFileName = nvstrdup(s);
+    *pVersion = strdup(version);
+
+    ret = TRUE;
 
  done:
     
-    if (buf) nvfree(buf);
+    nvfree(buf);
+    nvfree(buf2);
     if (str != (void *) -1) munmap(str, stat_buf.st_size);
     if (fd != -1) close(fd);
 
     unlink(tmpfile);
 
-    if (tmpfile) nvfree(tmpfile);
-    if (url) nvfree(url);
+    nvfree(tmpfile);
+    nvfree(url);
+    nvfree(version);
 
-    return filename;
+    return ret;
 
 } /* get_latest_driver_version() */

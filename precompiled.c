@@ -47,7 +47,7 @@
 #include "misc.h"
 #include "crc.h"
 
-#define PRECOMPILED_CONSTANT_LENGTH (8 + 4 + 12 + 4 + 4)
+#define PRECOMPILED_CONSTANT_LENGTH (8 + 4 + 4 + 4 + 4)
 
 /*
  * decode_uint32() - given an index into a buffer, read the next 4
@@ -153,14 +153,12 @@ PrecompiledInfo *precompiled_unpack(Options *op,
                                     const char *filename,
                                     const char *output_filename,
                                     const char *real_proc_version_string,
-                                    const int package_major,
-                                    const int package_minor,
-                                    const int package_patch)
+                                    const char *package_version)
 {
     int dst_fd, fd, offset, len = 0;
     char *buf, *dst;
-    uint32 crc, major, minor, patch, val, size;
-    char *description, *proc_version_string;
+    uint32 crc, val, size;
+    char *version, *description, *proc_version_string;
     struct stat stat_buf;
     PrecompiledInfo *info = NULL;
 
@@ -216,17 +214,26 @@ PrecompiledInfo *precompiled_unpack(Options *op,
     
     /* read the version */
 
-    major = decode_uint32(buf + offset + 0);
-    minor = decode_uint32(buf + offset + 4);
-    patch = decode_uint32(buf + offset + 8);
-    offset += 12;
+    val = decode_uint32(buf + offset);
+    offset += 4;
+    if ((val + PRECOMPILED_CONSTANT_LENGTH) > size) {
+        ui_expert(op, "Invalid file '%s' (bad version string length %d).",
+                  filename, val);
+        goto done;
+    }
+    if (val > 0) {
+        version = nvalloc(val+1);
+        memcpy(version, buf + offset, val);
+        version[val] = '\0';
+    } else {
+        version = NULL;
+    }
+    offset += val;
 
     /* check if this precompiled kernel interface is the right driver
        version */
 
-    if ((major != package_major) ||
-        (minor != package_minor) ||
-        (patch != package_patch)) {
+    if (strcmp(version, package_version) != 0) {
         goto done;
     }
 
@@ -312,9 +319,7 @@ PrecompiledInfo *precompiled_unpack(Options *op,
 
     info = (PrecompiledInfo *) nvalloc(sizeof(PrecompiledInfo));
     info->crc = crc;
-    info->major = major;
-    info->minor = minor;
-    info->patch = patch;
+    info->version = version;
     info->proc_version_string = proc_version_string;
     info->description = description;
 

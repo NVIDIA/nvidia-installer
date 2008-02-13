@@ -828,50 +828,6 @@ int load_kernel_module(Options *op, Package *p)
 
 
 
-
-
-
-/*
- * check_kernel_module_version() - check that the driver version
- * indicated in the /proc filesystem is the same as the driver version
- * specified in the package description.
- */
-
-int check_kernel_module_version(Options *op, Package *p)
-{
-    int major, minor, patch;
-    int proc_major, proc_minor, proc_patch;
-    FILE *fp = 0;
-    char *buf;
-    int eof;
-
-    fp = fopen(NVIDIA_VERSION_PROC_FILE, "r");
-    if (!fp)
-        return FALSE;
-    buf = fget_next_line(fp, &eof);
-    fclose(fp);
-    
-    if (!nvid_version(buf, &proc_major, &proc_minor, &proc_patch)) {
-        free(buf);
-        return FALSE;
-    }
-
-    if (!nvid_version(p->version_string, &major, &minor, &patch)) {
-        return FALSE;
-    }
-
-    if ((proc_major != major) ||
-        (proc_minor != minor) || 
-        (proc_patch != patch)) {
-        return FALSE;
-    }
-
-    return TRUE;
-
-} /* check_kernel_module_version() */
-
-
-
 /*
  * check_for_unloaded_kernel_module() - test if any of the "bad"
  * kernel modules are loaded; if they are, then try to unload it.  If
@@ -1343,7 +1299,7 @@ download_updated_kernel_interface(Options *op, Package *p,
     
     tmpfile = nvstrcat(op->tmpdir, "/nv-updates-XXXXXX", NULL);
     url = nvstrcat(op->ftp_site, "/XFree86/", INSTALLER_OS, "-",
-                   INSTALLER_ARCH, "/", p->version_string,
+                   INSTALLER_ARCH, "/", p->version,
                    "/updates/updates.txt", NULL);
     
     /*
@@ -1407,7 +1363,7 @@ download_updated_kernel_interface(Options *op, Package *p,
             nvfree(url);
             url = nvstrcat(op->ftp_site, "/XFree86/",
                            INSTALLER_OS, "-", INSTALLER_ARCH, "/",
-                           p->version_string, "/updates/", buf, NULL);
+                           p->version, "/updates/", buf, NULL);
                 
             dstfile = nvstrcat(p->precompiled_kernel_interface_directory,
                                "/", buf, NULL);
@@ -1440,7 +1396,7 @@ download_updated_kernel_interface(Options *op, Package *p,
             
             info = precompiled_unpack(op, dstfile, output_filename,
                                       proc_version_string,
-                                      p->major, p->minor, p->patch);
+                                      p->version);
             
             /* compare checksums */
             
@@ -1665,7 +1621,7 @@ static PrecompiledInfo *scan_dir(Options *op, Package *p,
         
         info = precompiled_unpack(op, filename, output_filename,
                                   proc_version_string,
-                                  p->major, p->minor, p->patch);
+                                  p->version);
             
         if (info) break;
             

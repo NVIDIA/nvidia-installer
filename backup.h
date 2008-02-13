@@ -36,12 +36,11 @@ int init_backup                 (Options*, Package*);
 int do_backup                   (Options*, const char*);
 int log_install_file            (Options*, const char*);
 int log_create_symlink          (Options*, const char*, const char*);
-int get_installed_driver_version(Options*, int*, int*, int*);
 int check_for_existing_driver   (Options*, Package*);
 int uninstall_existing_driver   (Options*, const int);
 int report_driver_information   (Options*);
 
-char *get_installed_driver_version_and_descr(Options *, int *, int *, int *);
+int get_installed_driver_version_and_descr(Options *, char **, char **);
 int test_installed_files(Options *op);
 int find_installed_file(Options *op, char *filename);
 

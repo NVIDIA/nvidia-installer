@@ -83,6 +83,4 @@ CommandList *build_command_list(Options*, Package *);
 void free_command_list(Options*, CommandList*);
 int execute_command_list(Options*, CommandList*, const char*, const char*);
 
-void condense_file_list(FileList *l);
-
 #endif /* __NVIDIA_INSTALLER_COMMAND_LIST_H__ */

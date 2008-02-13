@@ -33,9 +33,7 @@
 typedef struct {
     
     uint32 crc;
-    uint32 major;
-    uint32 minor;
-    uint32 patch;
+    char *version;
     char *proc_version_string;
     char *description;
 
@@ -48,9 +46,7 @@ PrecompiledInfo *precompiled_unpack(Options *op,
                                     const char *filename,
                                     const char *output_filename,
                                     const char *real_proc_version_string,
-                                    const int package_major,
-                                    const int package_minor,
-                                    const int package_patch);
+                                    const char *package_version);
 
 
 #endif /* __NVIDIA_INSTALLER_PRECOMPILED_H__ */
