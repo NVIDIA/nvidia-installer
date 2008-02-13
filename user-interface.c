@@ -62,7 +62,7 @@ extern InstallerUI stream_ui_dispatch_table;
 
 /* pull in the user interface data arrays and sizes */
 
-extern const unsigned char ncurses_ui_array[];
+extern const char ncurses_ui_array[];
 extern const int ncurses_ui_array_size;
 
 /* struct describing the ui data */
@@ -324,7 +324,7 @@ void ui_command_output(Options *op, const char *fmt, ...)
 
     if (!op->silent) __ui->command_output(op, msg);
 
-    log_printf(op, FALSE, NV_CMD_OUT_PREFIX, msg);
+    log_printf(op, FALSE, NV_CMD_OUT_PREFIX, "%s", msg);
 
     free(msg);
 

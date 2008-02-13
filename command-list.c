@@ -47,14 +47,26 @@
 #include "kernel.h"
 
 
+static void find_conflicting_xfree86_libraries(Options *,
+                                               const char *,
+                                               FileList *);
+
+static void find_conflicting_xfree86_libraries_fullpath(Options *op,
+                                                        const char *,
+                                                        FileList *l);
+
+static void find_conflicting_opengl_libraries(Options *,
+                                              const char *,
+                                              FileList *);
+
+static void find_conflicting_kernel_modules(Options *op,
+                                            Package *p,
+                                            FileList *l);
 
 static void find_existing_files(Package *p, FileList *l, unsigned int);
-static void find_conflicting_kernel_modules(Options *op,
-                                            Package *p, FileList *l);
 
 static void add_command (CommandList *c, int cmd, ...);
 
-static void find_matches (const char*, const char*, FileList*, const int);
 static void add_file_to_list(const char*, const char*, FileList*);
 
 static void append_to_rpm_file_list(Options *op, Command *c);
@@ -91,13 +103,30 @@ CommandList *build_command_list(Options *op, Package *p)
     
     if (!op->kernel_module_only) {
 
-        find_conflicting_xfree86_libraries
-            (op, DEFAULT_XFREE86_INSTALLATION_PREFIX, l);
+        if (!is_symbolic_link_to(DEFAULT_XFREE86_INSTALLATION_PREFIX,
+                       DEFAULT_OPENGL_INSTALLATION_PREFIX)
+                && !is_symbolic_link_to(DEFAULT_XFREE86_INSTALLATION_PREFIX,
+                               op->opengl_prefix)) {
+            find_conflicting_xfree86_libraries
+                (op, DEFAULT_XFREE86_INSTALLATION_PREFIX, l);
+        }
     
         if (strcmp(DEFAULT_XFREE86_INSTALLATION_PREFIX,
-                   op->xfree86_prefix) != 0)
-            find_conflicting_xfree86_libraries(op, op->xfree86_prefix, l);
-    
+                   op->xfree86_prefix) != 0) {
+            if (!is_symbolic_link_to(op->xfree86_prefix,
+                            DEFAULT_OPENGL_INSTALLATION_PREFIX)
+                    && !is_symbolic_link_to(op->xfree86_prefix, op->opengl_prefix))
+                find_conflicting_xfree86_libraries(op, op->xfree86_prefix, l);
+        }
+
+        /*
+         * Note that searching op->x_module_path may produce
+         * duplicates of conflicting files we found above; this is OK
+         * because condense_file_list() will remove any duplicates.
+         */
+        
+        find_conflicting_xfree86_libraries_fullpath(op, op->x_module_path, l);
+        
         find_conflicting_opengl_libraries
             (op, DEFAULT_OPENGL_INSTALLATION_PREFIX, l);
     
@@ -114,6 +143,18 @@ CommandList *build_command_list(Options *op, Package *p)
             if (strcmp(DEFAULT_OPENGL_INSTALLATION_PREFIX,
                 op->opengl_prefix) != 0) {
                 prefix = nvstrcat(op->compat32_prefix, op->opengl_prefix, NULL);
+                find_conflicting_opengl_libraries(op, prefix, l);
+                nvfree(prefix);
+            }
+
+            prefix = nvstrcat(op->compat32_prefix,
+                              DEFAULT_XFREE86_INSTALLATION_PREFIX, NULL);
+            find_conflicting_opengl_libraries(op, prefix, l);
+            nvfree(prefix);
+
+            if (strcmp(DEFAULT_XFREE86_INSTALLATION_PREFIX,
+                op->xfree86_prefix) != 0) {
+                prefix = nvstrcat(op->compat32_prefix, op->xfree86_prefix, NULL);
                 find_conflicting_opengl_libraries(op, prefix, l);
                 nvfree(prefix);
             }
@@ -167,13 +208,22 @@ CommandList *build_command_list(Options *op, Package *p)
         }
 
         /*
-         * delete the temporary libGL.la file generated based on
-         * the template earlier.
+         * delete the temporary libGL.la and .desktop files generated
+         * based on templates earlier.
          */
 
-        if (p->entries[i].flags & FILE_TYPE_LIBGL_LA) {
+        if ((p->entries[i].flags & FILE_TYPE_LIBGL_LA) ||
+                (p->entries[i].flags & FILE_TYPE_DOT_DESKTOP)) {
             add_command(c, DELETE_CMD,
                         p->entries[i].file);
+        }
+        
+        if (op->selinux_enabled && 
+            (p->entries[i].flags & FILE_TYPE_SHARED_LIB)) {
+            tmp = nvstrcat(op->utils[CHCON], " -t shlib_t ", p->entries[i].dst, 
+                           NULL);
+            add_command(c, RUN_CMD, tmp);
+            nvfree(tmp);
         }
     }
 
@@ -395,19 +445,25 @@ int execute_command_list(Options *op, CommandList *c,
 typedef struct {
     const char *name;
     int len;
-} ConflictingLibInfo;
+} ConflictingFileInfo;
+
+static void find_conflicting_files(Options *op,
+                                   char *path,
+                                   ConflictingFileInfo *files,
+                                   FileList *l);
 
 static void find_conflicting_libraries(Options *op,
                                        const char *prefix,
-                                       ConflictingLibInfo *libs,
+                                       ConflictingFileInfo *libs,
                                        FileList *l);
 
-static ConflictingLibInfo __xfree86_libs[] = {
+static ConflictingFileInfo __xfree86_libs[] = {
     { "libGLcore.",     10 /* strlen("libGLcore.") */    },
     { "libGL.",         6  /* strlen("libGL.") */        },
     { "libGLwrapper.",  13 /* strlen("libGLwrapper.") */ },
     { "libglx.",        7  /* strlen("libglx.") */       },
-    { "libXvMCNVIDIA",  14 /* strlen("libXvMCNVIDIA") */ },
+    { "libXvMCNVIDIA",  13 /* strlen("libXvMCNVIDIA") */ },
+    { "libnvidia-cfg.", 14 /* strlen("libnvidia-cfg.") */ },
     { NULL, 0 }
 };
 
@@ -417,15 +473,35 @@ static ConflictingLibInfo __xfree86_libs[] = {
  * libdirs.
  */
 
-void find_conflicting_xfree86_libraries(Options *op,
-                                        const char *xprefix, FileList *l)
+static void find_conflicting_xfree86_libraries(Options *op,
+                                               const char *xprefix,
+                                               FileList *l)
 {
     find_conflicting_libraries(op, xprefix, __xfree86_libs, l);
 
 } /* find_conflicting_xfree86_libraries() */
 
 
-static ConflictingLibInfo __opengl_libs[] = {
+
+/*
+ * find_conflicting_xfree86_libraries_fullpath() - same as
+ * find_conflicting_xfree86_libraries, but bypasses the
+ * find_conflicting_libraries step, which appends "lib", "lib64", and
+ * "lib32" to the path name.  Use this when you have the fullpath that
+ * you want searched.
+ */
+
+static void find_conflicting_xfree86_libraries_fullpath(Options *op,
+                                                        const char *path,
+                                                        FileList *l)
+{
+    find_conflicting_files(op, (char *) path, __xfree86_libs, l);
+    
+} /* find_conflicting_xfree86_libraries_fullpath() */
+
+
+
+static ConflictingFileInfo __opengl_libs[] = {
     { "libGLcore.",     10 /* strlen("libGLcore.") */     },
     { "libGL.",         6  /* strlen("libGL.") */         },
     { "libnvidia-tls.", 14 /* strlen("libnvidia-tls.") */ },
@@ -439,8 +515,9 @@ static ConflictingLibInfo __opengl_libs[] = {
  * libdirs.
  */
 
-void find_conflicting_opengl_libraries(Options *op,
-                                       const char *glprefix, FileList *l)
+static void find_conflicting_opengl_libraries(Options *op,
+                                              const char *glprefix,
+                                              FileList *l)
 {
     find_conflicting_libraries(op, glprefix, __opengl_libs, l);
 
@@ -451,41 +528,44 @@ void find_conflicting_opengl_libraries(Options *op,
 /*
  * find_conflicting_kernel_modules() - search for conflicting kernel
  * modules under the kernel module installation prefix.
- *
- * XXX rather than use a fixed list of prefixes, maybe we should scan for the
- * kernel module name anywhere under /lib/modules/`uname -r`/ ?
  */
 
 static void find_conflicting_kernel_modules(Options *op,
                                             Package *p, FileList *l)
 {
     int i, n = 0;
-    char *prefixes[5];
+    ConflictingFileInfo files[2];
+    char *paths[3];
     char *tmp = get_kernel_name(op);
 
-    prefixes[0] = op->kernel_module_installation_path;
+    files[1].name = NULL;
+    files[1].len = 0;
+    paths[0] = op->kernel_module_installation_path;
 
     if (tmp) {
-        prefixes[1] = nvstrcat("/lib/modules/", tmp, "/kernel/drivers/video", NULL);
-        prefixes[2] = nvstrcat("/lib/modules/", tmp, "/kernel/drivers/char", NULL);
-        prefixes[3] = nvstrcat("/lib/modules/", tmp, "/video", NULL);
-        prefixes[4] = NULL;
+        paths[1] = nvstrcat("/lib/modules/", tmp, NULL);
+        paths[2] = NULL;
     } else {
-        prefixes[1] = NULL;
+        paths[1] = NULL;
     }
     
-    /* look for all the conflicting module names in all the possible prefixes */
-    
-    for (i = 0; prefixes[i]; i++) {
+    for (i = 0; paths[i]; i++) {
         for (n = 0; p->bad_module_filenames[n]; n++) {
-            find_matches(prefixes[i], p->bad_module_filenames[n], l, TRUE);
+            /*
+             * Recursively search for this conflicting kernel module
+             * relative to the current prefix.
+             */
+            files[0].name = p->bad_module_filenames[n];
+            files[0].len = strlen(files[0].name);
+
+            find_conflicting_files(op, paths[i], files, l);
         }
     }
 
-    /* free any prefixes we nvstrcat()ed above  */
+    /* free any paths we nvstrcat()'d above  */
 
-    for (i = 1; prefixes[i]; i++) {
-        nvfree(prefixes[i]);
+    for (i = 1; paths[i]; i++) {
+        nvfree(paths[i]);
     }
 
 } /* find_conflicting_kernel_modules() */
@@ -516,24 +596,23 @@ static void find_existing_files(Package *p, FileList *l, unsigned int flag)
 
 
 /*
- * find_conflicting_libraries() - search for any conflicting
- * libraries in all relevant libdirs within the hierarchy under
+ * find_conflicting_files() - search for any conflicting
+ * files in all the specified paths within the hierarchy under
  * the given prefix.
  */
 
-static void find_conflicting_libraries(Options *op,
-                                       const char *prefix,
-                                       ConflictingLibInfo *libs,
-                                       FileList *l)
+static void find_conflicting_files(Options *op,
+                                   char *path,
+                                   ConflictingFileInfo *files,
+                                   FileList *l)
 {
     int i;
-    char *paths[3];
+    char *paths[2];
     FTS *fts;
     FTSENT *ent;
 
-    paths[0] = nvstrcat(prefix, "/", "lib", NULL);
-    paths[1] = nvstrcat(prefix, "/", "lib64", NULL);
-    paths[2] = NULL;
+    paths[0] = path; /* search root */
+    paths[1] = NULL;
 
     fts = fts_open(paths, FTS_LOGICAL | FTS_NOSTAT, NULL);
     if (!fts) return;
@@ -542,8 +621,8 @@ static void find_conflicting_libraries(Options *op,
         switch (ent->fts_info) {
         case FTS_F:
         case FTS_SLNONE:
-            for (i = 0; libs[i].name; i++) {
-                if (!strncmp(ent->fts_name, libs[i].name, libs[i].len))
+            for (i = 0; files[i].name; i++) {
+                if (!strncmp(ent->fts_name, files[i].name, files[i].len))
                     add_file_to_list(NULL, ent->fts_path, l);
             }
             break;
@@ -568,7 +647,54 @@ static void find_conflicting_libraries(Options *op,
 
     fts_close(fts);
 
-    for (i = 0; paths[i]; i++)
+} /* find_conflicting_files() */
+
+
+
+
+/*
+ * find_conflicting_libraries() - search for any conflicting
+ * libraries in all relevant libdirs within the hierarchy under
+ * the given prefix.
+ */
+
+static void find_conflicting_libraries(Options *op,
+                                       const char *prefix,
+                                       ConflictingFileInfo *files,
+                                       FileList *l)
+{
+    int i, j;
+    char *paths[4];
+
+    paths[0] = nvstrcat(prefix, "/", "lib", NULL);
+    paths[1] = nvstrcat(prefix, "/", "lib64", NULL);
+    paths[2] = nvstrcat(prefix, "/", "lib32", NULL);
+    paths[3] = NULL;
+
+    for (i = 0; paths[i]; i++) {
+        for (j = 0; (j < 3) && paths[i]; j++) {
+            /*
+             * XXX Check if any one of the 'paths' entries really
+             * is a symbolic link pointing to one of the other
+             * entries. The logic could be made smarter, since it's
+             * unlikely that ../lib32 would be a symbolic link to
+             * ../lib64 or vice versa.
+             */
+            if (!paths[j] || (i == j)) continue;
+
+            if (is_symbolic_link_to(paths[i], paths[j])) {
+                ui_expert(op, "The conflicting library search path "
+                          "'%s' is a symbolic link to the library "
+                          "search path '%s'; skipping '%s'.",
+                          paths[i], paths[j], paths[i]);
+                free(paths[i]); paths[i] = NULL;
+            }
+        }
+
+        if (paths[i]) find_conflicting_files(op, paths[i], files, l);
+    }
+
+    for (i = 0; i < 3; i++)
         nvfree(paths[i]);
 
 } /* find_conflicting_libraries() */
@@ -585,10 +711,39 @@ void condense_file_list(FileList *l)
     char **s = NULL;
     int n = 0, i, j, match;
 
+    struct stat stat_buf, *stat_bufs;
+
+    /* allocate enough space in our temporary 'stat' array */
+
+    if (l->num) {
+        stat_bufs  = nvalloc(sizeof(struct stat) * l->num);
+    } else {
+        stat_bufs  = NULL;
+    }
+    
+    /*
+     * walk through our original (uncondensed) list of files and move
+     * unique files to a new (condensed) list.  For each file in the
+     * original list, get the filesystem information for the file, and
+     * then compare that to the filesystem information for all the
+     * files in the new list.  If the file from the original list does
+     * not match any file in the new list, add it to the new list.
+     */
+
     for (i = 0; i < l->num; i++) {
         match = FALSE;
+
+        lstat(l->filename[i], &stat_buf);
+        
         for (j = 0; j < n; j++) {
-            if (strcmp(l->filename[i], s[j]) == 0) {
+
+            /*
+             * determine if the two files are the same by comparing
+             * device and inode
+             */
+
+            if ((stat_buf.st_dev == stat_bufs[j].st_dev) &&
+                (stat_buf.st_ino == stat_bufs[j].st_ino)) {
                 match = TRUE;
                 break;
             }
@@ -597,10 +752,13 @@ void condense_file_list(FileList *l)
         if (!match) {
             s = (char **) nvrealloc(s, sizeof(char *) * (n + 1));
             s[n] = nvstrdup(l->filename[i]);
+            stat_bufs[n] = stat_buf;
             n++;
         }
     }
     
+    if (stat_bufs) nvfree((void *)stat_bufs);
+
     for (i = 0; i < l->num; i++) free(l->filename[i]);
     free(l->filename);
 
@@ -666,50 +824,6 @@ static void add_command(CommandList *c, int cmd, ...)
     c->num++;
 
 } /* add_command() */
-
-
-
-/*
- * find_matches() - given a directory, a filename, and an existing
- * FileList data structure, open the specified directory, and look for
- * any entries that match the filename.
- *
- * If the parameter 'exact' is TRUE, then the filenames must match
- * exactly.  If 'exact' is FALSE, then only the beginning of the
- * directory entry name must match the filename in question.
- *
- * This could alternatively be implemented using glob(3).
- */
-
-static void find_matches(const char *directory, const char *filename,
-                         FileList *l, const int exact)
-{
-    struct stat stat_buf;
-    struct dirent *ent;
-    int len;
-    DIR *dir;
-    
-    if (lstat(directory, &stat_buf) == -1) return;
-    if (S_ISDIR(stat_buf.st_mode) == 0) return;
-    if ((dir = opendir(directory)) == NULL) return;
-
-    len = strlen(filename);
-
-    while ((ent = readdir(dir)) != NULL) {
-        if (exact) {
-            if (strcmp(ent->d_name, filename) == 0) {
-                add_file_to_list(directory, ent->d_name, l);
-            }
-        } else {
-            if (strncmp(ent->d_name, filename, len) == 0) {
-                add_file_to_list(directory, ent->d_name, l);
-            }
-        }
-    }
-    
-    closedir (dir); 
-    
-} /* find_matches() */
 
 
 

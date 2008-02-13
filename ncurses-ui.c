@@ -136,6 +136,8 @@ typedef struct {
 #define NV_NCURSES_ENTER 10
 #define NV_NCURSES_BACKSPACE 8
 
+#define NV_NCURSES_CTRL(x) ((x) & 0x1f)
+
 
 /*
  * somewhat arbitrary minimum values: if the current window size is
@@ -205,7 +207,7 @@ static void nv_ncurses_do_progress_bar_message(DataStruct *, const char *,
 /* pager functions */
 
 static PagerStruct *nv_ncurses_create_pager(DataStruct *, int, int, int, int,
-                                            TextRows *, const char *);
+                                            TextRows *, const char *, int);
 static void nv_ncurses_pager_update(DataStruct *, PagerStruct *);
 static void nv_ncurses_pager_handle_events(DataStruct *, PagerStruct *, int);
 static void nv_ncurses_destroy_pager(PagerStruct *);
@@ -230,7 +232,7 @@ static void nv_ncurses_free_text_rows(TextRows *);
 static int nv_ncurses_format_print(DataStruct *, RegionStruct *,
                                    int, int, int, int, TextRows *t);
 
-static int nv_ncurses_check_resize(DataStruct *);
+static int nv_ncurses_check_resize(DataStruct *, bool);
 
 
 
@@ -399,7 +401,7 @@ static char *nv_ncurses_get_input(Options *op,
 
     if (!msg) return NULL;
 
-    nv_ncurses_check_resize(d);
+    nv_ncurses_check_resize(d, FALSE);
 
     color = d->use_color ? NV_NCURSES_INPUT_COLOR : A_REVERSE;
 
@@ -522,7 +524,7 @@ static char *nv_ncurses_get_input(Options *op,
         
         /* wait for input */
 
-        if (nv_ncurses_check_resize(d)) goto draw_get_input;
+        if (nv_ncurses_check_resize(d, FALSE)) goto draw_get_input;
         ch = getch();
 
         switch (ch) {
@@ -567,6 +569,11 @@ static char *nv_ncurses_get_input(Options *op,
                 c++;
                 redraw = TRUE;
             }
+            break;
+
+        case NV_NCURSES_CTRL('L'):
+            nv_ncurses_check_resize(d, TRUE);
+            goto draw_get_input;
             break;
         }
         
@@ -621,7 +628,7 @@ static int nv_ncurses_display_license(Options *op, const char *license)
 {
     DataStruct *d = (DataStruct *) op->ui_priv;
     TextRows *t_pager = NULL;
-    int ch, x;
+    int ch, x, cur = 0;
     int button_width, button_y, accept_x, no_accept_x, accepted;
     PagerStruct *p = NULL;
     char *str;
@@ -631,7 +638,8 @@ static int nv_ncurses_display_license(Options *op, const char *license)
         "and continue with the installation, or select "
         "\"Do Not Accept\" to abort the installation.";
 
-    nv_ncurses_check_resize(d);
+    nv_ncurses_check_resize(d, FALSE);
+    accepted = FALSE;
 
  draw_license:
 
@@ -651,7 +659,6 @@ static int nv_ncurses_display_license(Options *op, const char *license)
     button_y = d->message->h - 2;
     accept_x = (d->message->w - (button_width * 3)) / 2;
     no_accept_x = accept_x + (button_width * 2);
-    accepted = 0;
 
     nv_ncurses_draw_button(d, d->message, accept_x, button_y, button_width,
                            1, "Accept", accepted, FALSE);
@@ -664,7 +671,7 @@ static int nv_ncurses_display_license(Options *op, const char *license)
     t_pager = d->format_text_rows(NULL, license, d->message->w, TRUE);
     p = nv_ncurses_create_pager(d, 1, d->message->h + 2, d->message->w,
                               d->height - d->message->h - 4,
-                              t_pager, "NVIDIA Software License");
+                              t_pager, "NVIDIA Software License", cur);
     refresh();
 
     /* process key strokes */
@@ -672,7 +679,10 @@ static int nv_ncurses_display_license(Options *op, const char *license)
     do {
         /* if a resize occurred, jump back to the top and redraw */
         
-        if (nv_ncurses_check_resize(d)) goto draw_license;
+        if (nv_ncurses_check_resize(d, FALSE)) {
+            cur = p->cur;
+            goto draw_license;
+        }
         ch = getch();
 
         switch (ch) {
@@ -697,6 +707,12 @@ static int nv_ncurses_display_license(Options *op, const char *license)
             refresh();
             break;
         
+        case NV_NCURSES_CTRL('L'):
+            nv_ncurses_check_resize(d, TRUE);
+            cur = p->cur;
+            goto draw_license;
+            break;
+
         default:
             break;
         }
@@ -821,8 +837,15 @@ static void nv_ncurses_message(Options *op, int level, const char *msg)
     do {
         /* if a resize occurred, jump back to the top and redraw */
         
-        if (nv_ncurses_check_resize(d)) goto draw_message;
+        if (nv_ncurses_check_resize(d, FALSE)) goto draw_message;
         ch = getch();
+
+        switch (ch) {
+        case NV_NCURSES_CTRL('L'):
+            nv_ncurses_check_resize(d, TRUE);
+            goto draw_message;
+            break;
+        }
     } while (ch != NV_NCURSES_ENTER);
     
     /* animate the button being pushed down */
@@ -877,7 +900,8 @@ static int nv_ncurses_approve_command_list(Options *op, CommandList *cl,
     TextRows *t_pager = NULL;
     PagerStruct *p = NULL;
     char *str, *question;
-    int len, ch, x, yes_x, no_x, yes, button_w, button_y;
+    int button_w, button_y, yes_x, no_x;
+    int len, ch, x, yes, cur = 0;
 
     /* initialize the question string */
 
@@ -888,7 +912,8 @@ static int nv_ncurses_approve_command_list(Options *op, CommandList *cl,
     
     /* check if the window was resized */
 
-    nv_ncurses_check_resize(d);
+    nv_ncurses_check_resize(d, FALSE);
+    yes = 1;
     
  draw_command_list:
 
@@ -912,8 +937,6 @@ static int nv_ncurses_approve_command_list(Options *op, CommandList *cl,
     yes_x = (d->message->w - button_w*3)/2 + 0;
     no_x  = (d->message->w - button_w*3)/2 + 2*button_w;
 
-    yes = 1;
-    
     nv_ncurses_draw_button(d, d->message, yes_x, button_y,
                            button_w, 1, "Yes", yes, FALSE);
     nv_ncurses_draw_button(d, d->message, no_x, button_y,
@@ -924,7 +947,7 @@ static int nv_ncurses_approve_command_list(Options *op, CommandList *cl,
     t_pager = nv_ncurses_create_command_list_textrows(d, cl, d->message->w);
     p = nv_ncurses_create_pager(d, 1, d->message->h + 2, d->message->w,
                               d->height - d->message->h - 4,
-                              t_pager, "Proposed Commandlist");
+                              t_pager, "Proposed Commandlist", cur);
     refresh();
 
     /* process key strokes */
@@ -932,8 +955,11 @@ static int nv_ncurses_approve_command_list(Options *op, CommandList *cl,
     do {
         /* if a resize occurred, jump back to the top and redraw */
         
-        if (nv_ncurses_check_resize(d)) goto draw_command_list;
-	ch = getch();
+        if (nv_ncurses_check_resize(d, FALSE)) {
+            cur = p->cur;
+            goto draw_command_list;
+        }
+        ch = getch();
         
         switch (ch) {
         case NV_NCURSES_TAB:
@@ -953,6 +979,13 @@ static int nv_ncurses_approve_command_list(Options *op, CommandList *cl,
                                    button_w, 1, "No", !yes, FALSE);
             refresh();
             break;
+
+        case NV_NCURSES_CTRL('L'):
+            nv_ncurses_check_resize(d, TRUE);
+            cur = p->cur;
+            goto draw_command_list;
+            break;
+
         default:
             break;
         }
@@ -1022,7 +1055,8 @@ static int nv_ncurses_yes_no(Options *op, const int def, const char *msg)
 
     /* check if the window was resized */
 
-    nv_ncurses_check_resize(d);
+    nv_ncurses_check_resize(d, FALSE);
+    yes = def;
 
  draw_yes_no:
 
@@ -1053,8 +1087,6 @@ static int nv_ncurses_yes_no(Options *op, const int def, const char *msg)
     y = d->message->h - 2;
     yes_x = (d->message->w - w*3)/2 + 0;
     no_x  = (d->message->w - w*3)/2 + 2*w;
-
-    yes = def;
     
     nv_ncurses_draw_button(d, d->message, yes_x, y, w, h, "Yes", yes,FALSE);
     nv_ncurses_draw_button(d, d->message, no_x, y, w, h, "No", !yes, FALSE);
@@ -1064,8 +1096,8 @@ static int nv_ncurses_yes_no(Options *op, const int def, const char *msg)
     /* process key strokes */
 
     do {
-        if (nv_ncurses_check_resize(d)) goto draw_yes_no;
-	ch = getch();
+        if (nv_ncurses_check_resize(d, FALSE)) goto draw_yes_no;
+        ch = getch();
 
         switch (ch) {
         case NV_NCURSES_TAB:
@@ -1085,6 +1117,12 @@ static int nv_ncurses_yes_no(Options *op, const int def, const char *msg)
                                    "No", !yes, FALSE);
             refresh();
             break;
+
+        case NV_NCURSES_CTRL('L'):
+            nv_ncurses_check_resize(d, TRUE);
+            goto draw_yes_no;
+            break;
+
         default:
             break;
         }
@@ -1128,7 +1166,7 @@ static void nv_ncurses_status_begin(Options *op,
 {
     DataStruct *d = (DataStruct *) op->ui_priv;
    
-    nv_ncurses_check_resize(d);
+    nv_ncurses_check_resize(d, FALSE);
 
     /* cache the progress bar title */
 
@@ -1144,7 +1182,7 @@ static void nv_ncurses_status_begin(Options *op,
                                        d->message->w);
 
     refresh();
-    
+
 } /* nv_ncurses_status_begin() */
 
 
@@ -1157,7 +1195,7 @@ static void nv_ncurses_status_begin(Options *op,
 static void nv_ncurses_status_update(Options *op, const float percent,
                                      const char *msg)
 {
-    int i, n, h;
+    int i, n, h, ch;
     int p[4];
     char v[4];
     DataStruct *d = (DataStruct *) op->ui_priv;
@@ -1167,11 +1205,32 @@ static void nv_ncurses_status_update(Options *op, const float percent,
      * redraw the entire progress bar region.
      */
 
-    if (nv_ncurses_check_resize(d) || !d->message) {
+    if (nv_ncurses_check_resize(d, FALSE) || !d->message) {
         if (d->message) nv_ncurses_destroy_region(d->message);
         nv_ncurses_do_progress_bar_region(d);
     }
-    
+
+    /* temporarily set getch() to non-blocking mode */
+
+    nodelay(stdscr, TRUE);
+
+    while ((ch = getch()) != ERR) {
+        /*
+         * if the user explicitely requested that the screen be
+         * redrawn by pressing CTRL-L, then also redraw the entire
+         * progress bar egion.
+         */
+        if (ch == NV_NCURSES_CTRL('L')) {
+            nv_ncurses_check_resize(d, TRUE);
+            if (d->message) nv_ncurses_destroy_region(d->message);
+            nv_ncurses_do_progress_bar_region(d);
+        }
+    }
+
+    /* set getch() back to blocking mode */
+
+    nodelay(stdscr, FALSE);
+
     /* compute the percentage */
 
     n = ((int) (percent * (float) (d->message->w - 2)));
@@ -1238,7 +1297,7 @@ static void nv_ncurses_status_end(Options *op, const char *msg)
      * redraw the entire progress bar region.
      */
 
-    if (nv_ncurses_check_resize(d) || !d->message) {
+    if (nv_ncurses_check_resize(d, FALSE) || !d->message) {
         if (d->message) nv_ncurses_destroy_region(d->message);
         nv_ncurses_do_progress_bar_region(d);
     }
@@ -1710,12 +1769,14 @@ static void nv_ncurses_do_progress_bar_message(DataStruct *d, const char *str,
  *  w      : width of the pager
  *  h      : height of the pager
  *  t      : TextRows to be displayed
- *  label  : string to be displayed in the status bar.
+ *  label  : string to be displayed in the status bar 
+ *  cur    : initial current line of the pager
  */
 
 static PagerStruct *nv_ncurses_create_pager(DataStruct *d,
                                             int x, int y, int w, int h,
-                                            TextRows *t, const char *label)
+                                            TextRows *t, const char *label,
+                                            int cur)
 {
     PagerStruct *p = (PagerStruct *) malloc(sizeof(PagerStruct));
     
@@ -1723,7 +1784,7 @@ static PagerStruct *nv_ncurses_create_pager(DataStruct *d,
     p->region = nv_ncurses_create_region(d, x, y, w, h, A_NORMAL, A_NORMAL);
     p->label = label;
     
-    p->cur = 0;
+    p->cur = cur;
     
     p->page = h - 2;
 
@@ -2091,20 +2152,22 @@ static int nv_ncurses_format_print(DataStruct *d, RegionStruct *region,
  * clear everything, update our cached dimensions, and recreate the
  * header and footer.
  *
- * XXX we could catch the SIGREGIONCH signal, but that's
+ * XXX we could catch the SIGWINCH (window resize) signal, but that's
  * asynchronous... it's safer to only attempt to handle a resize when
  * we know we can.
  */
 
-static int nv_ncurses_check_resize(DataStruct *d)
+static int nv_ncurses_check_resize(DataStruct *d, bool force)
 {
     int x, y;
 
     getmaxyx(stdscr, y, x);
 
-    if ((x == d->width) && (y == d->height)) {
-        /* no resize detected... just return */
-        return FALSE;
+    if (!force) {
+        if ((x == d->width) && (y == d->height)) {
+            /* no resize detected... just return */
+            return FALSE;
+        }
     }
 
     /* we have been resized */

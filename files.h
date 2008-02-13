@@ -56,6 +56,11 @@ int nvrename(Options *op, const char *src, const char *dst);
 int check_for_existing_rpms(Options *op);
 int copy_directory_contents(Options *op, const char *src, const char *dst);
 int pack_precompiled_kernel_interface(Options *op, Package *p);
+
+char *process_template_file(Options *op, PackageEntry *pe,
+                            char **tokens, char **replacements);
 void process_libGL_la_files(Options *op, Package *p);
+void process_dot_desktop_files(Options *op, Package *p);
+int set_security_context(Options *op, const char *filename);
 
 #endif /* __NVIDIA_INSTALLER_FILES_H__ */

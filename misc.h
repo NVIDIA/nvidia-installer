@@ -85,9 +85,11 @@ char *fget_next_line(FILE *fp, int *eof);
 char *get_next_line(char *buf, char **e);
 int run_command(Options *op, const char *cmd, char **data,
                 int output, int status, int redirect);
+int read_text_file(const char *filename, char **buf);
 char *find_system_util(const char *util);
 int find_system_utils(Options *op);
 int find_module_utils(Options *op);
+int check_selinux(Options *op);
 int check_proc_modprobe_path(Options *op);
 int check_development_tools(Options *op);
 int nvid_version (const char *str, int *major, int *minor, int *patch);
@@ -99,8 +101,11 @@ void check_installed_files_from_package(Options *op, Package *p);
 unsigned int get_installable_file_mask(Options *op);
 int tls_test(Options *op, int compat_32_libs);
 int check_runtime_configuration(Options *op, Package *p);
+void collapse_multiple_slashes(char *s);
+int is_symbolic_link_to(const char *path, const char *dest);
 Distribution get_distribution(Options *op);
 int check_for_running_x(Options *op);
+int run_nvidia_xconfig(Options *op);
 
 TextRows *nv_format_text_rows(const char *prefix, const char *buf,
                               int width, int word_boundary);

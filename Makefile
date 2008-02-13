@@ -68,6 +68,7 @@ endif
 
 exec_prefix = $(prefix)
 bindir = $(exec_prefix)/bin
+mandir = $(exec_prefix)/share/man/man1
 
 # Can be overwitten by users for cross-compiling
 # get the os and architecture
@@ -114,6 +115,10 @@ RTLD_TEST_32 = rtld_test_$(INSTALLER_OS)-x86
 GEN_UI_ARRAY = ./gen-ui-array
 CONFIG_H = config.h
 STAMP_C = g_stamp.c
+
+MANPAGE = nvidia-installer.1
+
+DRIVER_VERSION=$(shell cat DRIVER_VERSION)
 
 # Setup some architecture specific build options
 ifeq ($(INSTALLER_OS)-$(INSTALLER_ARCH), Linux-x86_64)
@@ -165,9 +170,9 @@ MKPRECOMPILED_OBJS = $(MKPRECOMPILED_SRC:.c=.o)
 
 default: all
 
-all: $(NVIDIA_INSTALLER) $(MKPRECOMPILED)
+all: $(NVIDIA_INSTALLER) $(MKPRECOMPILED) $(MANPAGE)
 
-install: NVIDIA_INSTALLER_install MKPRECOMPILED_install
+install: NVIDIA_INSTALLER_install MKPRECOMPILED_install MANPAGE_install
 
 NVIDIA_INSTALLER_install: $(NVIDIA_INSTALLER)
 	$(STRIP) $<
@@ -175,6 +180,11 @@ NVIDIA_INSTALLER_install: $(NVIDIA_INSTALLER)
 
 MKPRECOMPILED_install: $(MKPRECOMPILED)
 	$(INSTALL) $< $(bindir)/$<
+
+MANPAGE_install: $(MANPAGE)
+	mkdir -p $(mandir)
+	$(INSTALL) -m 644 $< $(mandir)/$<
+	gzip -9f $(mandir)/$(MANPAGE)
 
 $(MKPRECOMPILED): $(CONFIG_H) $(MKPRECOMPILED_OBJS)
 	$(CC) $(ALL_CFLAGS) $(ALL_LDFLAGS) $(MKPRECOMPILED_OBJS) -o $@
@@ -242,7 +252,8 @@ clean clobber:
 	rm -rf $(NVIDIA_INSTALLER) $(MKPRECOMPILED) \
 		$(NCURSES_UI) $(NCURSES_UI_C) \
 		$(TLS_TEST_C) $(TLS_TEST_DSO_C) $(RTLD_TEST_C) $(COMPAT_32_SRC) \
-		$(GEN_UI_ARRAY) $(CONFIG_H) $(STAMP_C) *.o *~ *.d
+		$(GEN_UI_ARRAY) $(CONFIG_H) $(STAMP_C) *.o *~ *.d \
+		$(MANPAGE) gen-manpage-opts options.1.inc
 
 # rule to rebuild tls_test and tls_test_dso; a precompiled tls_test
 # and tls_test_dso is distributed with nvidia_installer because they
@@ -278,5 +289,33 @@ rtld_test: rtld_test.c
 
 print_version:
 	@ echo $(NVIDIA_INSTALLER_VERSION)
+
+
+### Documentation
+
+AUTO_TEXT = ".\\\" WARNING: THIS FILE IS AUTO-GENERATED!  Edit $< instead."
+
+doc: $(MANPAGE)
+
+gen-manpage-opts.o: gen-manpage-opts.c $(CONFIG_H)
+	$(HOST_CC) $(ALL_CFLAGS) -c $<
+
+gen-manpage-opts: gen-manpage-opts.o
+	$(HOST_CC) $(CFLAGS) $^ $(ALL_LDFLAGS) -o $@
+
+-include gen-manpage-opts.d
+
+options.1.inc: gen-manpage-opts
+	./$< > $@
+
+nvidia-installer.1: nvidia-installer.1.m4 options.1.inc DRIVER_VERSION
+	m4 -D__HEADER__=$(AUTO_TEXT) \
+	   -D__VERSION__=$(NVIDIA_INSTALLER_VERSION) \
+	   -D__INSTALLER_OS__="$(INSTALLER_OS)" \
+	   -D__INSTALLER_ARCH__="$(INSTALLER_ARCH)" \
+	   -D__DRIVER_VERSION__="$(DRIVER_VERSION)" \
+	   $< > $@
+
+###
 
 -include $(SRC:.c=.d)

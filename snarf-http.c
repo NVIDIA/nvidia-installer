@@ -439,7 +439,7 @@ int http_transfer(UrlResource *rsrc)
                 
         /* if in expert mode, write the raw_header to the log */
                 
-        ui_expert(rsrc->op, raw_header);
+        ui_expert(rsrc->op, "%s", raw_header);
 
         /* check for redirects */
         new_location = get_header_value("location", header);

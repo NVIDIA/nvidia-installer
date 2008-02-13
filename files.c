@@ -47,6 +47,10 @@
 #include "misc.h"
 #include "precompiled.h"
 
+
+static int get_x_module_path(Options *op);
+
+
 /*
  * remove_directory() - recursively delete a direcotry (`rm -rf`)
  */
@@ -478,10 +482,65 @@ void select_tls_class(Options *op, Package *p)
 
 int set_destinations(Options *op, Package *p)
 {
-    char *prefix, *path, *name;
+    char *prefix, *path, *name, *s;
+    char *xdg_data_dir;
     int i;
+    s = NULL;
     
     for (i = 0; i < p->num_entries; i++) {
+
+#if defined(NV_X86_64)
+        if (p->entries[i].flags & FILE_TYPE_HAVE_PATH) {
+            if ((op->distro == DEBIAN || op->distro == UBUNTU) &&
+                (s = strstr(p->entries[i].path, "lib64"))) {
+                /*
+                 * XXX Debian GNU/Linux for Linux/x86-64 doesn't follow
+                 * the "lib64" convention used by other distributors.
+                 * The 64-bit libraries are installed in ../lib. Ubuntu
+                 * Linux inherited this layout.
+                 */
+
+                /*
+                 * The default 64-bit destination path is ../lib64.
+                 * Get the length of the string following "lib64", then
+                 * move this remainder over the "64".
+                 */
+                int j, len = strlen(s+5);
+                for (j = 0; j <= len; j++) s[j+3] = s[j+5];
+
+            } else if (((op->distro == UBUNTU) ||
+                        (op->distro == GENTOO)) &&
+                       (p->entries[i].flags & FILE_CLASS_COMPAT32) &&
+                       (s = strstr(p->entries[i].path, "lib"))) {
+                /*
+                 * XXX Ubuntu for Linux/x86-64 doesn't follow the "lib"
+                 * convention used by other distributors; the 32-bit
+                 * libraries are installed in ../lib32, instead. Patch
+                 * up the destination path accordingly.
+                 *
+                 * Sadly, the same thing is also true for Gentoo Linux.
+                 */
+
+                /*
+                 * The default 32-bit destination path is ../lib.
+                 * If this entry's path ends with "lib", go ahead and
+                 * replace it with ../lib32, else replace the "lib"
+                 * in the path with "lib32".
+                 */
+                if (*(s+3) == '\0') {
+                    path = p->entries[i].path;
+                    p->entries[i].path = nvstrcat(path, "32", NULL);
+                    free(path);
+                } else if ((s+4) != NULL) {
+                    *(s+3) = '\0';
+                    path = p->entries[i].path;
+                    p->entries[i].path = nvstrcat(path, "32/", s+4, NULL);
+                    free(path);
+                } else
+                    p->entries[i].dst = NULL;
+            }
+        }
+#endif /* NV_X86_64 */
 
         switch (p->entries[i].flags & FILE_TYPE_MASK) {
             
@@ -499,15 +558,29 @@ int set_destinations(Options *op, Package *p)
             path = p->entries[i].path;
             break;
             
-        case FILE_TYPE_XFREE86_LIB:
-        case FILE_TYPE_XFREE86_SYMLINK:
+        case FILE_TYPE_XLIB_SHARED_LIB:
+        case FILE_TYPE_XLIB_STATIC_LIB:
+        case FILE_TYPE_XLIB_SYMLINK:
             prefix = op->xfree86_prefix;
+            path = p->entries[i].path;
+            break;
+
+        case FILE_TYPE_XMODULE_SHARED_LIB:
+        case FILE_TYPE_XMODULE_STATIC_LIB:
+        case FILE_TYPE_XMODULE_SYMLINK:
+            prefix = op->x_module_path;
             path = p->entries[i].path;
             break;
 
         case FILE_TYPE_TLS_LIB:
         case FILE_TYPE_TLS_SYMLINK:
             prefix = op->opengl_prefix;
+            path = p->entries[i].path;
+            break;
+
+        case FILE_TYPE_UTILITY_LIB:
+        case FILE_TYPE_UTILITY_SYMLINK:
+            prefix = op->utility_prefix;
             path = p->entries[i].path;
             break;
 
@@ -541,6 +614,24 @@ int set_destinations(Options *op, Package *p)
         case FILE_TYPE_UTILITY_BINARY:
             prefix = op->utility_prefix;
             path = UTILITY_BINARY_DST_PATH;
+            break;
+
+        case FILE_TYPE_DOT_DESKTOP:
+            /*
+             * If XDG_DATA_DIRS is set, then derive the installation path
+             * from the first entry; complies with:
+             *   http://www.freedesktop.org/Standards/basedir-spec
+             */
+            xdg_data_dir = getenv("XDG_DATA_DIRS");
+            if (xdg_data_dir) xdg_data_dir = nvstrdup(strtok(xdg_data_dir, ":"));
+
+            if (xdg_data_dir != NULL) {
+                prefix = xdg_data_dir;
+                path = nvstrdup("applications");
+            } else {
+                prefix = op->opengl_prefix;
+                path = DOT_DESKTOP_DST_PATH;
+            }
             break;
 
         case FILE_TYPE_KERNEL_MODULE:
@@ -665,6 +756,29 @@ int get_prefixes (Options *op)
 
     remove_trailing_slashes(op->xfree86_prefix);
     ui_expert(op, "X installation prefix is: '%s'", op->xfree86_prefix);
+    
+    /*
+     * assign the X module path; this must be done after
+     * op->xfree86_prefix is assigned
+     */
+
+    if (!get_x_module_path(op)) {
+        return FALSE;
+    }
+
+    if (op->expert) {
+        ret = ui_get_input(op, op->x_module_path,
+                           "X module installation path (only under "
+                           "rare circumstances should this be changed "
+                           "from the default)");
+        if (ret && ret[0]) {
+            op->x_module_path = ret; 
+            if (!confirm_path(op, op->x_module_path)) return FALSE;
+        }
+    }
+
+    remove_trailing_slashes(op->x_module_path);
+    ui_expert(op, "X module installation path is: '%s'", op->x_module_path);
         
     if (op->expert) {
         ret = ui_get_input(op, op->opengl_prefix,
@@ -1409,6 +1523,149 @@ static char *nv_strreplace(char *src, char *orig, char *replace)
 
 
 /*
+ * process_template_file() - copy the specified template file to
+ * a temporary file, replacing specified tokens with specified
+ * replacement strings.  Return the temporary file's path to the
+ * caller or NULL, if an error occurs.
+ */
+
+char *process_template_file(Options *op, PackageEntry *pe,
+                            char **tokens, char **replacements)
+{
+    int failed, src_fd, dst_fd, len;
+    struct stat stat_buf;
+    char *src, *dst, *tmp, *tmp0, *tmpfile = NULL;
+    char *token, *replacement;
+
+    failed = FALSE;
+    src_fd = dst_fd = -1;
+    tmp = tmp0 = src = dst = tmpfile = NULL;
+    len = 0;
+    
+    /* open the file */
+
+    if ((src_fd = open(pe->file, O_RDONLY)) == -1) {
+        ui_error(op, "Unable to open '%s' for copying (%s)",
+                 pe->file, strerror(errno));
+        return NULL;
+    }
+
+    /* get the size of the file */
+
+    if (fstat(src_fd, &stat_buf) == -1) {
+        ui_error(op, "Unable to determine size of '%s' (%s)",
+                 pe->file, strerror(errno));
+        failed = TRUE; goto done;
+    }
+
+    /* mmap the file */
+
+    if ((src = mmap(0, stat_buf.st_size, PROT_READ,
+                    MAP_FILE|MAP_SHARED, src_fd, 0)) == MAP_FAILED) {
+        ui_error (op, "Unable to map source file '%s' for "
+                  "copying (%s)", pe->file, strerror(errno));
+        src = NULL;
+        failed = TRUE; goto done;
+    }
+
+    if (!src) {
+        ui_log(op, "%s is empty; skipping.", pe->file);
+        failed = TRUE; goto done;
+    }
+
+    token = *tokens;
+    replacement = *replacements;
+    tmp = src;
+
+    while (token != NULL && replacement != NULL) {
+        /*
+         * Replace any occurances of 'token' with 'replacement' in
+         * the source string and free the source unless it points
+         * to the source file mapping, in which case the unmap has
+         * to be deferred.
+         */
+        tmp0 = nv_strreplace(tmp, token, replacement);
+        if (tmp != src) nvfree(tmp);
+        tmp = tmp0;
+        token = *(++tokens);
+        replacement = *(++replacements);
+    }
+
+    /* create a temporary file to store the processed template file */
+    
+    tmpfile = nvstrcat(op->tmpdir, "/template-XXXXXX", NULL);
+    if ((dst_fd = mkstemp(tmpfile)) == -1) {
+        ui_error(op, "Unable to create temporary file (%s)",
+                 strerror(errno));
+        failed = TRUE; goto done;
+    }
+
+    /* set the size of the new file */
+
+    len = strlen(tmp);
+
+    if (lseek(dst_fd, len - 1, SEEK_SET) == -1) {
+        ui_error(op, "Unable to set file size for '%s' (%s)",
+                  tmpfile, strerror(errno));
+        failed = TRUE; goto done;
+    }
+    if (write(dst_fd, "", 1) != 1) {
+        ui_error(op, "Unable to write file size for '%s' (%s)",
+                 tmpfile, strerror(errno));
+        failed = TRUE; goto done;
+    }
+
+    /* mmap the new file */
+
+    if ((dst = mmap(0, len, PROT_READ | PROT_WRITE,
+                    MAP_FILE|MAP_SHARED, dst_fd, 0)) == MAP_FAILED) {
+        ui_error(op, "Unable to map destination file '%s' for "
+                 "copying (%s)", tmpfile, strerror(errno));
+        dst = NULL;
+        failed = TRUE; goto done;
+    }
+
+    /* write the processed data out to the temporary file */
+
+    memcpy(dst, tmp, len);
+
+done:
+
+    if (src) {
+        if (munmap(src, stat_buf.st_size) == -1) {
+            ui_error(op, "Unable to unmap source file '%s' after "
+                     "copying (%s)", pe->file,
+                     strerror(errno));
+        }
+    }
+    
+    if (dst) {
+        if (munmap(dst, len) == -1) {
+            ui_error (op, "Unable to unmap destination file '%s' "
+                      "after copying (%s)", tmpfile, strerror(errno));
+        }
+    }
+
+    if (src_fd != -1) close(src_fd);
+    if (dst_fd != -1) {
+        close(dst_fd);
+        /* in case an error occurred, delete the temporary file */
+        if (failed) unlink(tmpfile);
+    }
+
+    if (failed) {
+        nvfree(tmpfile); tmpfile = NULL;
+    }
+
+    nvfree(tmp);
+
+    return tmpfile;
+
+} /* process_template_files() */
+
+
+
+/*
  * process_libGL_la_files() - for any libGL.la files in the package,
  * copy them to a temporary file, replacing __GENERATED_BY__ and
  * __LIBGL_PATH__ as appropriate.  Then, add the new file to the
@@ -1417,145 +1674,200 @@ static char *nv_strreplace(char *src, char *orig, char *replace)
 
 void process_libGL_la_files(Options *op, Package *p)
 {
-    int i, n, src_fd, dst_fd, len;
-    struct stat stat_buf;
-    char *src, *dst, *tmp, *tmp0, *tmp1, *tmpfile;
+    int i, n;
+    char *tmpfile;
+
+    char *tokens[3] = { "__LIBGL_PATH__", "__GENERATED_BY__", NULL };
+    char *replacements[3] = { NULL, NULL, NULL };
 
     int package_num_entries = p->num_entries;
+
+    replacements[1] = nvstrcat(PROGRAM_NAME, ": ",
+                               NVIDIA_INSTALLER_VERSION, NULL);
 
     for (i = 0; i < package_num_entries; i++) {
         if ((p->entries[i].flags & FILE_TYPE_LIBGL_LA)) {
     
-            src_fd = dst_fd = -1;
-            tmp0 = tmp1 = src = dst = tmpfile = NULL;
-            len = 0;
-            
-            /* open the file */
-        
-            if ((src_fd = open(p->entries[i].file, O_RDONLY)) == -1) {
-                ui_error(op, "Unable to open '%s' for copying (%s)",
-                         p->entries[i].file, strerror(errno));
-                goto done;
-            }
-
-            /* get the size of the file */
-
-            if (fstat(src_fd, &stat_buf) == -1) {
-                ui_error(op, "Unable to determine size of '%s' (%s)",
-                         p->entries[i].file, strerror(errno));
-                goto done;
-            }
-
-            /* mmap the file */
-
-            if ((src = mmap(0, stat_buf.st_size, PROT_READ,
-                            MAP_FILE|MAP_SHARED, src_fd, 0)) == (void *) -1) {
-                ui_error (op, "Unable to map source file '%s' for "
-                          "copying (%s)", p->entries[i].file, strerror(errno));
-                src = NULL;
-                goto done;
-            }
-
-            if (!src) {
-                ui_log(op, "%s is empty; skipping.", p->entries[i].file);
-                goto done;
-            }
-
-            /* replace __LIBGL_PATH__ */
-
-            tmp = nvstrcat(op->opengl_prefix, "/", p->entries[i].path, NULL);
-            tmp0 = nv_strreplace(src, "__LIBGL_PATH__", tmp);
-            nvfree(tmp);
-
-            /* replace __GENERATED_BY__ */
-
-            tmp = nvstrcat(PROGRAM_NAME, ": ", NVIDIA_INSTALLER_VERSION, NULL);
-            tmp1 = nv_strreplace(tmp0, "__GENERATED_BY__", tmp);
-            nvfree(tmp);
-
-            /* create a temporary file to store the processed libGL.la file */
-            
-            tmpfile = nvstrcat(op->tmpdir, "/libGL.la-XXXXXX", NULL);
-            if ((dst_fd = mkstemp(tmpfile)) == -1) {
-                ui_error(op, "Unable to create temporary file (%s)",
-                         strerror(errno));
-                goto done;
-            }
-
-            /* set the size of the new file */
-
-            len = strlen(tmp1);
-     
-            if (lseek(dst_fd, len - 1, SEEK_SET) == -1) {
-                ui_error(op, "Unable to set file size for '%s' (%s)",
-                          tmpfile, strerror(errno));
-                goto done;
-            }
-            if (write(dst_fd, "", 1) != 1) {
-                ui_error(op, "Unable to write file size for '%s' (%s)",
-                         tmpfile, strerror(errno));
-                goto done;
-            }
-
-            /* mmap the new file */
-
-            if ((dst = mmap(0, len, PROT_READ | PROT_WRITE,
-                            MAP_FILE|MAP_SHARED, dst_fd, 0)) == (void *) -1) {
-                ui_error(op, "Unable to map destination file '%s' for "
-                         "copying (%s)", tmpfile, strerror(errno));
-                dst = NULL;
-                goto done;
-            }
-
-            /* write the data out to the new file */
-
-            memcpy(dst, tmp1, len);
+            replacements[0] = nvstrcat(op->opengl_prefix,
+                                       "/", p->entries[i].path, NULL);
 
             /* invalidate the template file */
 
             p->entries[i].flags &= ~FILE_TYPE_MASK;
             p->entries[i].dst = NULL;
 
-            /* add this new file to the package */
-            
-            n = p->num_entries;
-            
-            p->entries =
-                (PackageEntry *) nvrealloc(p->entries,
-                                           (n + 1) * sizeof(PackageEntry));
-            p->entries[n].file = tmpfile;
-            p->entries[n].path = p->entries[i].path;
-            p->entries[n].target = NULL;
-            p->entries[n].flags = ((p->entries[i].flags & FILE_CLASS_MASK) |
-                                   FILE_TYPE_LIBGL_LA); 
-            p->entries[n].mode = p->entries[i].mode;
-            
-            p->entries[n].name = nvstrdup(p->entries[i].name);
-            
-            p->num_entries++;
+            tmpfile = process_template_file(op, &p->entries[i], tokens,
+                                            replacements);
 
-        done:
-
-            if (src) {
-                if (munmap(src, stat_buf.st_size) == -1) {
-                    ui_error(op, "Unable to unmap source file '%s' after "
-                             "copying (%s)", p->entries[i].file,
-                             strerror(errno));
-                }
-            }
-            
-            if (dst) {
-                if (munmap(dst, len) == -1) {
-                    ui_error (op, "Unable to unmap destination file '%s' "
-                              "after copying (%s)", tmpfile, strerror(errno));
-                }
+            if (tmpfile != NULL) {
+                /* add this new file to the package */
+                
+                n = p->num_entries;
+                
+                p->entries =
+                    (PackageEntry *) nvrealloc(p->entries,
+                                               (n + 1) * sizeof(PackageEntry));
+                p->entries[n].file = tmpfile;
+                p->entries[n].path = p->entries[i].path;
+                p->entries[n].target = NULL;
+                p->entries[n].flags = ((p->entries[i].flags & FILE_CLASS_MASK)
+                                        | FILE_TYPE_LIBGL_LA); 
+                p->entries[n].mode = p->entries[i].mode;
+                
+                p->entries[n].name = nvstrdup(p->entries[i].name);
+                
+                p->num_entries++;
             }
 
-            if (src_fd != -1) close(src_fd);
-            if (dst_fd != -1) close(dst_fd);
-            
-            if (tmp0) nvfree(tmp0);
-            if (tmp1) nvfree(tmp1);
+            nvfree(replacements[0]);
         }
     }
+
+    nvfree(replacements[1]);
+
 } /* process_libGL_la_files() */
+
+
+
+/*
+ * process_dot_desktop_files() - for any .desktop files in the
+ * package, copy them to a temporary file, replacing __UTILS_PATH__
+ * and __LIBGL_PATH__ as appropriate.  Then, add the new file to
+ * the package list.
+ */
+
+void process_dot_desktop_files(Options *op, Package *p)
+{
+    int i, n;
+    char *tmpfile;
+
+    char *tokens[3] = { "__UTILS_PATH__", "__DOCS_PATH__", NULL };
+    char *replacements[3] = { NULL, NULL, NULL };
+
+    int package_num_entries = p->num_entries;
+
+    for (i = 0; i < package_num_entries; i++) {
+        if ((p->entries[i].flags & FILE_TYPE_DOT_DESKTOP)) {
+    
+            replacements[0] = nvstrcat(op->utility_prefix,
+                                       "/", UTILITY_BINARY_DST_PATH, NULL);
+            replacements[1] = nvstrcat(op->opengl_prefix,
+                                        "/", DOCUMENTATION_DST_PATH, NULL);
+
+            /* invalidate the template file */
+
+            p->entries[i].flags &= ~FILE_TYPE_MASK;
+            p->entries[i].dst = NULL;
+
+            tmpfile = process_template_file(op, &p->entries[i], tokens,
+                                            replacements);
+            if (tmpfile != NULL) {
+                /* add this new file to the package */
+                
+                n = p->num_entries;
+                
+                p->entries =
+                    (PackageEntry *) nvrealloc(p->entries,
+                                               (n + 1) * sizeof(PackageEntry));
+                p->entries[n].file = tmpfile;
+                p->entries[n].path = p->entries[i].path;
+                p->entries[n].target = NULL;
+                p->entries[n].flags = ((p->entries[i].flags & FILE_CLASS_MASK)
+                                        | FILE_TYPE_DOT_DESKTOP); 
+                p->entries[n].mode = p->entries[i].mode;
+                
+                p->entries[n].name = nvstrdup(p->entries[i].name);
+                
+                p->num_entries++;
+            }
+
+            nvfree(replacements[0]);
+            nvfree(replacements[1]);
+        }
+    }
+} /* process_dot_desktop_files() */
+
+
+/*
+ * set_security_context() - set the security context of the file to 'shlib_t'
+ * Returns TRUE on success or if SELinux is disabled, FALSE otherwise
+ */
+int set_security_context(Options *op, const char *filename) 
+{
+    char *cmd = NULL;
+    int ret = FALSE;
+    
+    if (op->selinux_enabled == FALSE) {
+        return TRUE;
+    } 
+    
+    cmd = nvstrcat(op->utils[CHCON], " -t shlib_t ", filename, 
+                         NULL);
+    
+    ret = run_command(op, cmd, NULL, FALSE, 0, TRUE);
+    
+    ret = ((ret == 0) ? TRUE : FALSE);
+    if (cmd) nvfree(cmd);
+    
+    return ret;
+} /* set_security_context() */
+
+
+
+/*
+ * get_x_module_path() - assign op->x_module_path if it is not already
+ * set
+ */
+
+static int get_x_module_path(Options *op)
+{
+    char *dir = NULL;
+    char *lib;
+    int ret;
+
+    /*
+     * if the path was already specified (ie: by a commandline
+     * option), then we are done
+     */
+
+    if (op->x_module_path) {
+        return TRUE;
+    }
+
+    /* ask pkg-config */
+
+    ret = run_command(op, "pkg-config --variable=moduledir xorg-server",
+                      &dir, FALSE, 0, TRUE);
+    
+    if ((ret == 0) && directory_exists(op, dir)) {
+        op->x_module_path = dir;
+        return TRUE;
+    }
+    
+    nvfree(dir);
+    
+    /* build the X module path from the xfree86_prefix */
+    
+    /*
+     * XXX kludge to determine the correct 'lib' vs 'lib64' path;
+     * normally, on 64-bit distributions, the X modules get installed
+     * in "<xprefix>/lib64/modules".  However, on Debian, Ubuntu, or
+     * any 32-bit distribution, we use "<xprefix>/lib/modules"
+     */
+
+#if defined(NV_X86_64)
+    if ((op->distro == DEBIAN || op->distro == UBUNTU)) {
+        lib = "lib";
+    } else {
+        lib = "lib64";
+    }
+#else
+    lib = "lib";   
+#endif
+    
+    op->x_module_path = nvstrcat(op->xfree86_prefix,
+                                 "/", lib, "/modules", NULL);
+
+    return TRUE;
+
+} /* get_x_module_path() */

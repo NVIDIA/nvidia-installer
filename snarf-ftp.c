@@ -118,7 +118,7 @@ static char *get_line(UrlResource *rsrc, int control)
 
         if (buf[bytes_read - 2] == '\r') buf[bytes_read - 2] = '\0';
 
-        ui_expert(rsrc->op, buf);
+        ui_expert(rsrc->op, "%s", buf);
                 
         if (isdigit(buf[0]) && buf[3] == ' ') {
             return strdup(buf);
@@ -297,7 +297,7 @@ int ftp_transfer(UrlResource *rsrc)
 
     rsrc->proxy = get_proxy("FTP_PROXY");
 
-    if (rsrc->proxy) {
+    if (rsrc->proxy && (rsrc->proxy[0] != '\0')) {
         return http_transfer(rsrc);
     }
 

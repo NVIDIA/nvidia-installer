@@ -54,7 +54,7 @@
  * bytes, and build a uint32.
  */
 
-static uint32 decode_uint32(uint8 *buf)
+static uint32 decode_uint32(char *buf)
 {
     uint32 ret = 0;
 
@@ -158,7 +158,7 @@ PrecompiledInfo *precompiled_unpack(Options *op,
                                     const int package_patch)
 {
     int dst_fd, fd, offset, len = 0;
-    uint8 *buf, *dst;
+    char *buf, *dst;
     uint32 crc, major, minor, patch, val, size;
     char *description, *proc_version_string;
     struct stat stat_buf;

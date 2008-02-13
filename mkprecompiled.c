@@ -449,7 +449,7 @@ void encode_uint32(uint32 val, uint8 data[4])
  * bytes, and build a uint32.
  */
 
-uint32 decode_uint32(uint8 *buf)
+uint32 decode_uint32(char *buf)
 {
     uint32 ret = 0;
 
@@ -592,7 +592,7 @@ int pack(Options *op)
 int unpack(Options *op)
 {
     int dst_fd, fd, ret, offset, len = 0;
-    uint8 *buf, *dst;
+    char *buf, *dst;
     uint32 crc, major, minor, patch, val, size;
     char *description, *proc_version_string;
 

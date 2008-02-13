@@ -515,7 +515,7 @@ static int do_uninstall(Options *op)
                     existing_installation_is_borked, op->log_file_name);
 
         } else {
-            ui_warn(op, existing_installation_is_borked);
+            ui_warn(op, "%s", existing_installation_is_borked);
         }
     }
     

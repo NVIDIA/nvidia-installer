@@ -36,6 +36,7 @@
 #include <sys/mman.h>
 #include <string.h>
 #include <limits.h>
+#include <fts.h>
 
 #include "nvidia-installer.h"
 #include "kernel.h"
@@ -52,11 +53,11 @@
 static char *default_kernel_module_installation_path(Options *op);
 static char *default_kernel_source_path(Options *op);
 static int check_for_loaded_kernel_module(Options *op, const char *);
+static void check_for_warning_messages(Options *op);
 static int rmmod_kernel_module(Options *op, const char *);
 static PrecompiledInfo *download_updated_kernel_interface(Options*, Package*,
                                                           const char*);
-static int rivafb_check(Options *op, Package *p);
-static void change_page_attr_check(Options  *op, Package *p);
+static int fbdev_check(Options *op, Package *p);
 
 static PrecompiledInfo *scan_dir(Options *op, Package *p,
                                  const char *directory_name,
@@ -72,12 +73,12 @@ static char *guess_kernel_module_filename(Options *op);
  */
 
 static const char install_your_kernel_source[] = 
-"Please make sure you have installed the kernel source files "
-"for your kernel; on Red Hat Linux systems, for example, be "
-"sure you have the 'kernel-source' rpm installed.  If you know the "
-"correct kernel source files are installed, you may specify the "
-"kernel source path with the '--kernel-source-path' "
-"commandline option.";
+"Please make sure you have installed the kernel source files for "
+"your kernel and that they are properly configured; on Red Hat "
+"Linux systems, for example, be sure you have the 'kernel-source' "
+"RPM installed.  If you know the correct kernel source files are "
+"installed, you may specify the kernel source path with the "
+"'--kernel-source-path' command line option.";
 
  
 
@@ -155,10 +156,11 @@ int determine_kernel_module_installation_path(Options *op)
  * FALSE if no kernel source tree was found.
  */
 
-int determine_kernel_source_path(Options *op)
+int determine_kernel_source_path(Options *op, Package *p)
 {
-    char *result;
-    int count = 0;
+    char *CC, *cmd, *result;
+    char *source_file, *source_path;
+    int ret, count = 0;
     
     /* determine the kernel source path */
     
@@ -243,61 +245,51 @@ int determine_kernel_source_path(Options *op)
     }
     free(result);
 
-#if 0
+    if (!determine_kernel_output_path(op)) return FALSE;
 
-    /*
-     * XXX The following heurisitic is broken: distribution-provided
-     * 2.6 kernel sources may not contain compile.h, even though they
-     * are valid to compile kernel modules against.  One suggestion
-     * has been to check for autoconf.h instead.  Disabling this
-     * entire check for now...
-     */
-
-    /*
-     * try to check that the kernel headers have been configured; this
-     * is complicated by the fact that 2.4 and 2.6 kernels have
-     * different header files.  Here is the heuristic:
-     *
-     * if compile.h exists:
-     *   this is a 2.6 kernel
-     *   if $(KERNEL_SOURCES)/Makefile does not exist
-     *     the kernel sources have not been configured
-     *
-     * if compile.h does not exit:
-     *   this is a 2.4 kernel
-     *   if modversions.h does not exist
-     *     the kernel sources have not been configured
-     */
-
-    compile_h = nvstrcat(op->kernel_source_path,
-                         "/include/linux/compile.h", NULL);
+    CC = getenv("CC");
+    if (!CC) CC = "cc";
     
-    if (access(compile_h, F_OK) == 0) {
-        /* compile.h exists: this is a 2.6 kernel */
-        result = nvstrcat(op->kernel_source_path, "/Makefile", NULL);
-    } else {
-        /* compile.h does not exist: this is a 2.4 kernel */
-        result = nvstrcat(op->kernel_source_path,
-                          "/include/linux/modversions.h", NULL);
-    }
+    cmd = nvstrcat("sh ", p->kernel_module_build_directory,
+                   "/conftest.sh ", CC, " ", CC, " ",
+                   op->kernel_source_path, " ",
+                   op->kernel_output_path, " ",
+                   "get_uname", NULL);
+    
+    ret = run_command(op, cmd, &result, FALSE, 0, TRUE);
+    nvfree(cmd);
 
-    free(compile_h);
-
-    if (access(result, F_OK) != 0) {
-        ui_error(op, "The kernel header file '%s' does not exist.  "
-                 "The most likely reason for this is that the kernel "
-                 "source files in '%s' have not been configured.",
-                 result, op->kernel_source_path);
+    if (ret != 0) {
+        ui_error(op, "Unable to determine the version of the kernel "
+                 "sources located in '%s'.  %s",
+                 op->kernel_source_path, install_your_kernel_source);
         free(result);
         return FALSE;
     }
-    
+
+    if (strncmp(result, "2.4", 3) == 0) {
+        source_file = nvstrcat(op->kernel_source_path,
+                               "/include/linux/version.h", NULL);
+        source_path = op->kernel_source_path;
+    } else {
+        source_file = nvstrcat(op->kernel_output_path,
+                               "/include/linux/version.h", NULL);
+        source_path = op->kernel_output_path;
+    }
     free(result);
-#endif
+    
+    if (access(source_file, F_OK) != 0) {
+        ui_error(op, "The kernel header file '%s' does not exist.  "
+                 "The most likely reason for this is that the kernel "
+                 "source files in '%s' have not been configured.",
+                 source_file, source_path);
+        return FALSE;
+    }
 
     /* OK, we seem to have a path to a configured kernel source tree */
     
     ui_log(op, "Kernel source path: '%s'\n", op->kernel_source_path);
+    ui_log(op, "Kernel output path: '%s'\n", op->kernel_output_path);
     
     return TRUE;
     
@@ -423,7 +415,7 @@ int link_kernel_module(Options *op, Package *p)
 
 int build_kernel_module(Options *op, Package *p)
 {
-    char *result, *cmd, *tmp;
+    char *CC, *result, *cmd, *tmp;
     int len, ret;
     
     /*
@@ -433,13 +425,15 @@ int build_kernel_module(Options *op, Package *p)
     
     touch_directory(op, p->kernel_module_build_directory);
     
-
+    CC = getenv("CC");
+    if (!CC) CC = "cc";
+    
     /*
      * Check if conftest.sh can determine the Makefile, there's
      * no hope for the make rules if this fails.
      */
     cmd = nvstrcat("sh ", p->kernel_module_build_directory,
-                   "/conftest.sh cc ",
+                   "/conftest.sh ", CC, " ", CC, " ",
                    op->kernel_source_path, " ",
                    op->kernel_output_path, " ",
                    "select_makefile just_msg", NULL);
@@ -448,13 +442,12 @@ int build_kernel_module(Options *op, Package *p)
     nvfree(cmd);
 
     if (ret != 0) {
-        ui_error(op, result); /* display conftest.sh's error message */
+        ui_error(op, "%s", result); /* display conftest.sh's error message */
         nvfree(result);
         return FALSE;
     }
 
-    if (!rivafb_check(op, p)) return FALSE;
-    change_page_attr_check(op, p);
+    if (!fbdev_check(op, p)) return FALSE;
 
     cmd = nvstrcat("cd ", p->kernel_module_build_directory,
                    "; make print-module-filename",
@@ -629,6 +622,46 @@ int build_kernel_interface(Options *op, Package *p)
 
 
 /*
+ * check_for_warning_messages() - check if the kernel module detected
+ * problems with the target system and registered warning messages
+ * for us with the Linux /proc interface. If yes, show these messages
+ * to the user.
+ */
+
+void check_for_warning_messages(Options *op)
+{
+    char *paths[2] = { "/proc/driver/nvidia/warnings", NULL };
+    FTS *fts;
+    FTSENT *ent;
+    char *buf = NULL;
+
+    fts = fts_open(paths, FTS_LOGICAL, NULL);
+    if (!fts) return;
+
+    while ((ent = fts_read(fts)) != NULL) {
+        switch (ent->fts_info) {
+            case FTS_F:
+                if ((strlen(ent->fts_name) == 6) &&
+                    !strncmp("README", ent->fts_name, 6))
+                    break;
+                if (read_text_file(ent->fts_path, &buf)) {
+                    ui_warn(op, "%s", buf);
+                    nvfree(buf);
+                }
+                break;
+            default:
+                /* ignore this file entry */
+                break;
+        }
+    }
+
+    fts_close(fts);
+
+} /* check_for_warning_messages() */
+
+
+
+/*
  * test_kernel_module() - attempt to insmod the kernel module and then
  * rmmod it.  Return TRUE if the insmod succeeded, or FALSE otherwise.
  */
@@ -693,21 +726,16 @@ int test_kernel_module(Options *op, Package *p)
         if (!op->expert) ui_log(op, "Kernel module load error: %s", data);
         ret = FALSE;
 
+    } else {
         nvfree(cmd);
-        nvfree(data);
 
         /*
-         * display/log the last five lines of the kernel ring buffer
-         * to provide further details on the load failure.
+         * check if the kernel module detected problems with this
+         * system's kernel and display any warning messages it may
+         * have prepared for us.
          */
 
-        cmd = nvstrcat(op->utils[DMESG], " | ",
-                       op->utils[TAIL], " -n 15", NULL);
-
-        if (!run_command(op, cmd, &data, FALSE, 0, TRUE))
-            ui_log(op, "Kernel messages:\n%s", data);
-    } else {
-        free(cmd);
+        check_for_warning_messages(op);
 
         /*
          * attempt to unload the kernel module, but don't abort if
@@ -719,8 +747,22 @@ int test_kernel_module(Options *op, Package *p)
         ret = TRUE;
     }
     
-    if (cmd) free(cmd);
-    if (data) free(data);
+    nvfree(cmd);
+    nvfree(data);
+    
+    /*
+     * display/log the last few lines of the kernel ring buffer
+     * to provide further details in case of a load failure or
+     * to capture NVRM warning messages, if any.
+     */
+    cmd = nvstrcat(op->utils[DMESG], " | ",
+                   op->utils[TAIL], " -n 25", NULL);
+
+    if (!run_command(op, cmd, &data, FALSE, 0, TRUE))
+        ui_log(op, "Kernel messages:\n%s", data);
+
+    nvfree(cmd);
+    nvfree(data);
     
     if (new_loglevel != 0) sysctl(name, 2, NULL, 0, &old_loglevel, len);
     
@@ -1438,26 +1480,14 @@ int check_cc_version(Options *op, Package *p)
         return TRUE;
     }
 
-    /*
-     * Check if the libc development headers are installed; we need
-     * these to build the gcc version check utility.
-     */
-    if (access("/usr/include/stdio.h", F_OK) == -1) {
-        ui_error(op, "You do not appear to have libc header files "
-                 "installed on your system.  Please install your "
-                 "distribution's libc development package.");
-        return FALSE;
-    }
-
     CC = getenv("CC");
     if (!CC) CC = "cc";
     
     ui_log(op, "Performing CC test with CC=\"%s\".", CC);
 
     cmd = nvstrcat("sh ", p->kernel_module_build_directory,
-                   "/conftest.sh ", CC, " ",
-                   op->kernel_source_path, " ",
-                   op->kernel_output_path, " ",
+                   "/conftest.sh ", CC, " ", CC, " ",
+                   "DUMMY_SOURCE DUMMY_OUTPUT ",
                    "cc_sanity_check just_msg", NULL);
 
     ret = run_command(op, cmd, &result, FALSE, 0, TRUE);
@@ -1566,20 +1596,23 @@ int check_for_legacy_gpu(Options *op, Package *p)
 
 
 /*
- * rivafb_check() - run the rivafb_sanity_check conftest; if the test
- * fails, print the error message from the test and abort driver
- * installation.
+ * fbdev_check() - run the rivafb_sanity_check and the nvidiafb_sanity_check
+ * conftests; if either test fails, print the error message from the test
+ * and abort the driver installation.
  */
 
-static int rivafb_check(Options *op, Package *p)
+static int fbdev_check(Options *op, Package *p)
 {
-    char *cmd, *result;
+    char *CC, *cmd, *result;
     int ret;
+    
+    CC = getenv("CC");
+    if (!CC) CC = "cc";
     
     ui_log(op, "Performing rivafb check.");
     
     cmd = nvstrcat("sh ", p->kernel_module_build_directory,
-                   "/conftest.sh cc ",
+                   "/conftest.sh ", CC, " ", CC, " ",
                    op->kernel_source_path, " ",
                    op->kernel_output_path, " ",
                    "rivafb_sanity_check just_msg", NULL);
@@ -1588,45 +1621,36 @@ static int rivafb_check(Options *op, Package *p)
     
     nvfree(cmd);
     
-    if (ret == 0) return TRUE;
+    if (ret != 0) {
+        ui_error(op, "%s", result);
+        nvfree(result);
+
+        return FALSE;
+    }
+
+    ui_log(op, "Performing nvidiafb check.");
     
-    ui_error(op, result);
-    
-    nvfree(result);
-    
-    return FALSE;
-    
-} /* rivafb_check() */
-
-
-/*
- * change_page_attr_check() - run the change_page_attr_sanity_check
- * conftest; if the test fails, print a warning messages, but continue
- * the installation.
- */
-
-static void change_page_attr_check(Options  *op, Package *p)
-{
-#if defined(NV_X86_64)
-    char *cmd, *result;
-    int ret;
-
-    ui_log(op, "Performing change_page_attr() check.");
-
     cmd = nvstrcat("sh ", p->kernel_module_build_directory,
-                   "/conftest.sh cc ",
+                   "/conftest.sh ", CC, " ", CC, " ",
                    op->kernel_source_path, " ",
                    op->kernel_output_path, " ",
-                   "change_page_attr_sanity_check just_msg", NULL);
+                   "nvidiafb_sanity_check just_msg", NULL);
     
     ret = run_command(op, cmd, &result, FALSE, 0, TRUE);
+    
     nvfree(cmd);
 
-    if (result && *result) ui_warn(op, result);
-    nvfree(result);
+    if (ret != 0) {
+        ui_error(op, "%s", result);
+        nvfree(result);
 
-#endif /* NV_X86_64 */
-}
+        return FALSE;
+    }
+
+    return TRUE;
+    
+    
+} /* fbdev_check() */
 
 
 

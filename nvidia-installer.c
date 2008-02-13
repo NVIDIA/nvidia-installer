@@ -31,6 +31,7 @@
 #include <unistd.h>
 #include <limits.h>
 #include <string.h>
+#include <ctype.h>
 
 #include <sys/types.h>
 #include <sys/stat.h>
@@ -49,14 +50,14 @@
 #include "update.h"
 #include "format.h"
 #include "sanity.h"
+#include "option_table.h"
 
 #define TAB "  "
+#define BIGTAB "      "
 
 static void print_version(void);
-static void print_help(void);
-static void print_advanced_options(void);
-static void print_help_args_only(int args_only);
-static void print_advanced_options_args_only(int args_only);
+static void print_help(int advanced);
+static void print_help_args_only(int args_only, int advanced);
 
 
 
@@ -86,7 +87,7 @@ static void print_version(void)
  * print_help() - print usage information
  */
 
-static void print_help(void)
+static void print_help(int advanced)
 {
     print_version();
     
@@ -94,38 +95,16 @@ static void print_help(void)
     fmtout("nvidia-installer [options]");
     fmtout("");
     
-    print_help_args_only(FALSE);
+    print_help_args_only(FALSE, advanced);
 
 } /* print_help() */
 
 
-
-static void print_advanced_options(void)
+static void print_help_args_only(int args_only, int advanced)
 {
-    print_version();
-    
-    fmtout("");
-    fmtout("nvidia-installer [options]");
-    fmtout("");
-    
-    fmtout("");
-    fmtout("COMMON OPTIONS:");
-    fmtout("");
-
-    print_help_args_only(FALSE);
-
-    fmtout("");
-    fmtout("ADVANCED OPTIONS:");
-    fmtout("");
-    
-    print_advanced_options_args_only(FALSE);
-
-} /* print_advanced_options() */
-
-
-
-static void print_help_args_only(int args_only)
-{
+    int i, j, len;
+    char *msg, *tmp, scratch[64];
+    const NVOption *o;
     /*
      * the args_only parameter is used by makeself.sh to get our
      * argument list and description; in this case we don't want to
@@ -135,312 +114,41 @@ static void print_help_args_only(int args_only)
 
     if (args_only) reset_current_terminal_width(65);
 
-    fmtout("-a, --accept-license");
-    fmtoutp(TAB, "Bypass the display and prompting for acceptance of the "
-            "NVIDIA Software License Agreement.  By passing this option to "
-            "nvidia-installer, you indicate that you have read and accept the "
-            "License Agreement contained in the file 'LICENSE' (in the top "
-            "level directory of the driver package).");
-    fmtout("");
-    
-    fmtout("--update");
-    fmtoutp(TAB, "Connect to the NVIDIA ftp server '%s' and determine the "
-            "latest available driver version.  If there is a more recent "
-            "driver available, automatically download and install it.  Any "
-            "other options given on the commandline will be passed on to the "
-            "downloaded driver package when installing it.", DEFAULT_FTP_SITE);
-    fmtout("");
+    for (i = 0; __options[i].name; i++) {
+        o = &__options[i];
 
-    fmtout("-v, --version");
-    fmtoutp(TAB, "Print the nvidia-installer version and exit.");
-    fmtout("");
-    
-    fmtout("-h, --help");
-    fmtoutp(TAB, "Print usage information for the common commandline options "
-            "and exit.");
-    fmtout("");
-    
-    fmtout("-A, --advanced-options");
-    fmtoutp(TAB, "Print usage information for the common commandline options "
-            "as well as the advanced options, and then exit.");
-    fmtout("");
-    
+        /*
+         * if non-advanced help is requested, and the ALWAYS flag is
+         * not set, then skip this option
+         */
+
+        if (!advanced && !(o->flags & OPTION_HELP_ALWAYS)) continue;
+
+        /* Skip options with no help text */
+        if (!o->description) continue;
+
+        if (o->flags & NVOPT_IS_BOOLEAN) {
+            msg = nvstrcat("--", o->name, "/--no-", o->name, NULL);
+        } else if (isalnum(o->val)) {
+            sprintf(scratch, "%c", o->val);
+            msg = nvstrcat("-", scratch, ", --", o->name, NULL);
+        } else {
+            msg = nvstrcat("--", o->name, NULL);
+        }
+        if (o->flags & NVOPT_HAS_ARGUMENT) {
+            len = strlen(o->name);
+            for (j = 0; j < len; j++) scratch[j] = toupper(o->name[j]);
+            scratch[len] = '\0';
+            tmp = nvstrcat(msg, "=[", scratch, "]", NULL);
+            nvfree(msg);
+            msg = tmp;
+        }
+        fmtoutp(TAB, msg);
+        if (o->description) fmtoutp(BIGTAB, o->description);
+        fmtout("");
+        nvfree(msg);
+    }
 } /* print_help_args_only() */
-
-
-static void print_advanced_options_args_only(int args_only)
-{
-    /*
-     * the args_only parameter is used by makeself.sh to get our
-     * argument list and description; in this case we don't want to
-     * format to the width of the terminal, so hardcode the width to
-     * 65.
-     */
-
-    if (args_only) reset_current_terminal_width(65);
-
-    fmtout("-i, --driver-info");
-    fmtoutp(TAB, "Print information about the currently installed NVIDIA "
-            "driver version.");
-    fmtout("");
-    
-    fmtout("--uninstall");
-    fmtoutp(TAB, "Uninstall the currently installed NVIDIA driver.");
-    fmtout("");
-    
-    fmtout("--sanity");
-    fmtoutp(TAB, "Perform basic sanity tests on an existing NVIDIA "
-            "driver installation.");
-    fmtout("");
-    
-    fmtout("-e, --expert");
-    fmtoutp(TAB, "Enable 'expert' installation mode; more detailed questions "
-            "will be asked, and more verbose output will be printed; "
-            "intended for expert users.  The questions may be suppressed "
-            "with the '--no-questions' commandline option.");
-    fmtout("");
-
-    fmtout("-q, --no-questions");
-    fmtoutp(TAB, "Do not ask any questions; the default (normally 'yes') "
-            "is assumed for "
-            "all yes/no questions, and the default string is assumed in "
-            "any situation where the user is prompted for string input.  "
-            "The one question that is not bypassed by this option is "
-            "license acceptance; the license may be accepted with the "
-            "commandline option '--accept-license'.");
-    fmtout("");
-
-    fmtout("-s, --silent");
-    fmtoutp(TAB, "Run silently; no questions are asked and no output is "
-            "printed, except for error messages to stderr.  This option "
-            "implies '--ui=none --no-questions --accept-license'.");
-    fmtout("");
-
-    fmtout("--x-prefix=[X PREFIX]");
-    fmtoutp(TAB, "The prefix under which the X components of the "
-            "NVIDIA driver will be installed; the default is: '%s'.  Only "
-            "under rare circumstances should this option be used.",
-            DEFAULT_XFREE86_INSTALLATION_PREFIX);
-    fmtout("");
-    
-    fmtout("--opengl-prefix=[OPENGL PREFIX]");
-    fmtoutp(TAB, "The prefix under which the OpenGL components of the "
-            "NVIDIA driver will be installed; the default is: '%s'.  Only ",
-            "under rare circumstances should this option be used.  The Linux "
-            "OpenGL ABI (http://oss.sgi.com/projects/ogl-sample/ABI/) "
-            "mandates this default value.",
-            DEFAULT_OPENGL_INSTALLATION_PREFIX);
-    fmtout("");
-
-#if defined(NV_X86_64)
-    fmtout("--compat32-prefix=[COMPAT32 PREFIX]");
-    fmtoutp(TAB, "The path relative to which the 32bit compatibility "
-            "libraries will be installed on x86-64 systems; this option "
-            "is unset by default, the OpenGL prefix alone determines "
-            "the target location.  Only under very rare circumstances "
-            "should this option need to be used.");
-    fmtout("");
-#endif /* NV_X86_64 */
-    
-    fmtout("--installer-prefix=[INSTALLER PREFIX]");
-    fmtoutp(TAB, "The prefix under which the installer binary will be "
-            "installed; the default is: '%s'.  Note: use the "
-            "\"--utility-prefix\" option instead.",
-            DEFAULT_INSTALLER_INSTALLATION_PREFIX);
-    fmtout("");
-    
-    fmtout("--utility-prefix=[UTILITY PREFIX]");
-    fmtoutp(TAB, "The prefix under which the various NVIDIA utilities "
-            "(nvidia-installer, nvidia-settings, nvidia-bug-report.sh) will "
-            "be installed; the default is: '%s'.",
-            DEFAULT_UTILITY_INSTALLATION_PREFIX);
-    fmtout("");
-
-    fmtout("--kernel-include-path=[KERNEL INCLUDE PATH]");
-    fmtoutp(TAB, "The directory containing the kernel include files that "
-            "should be used when compiling the NVIDIA kernel module.  "
-            "This option is deprecated; please use '--kernel-source-path' "
-            "instead.");
-    fmtout("");
-    
-    fmtout("--kernel-source-path=[KERNEL SOURCE PATH]");
-    fmtoutp(TAB, "The directory containing the kernel source files that "
-            "should be used when compiling the NVIDIA kernel module.  "
-            "When not specified, the installer will use "
-            "'/lib/modules/`uname -r`/build', if that "
-            "directory exists.  Otherwise, it will use "
-            "'/usr/src/linux'.");
-    fmtout("");
-
-    fmtout("--kernel-output-path=[KERNEL OUTPUT PATH]");
-    fmtoutp(TAB, "The directory containing any KBUILD output files if "
-             "either one of the 'KBUILD_OUTPUT' or 'O' parameters were "
-             "passed to KBUILD when building the kernel image/modules.  "
-             "When not specified, the installer will assume that no "
-             "separate output directory was used.");
-    fmtout("");
-    
-    fmtout("--kernel-install-path=[KERNEL INSTALL PATH]");
-    fmtoutp(TAB, "The directory in which the NVIDIA kernel module should be "
-            "installed.  The default value is either '/lib/modules/`uname "
-            "-r`/kernel/drivers/video' (if '/lib/modules/`uname -r`/kernel' "
-            "exists) or '/lib/modules/`uname -r`/video'.");
-    fmtout("");
-
-    fmtout("--proc-mount-point=[PROC FILESYSTEM MOUNT POINT]");
-    fmtoutp(TAB, "The mount point for the proc file system; if not "
-            "specified, then this value defaults to '%s' (which is normally "
-            "correct).  The mount point of the proc filesystem is needed "
-            "because the contents of '<proc filesystem>/version' is used when "
-            "identifying if a precompiled kernel interface is available for "
-            "the currently running kernel.  This option should only be needed "
-            "in very rare circumstances.", DEFAULT_PROC_MOUNT_POINT);
-    fmtout("");
-    
-    fmtout("--log-file-name=[LOG FILE NAME]");
-    fmtoutp(TAB, "File name of the installation log file (the default is: "
-            "'%s').", DEFAULT_LOG_FILE_NAME);
-    fmtout("");
-
-    fmtout("--tmpdir=[TMPDIR]");
-    fmtoutp(TAB, "Use the specified directory as a temporary directory when "
-            "downloading files from the NVIDIA ftp site; "
-            "if not given, then the following list will be searched, and "
-            "the first one that exists will be used: $TMPDIR, /tmp, ., "
-            "$HOME.");
-    fmtout("");
-
-    fmtout("-m, --ftp-mirror=[FTP MIRROR]");
-    fmtoutp(TAB, "Use the specified ftp mirror rather than the default '%s' "
-            "when downloading driver updates.", DEFAULT_FTP_SITE);
-    fmtout("");
-
-    fmtout("-l, --latest");
-    fmtoutp(TAB, "Connect to the NVIDIA ftp server %s (or use the ftp mirror "
-            "specified with the '--ftp-mirror' option) and query the most "
-            "recent %s-%s driver version number.", DEFAULT_FTP_SITE,
-            INSTALLER_OS, INSTALLER_ARCH);
-    fmtout("");
-    
-    fmtout("-f, --force-update");
-    fmtoutp(TAB, "Forces an update to proceed, even if the installer "
-            "thinks the latest driver is already installed; this option "
-            "implies '--update'.");
-    fmtout("");
-
-    fmtout("--ui=[USER INTERFACE]");
-    fmtoutp(TAB, "Specify what user interface to use, if available.  "
-            "Valid values are 'ncurses' (the default) or 'none'. "
-            "If the ncurses interface fails to initialize, or 'none' "
-            "is specified, then a simple printf/scanf interface will "
-            "be used.");
-    fmtout("");
-    
-    fmtout("-c, --no-ncurses-color");
-    fmtoutp(TAB, "Disable use of color in the ncurses user interface.");
-    fmtout("");
-    
-    fmtout("--no-opengl-headers");
-    fmtoutp(TAB, "Normally, installation will install NVIDIA's OpenGL "
-            "header files.  This option disables installation of the NVIDIA "
-            "OpenGL header files.");
-    fmtout("");
-
-    fmtout("--force-tls=[TLS TYPE]");
-    fmtoutp(TAB, "NVIDIA's OpenGL libraries are compiled with one of two "
-            "different thread local storage (TLS) mechanisms: 'classic tls' "
-            "which is used on systems with glibc 2.2 or older, and 'new tls' "
-            "which is used on systems with tls-enabled glibc 2.3 or newer.  "
-            "The nvidia-installer will select the OpenGL "
-            "libraries appropriate for your system; however, you may use "
-            "this option to force the installer to install one library "
-            "type or another.  Valid values for [TLS TYPE] are 'new' and "
-            "'classic'.");
-    fmtout("");
-
-#if defined(NV_X86_64)
-    fmtout("--force-tls-compat32=[TLS TYPE]");
-    fmtoutp(TAB, "This option forces the installer to install a specific "
-            "32bit compatibility OpenGL TLS library; further details "
-            "can be found in the description of the '--force-tls' option.");
-    fmtout("");
-#endif /* NV_X86_64 */
-
-    fmtout("-k, --kernel-name=[KERNELNAME]");
-    fmtoutp(TAB, "Build and install the NVIDIA kernel module for the "
-            "non-running kernel specified by [KERNELNAME] ([KERNELNAME] "
-            "should be the output of `uname -r` when the target kernel is "
-            "actually running).  This option implies "
-            "'--no-precompiled-interface'.  If the options "
-            "'--kernel-install-path' and '--kernel-source-path' are not "
-            "given, then they will be inferred from [KERNELNAME]; eg: "
-            "'/lib/modules/[KERNELNAME]/kernel/drivers/video/' and "
-            "'/lib/modules/[KERNELNAME]/build/', respectively.");
-    fmtout("");
-    
-    fmtout("-n, --no-precompiled-interface");
-    fmtoutp(TAB, "Disable use of precompiled kernel interfaces.");
-    fmtout("");
-
-    fmtout("--no-runlevel-check");
-    fmtoutp(TAB, "Normally, the installer checks the current runlevel and "
-            "warns users if they are in runlevel 1: in runlevel 1, some "
-            "services that are normally active are disabled (such as devfs), "
-            "making it difficult for the installer to properly setup the "
-            "kernel module configuration files.  This option disables the "
-            "runlevel check.");
-    fmtout("");
-
-    fmtout("--no-abi-note");
-    fmtoutp(TAB, "The NVIDIA OpenGL libraries contain an OS ABI note tag, "
-            "which identifies the minimum kernel version needed to use the "
-            "library.  This option causes the installer to remove this note "
-            "from the OpenGL libraries during installation.");
-    fmtout("");
-
-    fmtout("--no-rpms");
-    fmtoutp(TAB, "Normally, the installer will check for several rpms that "
-            "conflict with the driver (specifically: NVIDIA_GLX and "
-            "NVIDIA_kernel), and remove them if present.  This option "
-            "disables this check.");
-    fmtout("");
-
-    fmtout("-b, --no-backup");
-    fmtoutp(TAB, "During driver installation, conflicting files are backed "
-            "up, so that they can be restored when the driver is "
-            "uninstalled.  This option causes the installer to simply delete "
-            "conflicting files, rather than back them up.");
-    fmtout("");
-
-    fmtout("-N, --no-network");
-    fmtoutp(TAB, "This option instructs the installer to not attempt to "
-            "connect to the NVIDIA ftp site (for updated precompiled kernel "
-            "interfaces, for example).");
-    fmtout("");
-
-    fmtout("--no-recursion");
-    fmtoutp(TAB, "Normally, nvidia-installer will recursively search for "
-            "potentially conflicting libraries under the default OpenGL "
-            "and X server installation locations.  With this option set, "
-            "the installer will only search in the top-level directories.");
-    fmtout("");
-    
-    fmtout("-K, --kernel-module-only");
-    fmtoutp(TAB, "Install a kernel module only, and don't uninstall the "
-            "existing driver.  This is intended to be used to install kernel "
-            "modules for additional kernels (in cases where you might boot "
-            "between several different kernels).  To use this option, you "
-            "must already have a driver installed, and the version of the "
-            "installed driver must match the version of this kernel "
-            "module.");
-    fmtout("");
-
-    fmtout("--precompiled-kernel-interfaces-path");
-    fmtoutp(TAB, "Before searching for a precompiled kernel interface in the "
-            ".run file, search in the specified directory.");
-    fmtout("");
-    
-} /* print_advanced_options_args_only() */
 
 
 /*
@@ -462,89 +170,35 @@ Options *parse_commandline(int argc, char *argv[])
     Options *op;
     int c, option_index = 0;
 
-#define XFREE86_PREFIX_OPTION           1
-#define OPENGL_PREFIX_OPTION            2
-#define KERNEL_INCLUDE_PATH_OPTION      3
-#define KERNEL_INSTALL_PATH_OPTION      4
-#define UNINSTALL_OPTION                5
-#define PROC_MOUNT_POINT_OPTION         6
-#define USER_INTERFACE_OPTION           7
-#define LOG_FILE_NAME_OPTION            8
-#define HELP_ARGS_ONLY_OPTION           9
-#define TMPDIR_OPTION                   10
-#define NO_OPENGL_HEADERS_OPTION        11
-#define INSTALLER_PREFIX_OPTION         12
-#define FORCE_TLS_OPTION                13
-#define SANITY_OPTION                   14                 
-#define ADVANCED_OPTIONS_ARGS_ONLY_OPTION 15
-#define UTILITY_PREFIX_OPTION           16
-#define ADD_THIS_KERNEL_OPTION          17
-#define RPM_FILE_LIST_OPTION            18
-#define NO_RUNLEVEL_CHECK_OPTION        19
-#define PRECOMPILED_KERNEL_INTERFACES_PATH 20
-#define NO_ABI_NOTE_OPTION              21
-#define KERNEL_SOURCE_PATH_OPTION       22
-#define NO_RPMS_OPTION                  23
-#define X_PREFIX_OPTION                 24
-#define KERNEL_OUTPUT_PATH_OPTION       25
-#define NO_RECURSION_OPTION             26
-#define FORCE_TLS_COMPAT32_OPTION       27
-#define COMPAT32_PREFIX_OPTION          28
+    const int num_opts = sizeof(__options) / sizeof(__options[0]) - 1;
+    /* Allocate space for the long options. */
+    struct option *long_options = nvalloc(num_opts * sizeof(struct option));
+    /* Allocate space for the short options: leave enough room for a letter and
+     * ':' for each option, plus the '\0'. */
+    char *short_options = nvalloc(num_opts * 2 + 1);
+    char *pShort = short_options;
 
+    /* Generate the table for getopt_long and the string for the short options. */
+    for (c = 0; c < num_opts; c++) {
+        struct option* op = &long_options[c];
+        const NVOption* o = &__options[c];
 
-    static struct option long_options[] = {
-        { "accept-license",           0, NULL, 'a'                        },
-        { "update",                   0, NULL, 'u'                        },
-        { "force-update",             0, NULL, 'f'                        },
-        { "expert",                   0, NULL, 'e'                        },
-        { "version",                  0, NULL, 'v'                        },
-        { "debug",                    0, NULL, 'd'                        },
-        { "driver-info",              0, NULL, 'i'                        },
-        { "no-precompiled-interface", 0, NULL, 'n'                        },
-        { "no-ncurses-color",         0, NULL, 'c'                        },
-        { "latest",                   0, NULL, 'l'                        },
-        { "ftp-mirror",               1, NULL, 'm'                        },
-        { "no-questions",             0, NULL, 'q'                        },
-        { "kernel-name",              1, NULL, 'k'                        },
-        { "silent",                   0, NULL, 's'                        },
-        { "help",                     0, NULL, 'h'                        },
-        { "advanced-options",         0, NULL, 'A'                        },
-        { "no-backup",                0, NULL, 'b'                        },
-        { "kernel-module-only",       0, NULL, 'K'                        },
-        { "xfree86-prefix",           1, NULL, XFREE86_PREFIX_OPTION      },
-        { "x-prefix",                 1, NULL, X_PREFIX_OPTION            },
-        { "compat32-prefix",          1, NULL, COMPAT32_PREFIX_OPTION     },
-        { "opengl-prefix",            1, NULL, OPENGL_PREFIX_OPTION       },
-        { "installer-prefix",         1, NULL, INSTALLER_PREFIX_OPTION    },
-        { "utility-prefix",           1, NULL, UTILITY_PREFIX_OPTION      },
-        { "kernel-include-path",      1, NULL, KERNEL_INCLUDE_PATH_OPTION },
-        { "kernel-source-path",       1, NULL, KERNEL_SOURCE_PATH_OPTION  },
-        { "kernel-output-path",       1, NULL, KERNEL_OUTPUT_PATH_OPTION  },
-        { "kernel-install-path",      1, NULL, KERNEL_INSTALL_PATH_OPTION },
-        { "uninstall",                0, NULL, UNINSTALL_OPTION           },
-        { "proc-mount-point",         1, NULL, PROC_MOUNT_POINT_OPTION    },
-        { "ui",                       1, NULL, USER_INTERFACE_OPTION      },
-        { "log-file-name",            1, NULL, LOG_FILE_NAME_OPTION       },
-        { "help-args-only",           0, NULL, HELP_ARGS_ONLY_OPTION      },
-        { "tmpdir",                   1, NULL, TMPDIR_OPTION              },
-        { "no-opengl-headers",        0, NULL, NO_OPENGL_HEADERS_OPTION   },
-        { "force-tls",                1, NULL, FORCE_TLS_OPTION           },
-        { "force-tls-compat32",       1, NULL, FORCE_TLS_COMPAT32_OPTION  },
-        { "sanity",                   0, NULL, SANITY_OPTION              },
-        { "add-this-kernel",          0, NULL, ADD_THIS_KERNEL_OPTION     },
-        { "rpm-file-list",            1, NULL, RPM_FILE_LIST_OPTION       },
-        { "no-runlevel-check",        0, NULL, NO_RUNLEVEL_CHECK_OPTION   },
-        { "no-network",               0, NULL, 'N'                        },
-        { "no-abi-note",              0, NULL, NO_ABI_NOTE_OPTION         },
-        { "no-rpms",                  0, NULL, NO_RPMS_OPTION             },
-        { "no-recursion",             0, NULL, NO_RECURSION_OPTION        },
-        { "precompiled-kernel-interfaces-path", 1, NULL,
-          PRECOMPILED_KERNEL_INTERFACES_PATH                              },
-        { "advanced-options-args-only", 0, NULL,
-          ADVANCED_OPTIONS_ARGS_ONLY_OPTION                               },
-        {  0,                         0, NULL, 0                          }
-    };
-    
+        op->name = o->name;
+        op->has_arg =
+            (o->flags & NVOPT_HAS_ARGUMENT) ?
+            required_argument : no_argument;
+        op->flag = NULL;
+        op->val = o->val;
+
+        if (isalnum(o->val)) {
+            *pShort++ = o->val;
+
+            if (o->flags & NVOPT_HAS_ARGUMENT)
+                *pShort++ = ':';
+        }
+    }
+    *pShort = '\0';
+
     op = (Options *) nvalloc(sizeof(Options));
     
     /* statically initialized strings */
@@ -566,10 +220,14 @@ Options *parse_commandline(int argc, char *argv[])
 
     op->logging = TRUE; /* log by default */
     op->opengl_headers = TRUE; /* We now install our GL headers by default */
+    op->run_nvidia_xconfig = FALSE;
+    op->selinux_option = SELINUX_DEFAULT;
+
+    op->sigwinch_workaround = TRUE;
 
     while (1) {
         
-        c = getopt_long(argc, argv, "afg:evdinclm:qk:shAbKN",
+        c = getopt_long(argc, argv, short_options,
                         long_options, &option_index);
         if (c == -1)
             break;
@@ -577,7 +235,7 @@ Options *parse_commandline(int argc, char *argv[])
         switch (c) {
             
         case 'a': op->accept_license = TRUE; break;
-        case 'u': op->update = TRUE; break;
+        case UPDATE_OPTION: op->update = TRUE; break;
         case 'e': op->expert = TRUE; break;
         case 'v': print_version(); exit(0); break;
         case 'd': op->debug = TRUE; break;
@@ -591,11 +249,12 @@ Options *parse_commandline(int argc, char *argv[])
         case 'l': op->latest = TRUE; break;
         case 'm': op->ftp_site = optarg; break;
         case 'f': op->update = op->force_update = TRUE; break;
-        case 'h': print_help(); exit(0); break;
-        case 'A': print_advanced_options(); exit(0); break;
+        case 'h': print_help(FALSE); exit(0); break;
+        case 'A': print_help(TRUE); exit(0); break;
         case 'q': op->no_questions = TRUE; break;
         case 'b': op->no_backup = TRUE; break;
         case 'K': op->kernel_module_only = TRUE; break;
+        case 'X': op->run_nvidia_xconfig = TRUE; break;
         case 's':
             op->silent = op->no_questions = op->accept_license = TRUE;
             op->ui_str = "none";
@@ -609,6 +268,8 @@ Options *parse_commandline(int argc, char *argv[])
         case XFREE86_PREFIX_OPTION:
         case X_PREFIX_OPTION:
             op->xfree86_prefix = optarg; break;
+        case X_MODULE_PATH_OPTION:
+            op->x_module_path = optarg; break;
         case OPENGL_PREFIX_OPTION:
             op->opengl_prefix = optarg; break;
         case COMPAT32_PREFIX_OPTION:
@@ -634,7 +295,7 @@ Options *parse_commandline(int argc, char *argv[])
         case LOG_FILE_NAME_OPTION:
             op->log_file_name = optarg; break;
         case HELP_ARGS_ONLY_OPTION:
-            print_help_args_only(TRUE); exit(0); break;
+            print_help_args_only(TRUE, FALSE); exit(0); break;
         case TMPDIR_OPTION:
             op->tmpdir = optarg; break;
         case NO_OPENGL_HEADERS_OPTION:
@@ -673,7 +334,7 @@ Options *parse_commandline(int argc, char *argv[])
             op->add_this_kernel = TRUE;
             break;
         case ADVANCED_OPTIONS_ARGS_ONLY_OPTION:
-            print_advanced_options_args_only(TRUE); exit(0);
+            print_help_args_only(TRUE, TRUE); exit(0);
             break;
         case RPM_FILE_LIST_OPTION:
             op->rpm_file_list = optarg;
@@ -696,7 +357,23 @@ Options *parse_commandline(int argc, char *argv[])
         case NO_RECURSION_OPTION:
             op->no_recursion = TRUE;
             break;
-            
+        case FORCE_SELINUX:
+            if (strcasecmp(optarg, "yes") == 0)
+                op->selinux_option = SELINUX_FORCE_YES;
+            else if (strcasecmp(optarg, "no") == 0)
+                op->selinux_option = SELINUX_FORCE_NO;
+            else if (strcasecmp(optarg, "default")) {
+                fmterr("");
+                fmterr("Invalid parameter for '--force-selinux'; "
+                       "please run `%s --help` for usage information.",
+                       argv[0]);
+                fmterr("");
+                exit(1);
+            }
+            break;
+        case NO_SIGWINCH_WORKAROUND:
+            op->sigwinch_workaround = FALSE;
+            break;
         default:
             fmterr("");
             fmterr("Invalid commandline, please run `%s --help` "
@@ -709,7 +386,10 @@ Options *parse_commandline(int argc, char *argv[])
                                                        c, optarg,
                                                        long_options);
     }
-    
+
+    nvfree((void*)long_options);
+    nvfree((void*)short_options);
+
     if (optind < argc) {
         fmterr("");
         fmterr("Unrecognized arguments:");
@@ -780,6 +460,7 @@ int main(int argc, char *argv[])
     
     if (!find_system_utils(op)) goto done;
     if (!find_module_utils(op)) goto done;
+    if (!check_selinux(op)) goto done;
     
     /* get the latest available driver version */
 

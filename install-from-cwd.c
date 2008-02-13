@@ -79,6 +79,7 @@ int install_from_cwd(Options *op)
     Package *p;
     CommandList *c;
     const char *msg;
+    int ret;
 
     static const char edit_your_xf86config[] =
         "Please update your XF86Config or xorg.conf file as "
@@ -159,6 +160,13 @@ int install_from_cwd(Options *op)
 
     } else {
         /*
+         * make sure that the selected or default system compiler
+         * is compatible with the target kernel; the user may choose
+         * to override the check.
+         */
+        if (!check_cc_version(op, p)) goto failed;
+
+        /*
          * make sure the required development tools are present on
          * this system before attempting to verify the compiler and
          * trying to build a custom kernel interface.
@@ -168,19 +176,11 @@ int install_from_cwd(Options *op)
         /*
          * we do not have a prebuilt kernel interface; thus we'll need
          * to compile the kernel interface, so determine where the
-         * kernel header files are
+         * kernel source files are.
          */
         
-        if (!determine_kernel_source_path(op)) goto failed;
-        determine_kernel_output_path(op);
+        if (!determine_kernel_source_path(op, p)) goto failed;
     
-        /*
-         * make sure that the selected or default system compiler
-         * is compatible with the target kernel; the user may choose
-         * to override the check.
-         */
-        if (!check_cc_version(op, p)) goto failed;
-
         /* and now, build the kernel interface */
         
         if (!build_kernel_module(op, p)) goto failed;
@@ -223,13 +223,14 @@ int install_from_cwd(Options *op)
         select_tls_class(op, p);
 
         /*
-         * if the package contains any libGL.la files, process them
-         * (perform some search and replacing so that they reflect the
-         * correct installation path, etc) and add them to the
-         * packagelist to be installed.
+         * if the package contains any libGL.la or .desktop files,
+         * process them (perform some search and replacing so
+         * that they reflect the correct installation path, etc)
+         * and add them to the package list (files to be installed).
          */
         
         process_libGL_la_files(op, p);
+        process_dot_desktop_files(op, p);
 
 #if defined(NV_X86_64)
         /*
@@ -268,7 +269,7 @@ int install_from_cwd(Options *op)
 
     /* call the ui to get approval for the list of commands */
     
-    if (!ui_approve_command_list(op, c, p->description)) return FALSE;
+    if (!ui_approve_command_list(op, c, "%s", p->description)) return FALSE;
     
     /* initialize the backup log file */
 
@@ -279,10 +280,6 @@ int install_from_cwd(Options *op)
     /* execute the command list */
 
     if (!do_install(op, p, c)) goto failed;
-
-    /* 
-     * XXX IMPLEMENT ME: generate an XF86Config file?
-     */
   
     /*
      * check that everything is installed properly (post-install
@@ -296,19 +293,41 @@ int install_from_cwd(Options *op)
     
     /* done */
 
-    if ((op->distro == SUSE) || (op->distro == UNITED_LINUX)) {
-        msg = suse_edit_your_xf86config;
-    } else {
-        msg = edit_your_xf86config;
-    }
-    
     if (op->kernel_module_only) {
         ui_message(op, "Installation of the kernel module for the %s "
                    "(version %s) is now complete.",
                    p->description, p->version_string);
     } else {
-        ui_message(op, "Installation of the %s (version: %s) is now "
-                   "complete.  %s", p->description, p->version_string, msg);
+        
+        /* ask the user if they would like to run nvidia-xconfig */
+        
+        ret = ui_yes_no(op, op->run_nvidia_xconfig,
+                        "Would you like to run the nvidia-xconfig utility "
+                        "to automatically update your X configuration file "
+                        "so that the NVIDIA X driver will be used when you "
+                        "restart X?  Any pre-existing X configuration "
+                        "file will be backed up.");
+        
+        if (ret) {
+            ret = run_nvidia_xconfig(op);
+        }
+        
+        if (ret) {
+            ui_message(op, "Your X configuration file has been successfully "
+                       "updated.  Installation of the %s (version: %s) is now "
+                       "complete.", p->description, p->version_string);
+        } else {
+            
+            if ((op->distro == SUSE) || (op->distro == UNITED_LINUX)) {
+                msg = suse_edit_your_xf86config;
+            } else {
+                msg = edit_your_xf86config;
+            }
+            
+            ui_message(op, "Installation of the %s (version: %s) is now "
+                       "complete.  %s", p->description,
+                       p->version_string, msg);
+        }
     }
     
     return TRUE;
@@ -349,7 +368,7 @@ int add_this_kernel(Options *op)
 
     /* find the kernel header files */
 
-    if (!determine_kernel_source_path(op)) goto failed;
+    if (!determine_kernel_source_path(op, p)) goto failed;
 
     /* build the precompiled kernel interface */
 
@@ -572,22 +591,36 @@ static Package *parse_manifest (Options *op)
                 p->entries[n].flags |= FILE_TYPE_OPENGL_LIB;
             else if (strcmp(flag, "LIBGL_LA") == 0)
                 p->entries[n].flags |= FILE_TYPE_LIBGL_LA;
-            else if (strcmp(flag, "XFREE86_LIB") == 0)
-                p->entries[n].flags |= FILE_TYPE_XFREE86_LIB;
+            else if (strcmp(flag, "XLIB_STATIC_LIB") == 0)
+                p->entries[n].flags |= FILE_TYPE_XLIB_STATIC_LIB;
+            else if (strcmp(flag, "XLIB_SHARED_LIB") == 0)
+                p->entries[n].flags |= FILE_TYPE_XLIB_SHARED_LIB;
             else if (strcmp(flag, "TLS_LIB") == 0)
                 p->entries[n].flags |= FILE_TYPE_TLS_LIB;
+            else if (strcmp(flag, "UTILITY_LIB") == 0)
+                p->entries[n].flags |= FILE_TYPE_UTILITY_LIB;
             else if (strcmp(flag, "DOCUMENTATION") == 0)
                 p->entries[n].flags |= FILE_TYPE_DOCUMENTATION;
             else if (strcmp(flag, "OPENGL_SYMLINK") == 0)
                 p->entries[n].flags |= FILE_TYPE_OPENGL_SYMLINK;
-            else if (strcmp(flag, "XFREE86_SYMLINK") == 0)
-                p->entries[n].flags |= FILE_TYPE_XFREE86_SYMLINK;
+            else if (strcmp(flag, "XLIB_SYMLINK") == 0)
+                p->entries[n].flags |= FILE_TYPE_XLIB_SYMLINK;
             else if (strcmp(flag, "TLS_SYMLINK") == 0)
                 p->entries[n].flags |= FILE_TYPE_TLS_SYMLINK;
+            else if (strcmp(flag, "UTILITY_SYMLINK") == 0)
+                p->entries[n].flags |= FILE_TYPE_UTILITY_SYMLINK;
             else if (strcmp(flag, "INSTALLER_BINARY") == 0)
                 p->entries[n].flags |= FILE_TYPE_INSTALLER_BINARY;
             else if (strcmp(flag, "UTILITY_BINARY") == 0)
                 p->entries[n].flags |= FILE_TYPE_UTILITY_BINARY;
+            else if (strcmp(flag, "DOT_DESKTOP") == 0)
+                p->entries[n].flags |= FILE_TYPE_DOT_DESKTOP;
+            else if (strcmp(flag, "XMODULE_STATIC_LIB") == 0)
+                p->entries[n].flags |= FILE_TYPE_XMODULE_STATIC_LIB;
+            else if (strcmp(flag, "XMODULE_SHARED_LIB") == 0)
+                p->entries[n].flags |= FILE_TYPE_XMODULE_SHARED_LIB;
+            else if (strcmp(flag, "XMODULE_SYMLINK") == 0)
+                p->entries[n].flags |= FILE_TYPE_XMODULE_SYMLINK;
             else {
                 nvfree(flag);
                 goto invalid_manifest_file;
