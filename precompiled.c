@@ -58,16 +58,16 @@ static uint32 decode_uint32(char *buf)
 {
     uint32 ret = 0;
 
-    ret += (uint32) buf[3];
+    ret += (((uint32) buf[3]) & 0xff);
     ret <<= 8;
 
-    ret += (uint32) buf[2];
+    ret += (((uint32) buf[2]) & 0xff);
     ret <<= 8;
 
-    ret += (uint32) buf[1];
+    ret += (((uint32) buf[1]) & 0xff);
     ret <<= 8;
 
-    ret += (uint32) buf[0];
+    ret += (((uint32) buf[0]) & 0xff);
     ret <<= 0;
 
     return ret;
