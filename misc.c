@@ -42,6 +42,10 @@
 #include <libgen.h>
 #include <pci/pci.h>
 
+#ifndef PCI_CLASS_DISPLAY_3D
+#define PCI_CLASS_DISPLAY_3D 0x302
+#endif
+
 #include "nvidia-installer.h"
 #include "user-interface.h"
 #include "kernel.h"
@@ -704,6 +708,7 @@ int find_system_utils(Options *op)
         { "chcon",          "selinux" },
         { "selinuxenabled", "selinux" },
         { "getenforce",     "selinux" },
+        { "execstack",      "selinux" },
         { "pkg-config",     "pkg-config" },
         { "X",              "xserver" }
     };
@@ -2179,6 +2184,7 @@ int check_for_nvidia_graphics_devices(Options *op, Package *p)
     struct pci_access *pacc;
     struct pci_dev *dev;
     int i, found_supported_device = FALSE;
+    int found_vga_device = FALSE;
     uint16 class;
 
     pacc = pci_alloc();
@@ -2192,8 +2198,12 @@ int check_for_nvidia_graphics_devices(Options *op, Package *p)
     pci_scan_bus(pacc);
 
     for (dev = pacc->devices; dev != NULL; dev = dev->next) {
-        if ((pci_fill_info(dev, PCI_FILL_IDENT) & PCI_FILL_IDENT) &&
-              ((class = pci_read_word(dev, PCI_CLASS_DEVICE)) == PCI_CLASS_DISPLAY_VGA) &&
+        if ((pci_fill_info(dev, PCI_FILL_IDENT) & PCI_FILL_IDENT) == 0)
+            continue;
+
+        class = pci_read_word(dev, PCI_CLASS_DEVICE);
+
+        if ((class == PCI_CLASS_DISPLAY_VGA || class == PCI_CLASS_DISPLAY_3D) &&
               (dev->vendor_id == 0x10de) /* NVIDIA */ &&
               (dev->device_id >= 0x0020) /* TNT or later */) {
             /*
@@ -2213,7 +2223,7 @@ int check_for_nvidia_graphics_devices(Options *op, Package *p)
                             break;
                         }
                     }
-                    
+
                     ui_warn(op, "The NVIDIA %s GPU installed in this system is supported "
                             "through the NVIDIA %s legacy Linux graphics drivers.  Please "
                             "visit http://www.nvidia.com/object/unix.html for more "
@@ -2225,7 +2235,13 @@ int check_for_nvidia_graphics_devices(Options *op, Package *p)
                     found_legacy_device = TRUE;
                 }
             }
-            if (!found_legacy_device) found_supported_device = TRUE;
+
+            if (!found_legacy_device) {
+                found_supported_device = TRUE;
+
+                if (class == PCI_CLASS_DISPLAY_VGA)
+                    found_vga_device = TRUE;
+            }
         }
     }
 
@@ -2240,6 +2256,9 @@ int check_for_nvidia_graphics_devices(Options *op, Package *p)
                  "driver download page at www.nvidia.com.", p->version);
         return FALSE;
     }
+
+    if (!found_vga_device)
+        op->no_nvidia_xconfig_question = TRUE;
 
     return TRUE;
 

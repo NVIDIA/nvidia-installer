@@ -278,7 +278,7 @@ tls_test: tls_test.c
 # nvidia-installer to simplify x86-64 builds.
 
 rebuild_rtld_test: rtld_test.c
-	gcc -Wall -O2 -fomit-frame-pointer -o $(RTLD_TEST) -lGL $<
+	gcc -Wall -O2 -fomit-frame-pointer -o $(RTLD_TEST) -lGL -lcuda -lpthread -lstdc++ $<
 	strip $(RTLD_TEST)
 
 # dummy rule to override implicit rule that builds dls_test from

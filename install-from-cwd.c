@@ -237,7 +237,8 @@ int install_from_cwd(Options *op)
     
     /* done */
 
-    if (op->kernel_module_only) {
+    if (op->kernel_module_only || op->no_nvidia_xconfig_question) {
+
         ui_message(op, "Installation of the kernel module for the %s "
                    "(version %s) is now complete.",
                    p->description, p->version);

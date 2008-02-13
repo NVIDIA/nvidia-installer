@@ -239,6 +239,12 @@ CommandList *build_command_list(Options *op, Package *p)
                            " ", p->entries[i].dst, NULL);
             add_command(c, RUN_CMD, tmp);
             nvfree(tmp);
+            if (op->utils[EXECSTACK] != NULL) {
+                tmp = nvstrcat(op->utils[EXECSTACK], " -c ", p->entries[i].dst,
+                               NULL);
+                add_command(c, RUN_CMD, tmp);
+                nvfree(tmp);
+            }
         }
     }
 

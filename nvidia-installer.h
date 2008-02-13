@@ -53,6 +53,7 @@ typedef enum {
     CHCON = MAX_SYSTEM_UTILS,
     SELINUX_ENABLED,
     GETENFORCE,
+    EXECSTACK,
     PKG_CONFIG,
     XSERVER,
     MAX_SYSTEM_OPTIONAL_UTILS
@@ -135,6 +136,7 @@ typedef struct __options {
     int selinux_enabled;
     int sigwinch_workaround;
     int no_x_check;
+    int no_nvidia_xconfig_question;
 
     char *opengl_prefix;
     char *opengl_libdir;
