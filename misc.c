@@ -31,6 +31,7 @@
 #include <string.h>
 #include <unistd.h>
 #include <errno.h>
+#include <signal.h>
 #include <sys/types.h>
 #include <sys/utsname.h>
 #include <sys/stat.h>
@@ -300,7 +301,7 @@ int check_runlevel(Options *op)
                         "this may cause problems.  For example: some "
                         "distributions that use devfs do not run the devfs "
                         "daemon in runlevel 1, making it difficult for "
-                        "nvidia-installer to correctly setup the kernel "
+                        "`nvidia-installer` to correctly setup the kernel "
                         "module configuration files.  It is recommended "
                         "that you quit installation now and switch to "
                         "runlevel 3 (`telinit 3`) before installing.\n\n"
@@ -383,9 +384,13 @@ char *fget_next_line(FILE *fp, int *eof)
         if (buflen == len) { /* buffer isn't big enough -- grow it */
             buflen += NV_LINE_LEN;
             tmpbuf = (char *) nvalloc (buflen);
+            if (!tmpbuf) {
+                if (buf) nvfree(buf);
+                return NULL;
+            }
             if (buf) {
                 memcpy (tmpbuf, buf, len);
-                free (buf);
+                nvfree(buf);
             }
             buf = tmpbuf;
             c = buf + len;
@@ -411,11 +416,15 @@ char *fget_next_line(FILE *fp, int *eof)
 
 
 /*
- * get_next_line() - this function scans for the next newline or
- * carriage return in buf.  If non-NULL, the passed-by-reference
- * parameter e is set to point to the next printable character in the
- * buffer, or NULL if EOF is encountered.
+ * get_next_line() - this function scans for the next newline,
+ * carriage return, NUL terminator, or EOF in buf.  If non-NULL, the
+ * passed-by-reference parameter 'end' is set to point to the next
+ * printable character in the buffer, or NULL if EOF is encountered.
  *
+ * If the parameter 'start' is non-NULL, then that is interpretted as
+ * the start of the buffer string, and we check that we never walk
+ * 'length' bytes past 'start'.
+ * 
  * On success, a newly allocated buffer is allocated containing the
  * next line of text (with a NULL terminator in place of the
  * newline/carriage return).
@@ -423,27 +432,46 @@ char *fget_next_line(FILE *fp, int *eof)
  * On error, NULL is returned.
  */
 
-char *get_next_line(char *buf, char **e)
+char *get_next_line(char *buf, char **end, char *start, int length)
 {
     char *c, *retbuf;
     int len;
 
-    if (e) *e = NULL;
-    
-    if ((!buf) || (*buf == '\0') || (*buf == EOF)) return NULL;
+    if (start && (length < 1)) return NULL;
 
+#define __AT_END(_start, _current, _length) \
+    ((_start) && (((_current) - (_start)) >= (_length)))
+    
+    if (end) *end = NULL;
+    
+    if ((!buf) ||
+        __AT_END(start, buf, length) ||
+        (*buf == '\0') ||
+        (*buf == EOF)) return NULL;
+    
     c = buf;
-    while ((*c != '\0') && (*c != EOF) && (*c != '\n') && (*c != '\r')) c++;
+    
+    while ((!__AT_END(start, c, length)) &&
+           (*c != '\0') &&
+           (*c != EOF) &&
+           (*c != '\n') &&
+           (*c != '\r')) c++;
 
     len = c - buf;
     retbuf = nvalloc(len + 1);
     strncpy(retbuf, buf, len);
     retbuf[len] = '\0';
     
-    if (e) {
-        while ((*c != '\0') && (*c != EOF) && (!isprint(*c))) c++;
-        if ((*c == '\0') || (*c == EOF)) *e = NULL;
-        else *e = c;
+    if (end) {
+        while ((!__AT_END(start, c, length)) &&
+               (*c != '\0') &&
+               (*c != EOF) &&
+               (!isprint(*c))) c++;
+        
+        if (__AT_END(start, c, length) ||
+            (*c == '\0') ||
+            (*c == EOF)) *end = NULL;
+        else *end = c;
     }
     
     return retbuf;
@@ -481,6 +509,7 @@ int run_command(Options *op, const char *cmd, char **data, int output,
     int n, len, buflen, ret;
     char *cmd2, *buf, *tmpbuf;
     FILE *stream = NULL;
+    struct sigaction act, old_act;
     float percent;
     
     if (data) *data = NULL;
@@ -500,6 +529,21 @@ int run_command(Options *op, const char *cmd, char **data, int output,
         cmd2 = nvstrdup(cmd);
     }
     
+    /*
+     * XXX: temporarily ignore SIGWINCH; our child process inherits
+     * this disposition and will likewise ignore it (by default).
+     * This fixes cases where child processes abort after receiving
+     * SIGWINCH when its caught in the parent process.
+     */
+    if (op->sigwinch_workaround) {
+        act.sa_handler = SIG_IGN;
+        sigemptyset(&act.sa_mask);
+        act.sa_flags = 0;
+
+        if (sigaction(SIGWINCH, &act, &old_act) < 0)
+            old_act.sa_handler = NULL;
+    }
+
     /*
      * Open a process by creating a pipe, forking, and invoking the
      * command.
@@ -537,7 +581,7 @@ int run_command(Options *op, const char *cmd, char **data, int output,
         
         if (fgets(buf + len, buflen - len, stream) == NULL) break;
         
-        if (output) ui_command_output(op, buf + len);
+        if (output) ui_command_output(op, "%s", buf + len);
         
         len += strlen(buf + len);
 
@@ -545,6 +589,14 @@ int run_command(Options *op, const char *cmd, char **data, int output,
             n++;
             if (n > status) n = status;
             percent = (float) n / (float) status;
+
+            /*
+             * XXX: manually call the SIGWINCH handler, if set, to
+             * handle window resizes while we ignore the signal.
+             */
+            if (op->sigwinch_workaround)
+                if (old_act.sa_handler) old_act.sa_handler(SIGWINCH);
+
             ui_status_update(op, percent, NULL);
         }
     } /* while (1) */
@@ -552,6 +604,13 @@ int run_command(Options *op, const char *cmd, char **data, int output,
     /* Close the popen()'ed stream. */
 
     ret = pclose(stream);
+
+    /*
+     * Restore the SIGWINCH signal disposition and handler, if any,
+     * to their original values.
+     */
+    if (op->sigwinch_workaround)
+        sigaction(SIGWINCH, &old_act, NULL);
 
     /* if the last character in the buffer is a newline, null it */
     
@@ -563,6 +622,54 @@ int run_command(Options *op, const char *cmd, char **data, int output,
     return ret;
     
 } /* run_command() */
+
+
+
+/*
+ * read_text_file() - open a text file, read its contents and return
+ * them to the caller in a newly allocated buffer.  Returns TRUE on
+ * success and FALSE on failure.
+ */
+
+int read_text_file(const char *filename, char **buf)
+{
+    FILE *fp;
+    int index = 0, buflen = 0;
+    int eof = FALSE;
+    char *line, *tmpbuf;
+
+    *buf = NULL;
+
+    fp = fopen(filename, "r");
+    if (!fp)
+        return FALSE;
+
+    while (((line = fget_next_line(fp, &eof))
+                != NULL) && !eof) {
+        if ((index + strlen(line) + 1) > buflen) {
+            buflen += 2 * strlen(line);
+            tmpbuf = (char *)nvalloc(buflen);
+            if (!tmpbuf) {
+                if (*buf) nvfree(*buf);
+                fclose(fp);
+                return FALSE;
+            }
+            if (*buf) {
+                memcpy(tmpbuf, *buf, index);
+                nvfree(*buf);
+            }
+            *buf = tmpbuf;
+        }
+
+        index += sprintf(*buf + index, "%s\n", line);
+        nvfree(line);
+    }
+
+    fclose(fp);
+
+    return TRUE;
+
+} /* read_text_file() */
 
 
 
@@ -591,7 +698,14 @@ int find_system_utils(Options *op)
         { "cut",      "coreutils" }
     };
     
-    int i;
+    /* keep in sync with the SystemOptionalUtils enum type */
+    const struct { const char *util, *package; } optional_utils[] = {
+        { "chcon",          "selinux" },
+        { "selinuxenabled", "selinux" },
+        { "getenforce",     "selinux" }
+    };
+    
+    int i, j;
 
     ui_expert(op, "Searching for system utilities:");
 
@@ -611,6 +725,17 @@ int find_system_utils(Options *op)
         
         ui_expert(op, "found `%s` : `%s`",
                   needed_utils[i].util, op->utils[i]);
+    }
+    
+    for (j = 0, i = MAX_SYSTEM_UTILS; i < MAX_SYSTEM_OPTIONAL_UTILS; i++, j++) {
+        
+        op->utils[i] = find_system_util(optional_utils[j].util);
+        if (op->utils[i]) {     
+            ui_expert(op, "found `%s` : `%s`",
+                  optional_utils[j].util, op->utils[i]);
+        } else {
+            op->utils[i] = NULL;
+        }
     }
     
     return TRUE;
@@ -651,7 +776,7 @@ static Util __module_utils_linux24[] = {
 
 int find_module_utils(Options *op)
 {
-    int i, j = 0;
+    int i, j;
     Util *needed_utils = __module_utils;
 
     if (strncmp(get_kernel_name(op), "2.4", 3) == 0)
@@ -661,7 +786,7 @@ int find_module_utils(Options *op)
 
     /* search the PATH for each utility */
 
-    for (i = MAX_SYSTEM_UTILS; i < MAX_UTILS; i++, j++) {
+    for (j=0, i = MAX_SYSTEM_OPTIONAL_UTILS; i < MAX_UTILS; i++, j++) {
         op->utils[i] = find_system_util(needed_utils[j].util);
         if (!op->utils[i]) {
             ui_error(op, "Unable to find the module utility `%s`; please "
@@ -680,6 +805,78 @@ int find_module_utils(Options *op)
     return TRUE;
 
 } /* find_module_utils() */
+
+
+/*
+ * check_proc_modprobe_path() - check if the modprobe path reported
+ * via /proc matches the one determined earlier; also check if it can
+ * be accessed/executed.
+ */
+
+#define PROC_MODPROBE_PATH_FILE "/proc/sys/kernel/modprobe"
+
+int check_proc_modprobe_path(Options *op)
+{
+    FILE *fp;
+    char *buf = NULL;
+
+    fp = fopen(PROC_MODPROBE_PATH_FILE, "r");
+    if (fp) {
+        buf = fget_next_line(fp, NULL);
+        fclose(fp);
+    }
+
+    if (buf && strcmp(buf, op->utils[MODPROBE])) {
+        if (access(buf, F_OK | X_OK) == 0) {
+            ui_warn(op, "The path to the `modprobe` utility reported by "
+                    "'%s', `%s`, differs from the path determined by "
+                    "`nvidia-installer`, `%s`.  Please verify that `%s` "
+                    "works correctly and correct the path in '%s' if "
+                    "it does not.",
+                    PROC_MODPROBE_PATH_FILE, buf, op->utils[MODPROBE],
+                    buf, PROC_MODPROBE_PATH_FILE);
+            return TRUE;
+        } else {
+           ui_error(op, "The path to the `modprobe` utility reported by "
+                    "'%s', `%s`, differs from the path determined by "
+                    "`nvidia-installer`, `%s`, and does not appear to "
+                    "point to a valid `modprobe` binary.  Please correct "
+                    "the path in '%s'.",
+                    PROC_MODPROBE_PATH_FILE, buf, op->utils[MODPROBE],
+                    PROC_MODPROBE_PATH_FILE);
+           return FALSE;
+        }
+    } else if (!buf && strcmp("/sbin/modprobe", op->utils[MODPROBE])) {
+        if (access(buf, F_OK | X_OK) == 0) {
+            ui_warn(op, "The file '%s' is unavailable, the X server will "
+                    "use `/sbin/modprobe` as the path to the `modprobe` "
+                    "utility.  This path differs from the one determined "
+                    "by `nvidia-installer`, `%s`.  Please verify that "
+                    "`/sbin/modprobe` works correctly or mount the /proc "
+                    "file system and verify that '%s' reports the "
+                    "correct path.",
+                    PROC_MODPROBE_PATH_FILE, op->utils[MODPROBE],
+                    PROC_MODPROBE_PATH_FILE);
+            return TRUE;
+        } else {
+           ui_error(op, "The file '%s' is unavailable, the X server will "
+                    "use `/sbin/modprobe` as the path to the `modprobe` "
+                    "utility.  This path differs from the one determined "
+                    "by `nvidia-installer`, `%s`, and does not appear to "
+                    "point to a valid `modprobe` binary.  Please create "
+                    "a symbolic link from `/sbin/modprobe` to `%s` or "
+                    "mount the /proc file system and verify that '%s' "
+                    "reports the correct path.",
+                    PROC_MODPROBE_PATH_FILE, op->utils[MODPROBE],
+                    op->utils[MODPROBE], PROC_MODPROBE_PATH_FILE);
+           return FALSE;
+        }
+    }
+    nvfree(buf);
+
+    return TRUE;
+
+} /* check_proc_modprobe_path() */
 
 
 /*
@@ -705,7 +902,7 @@ int check_development_tools(Options *op)
         if (!tool) {
             ui_error(op, "Unable to find the development tool `%s` in "
                      "your path; please make sure that you have the "
-                     "package '%s' installed. If %s is installed on your "
+                     "package '%s' installed.  If %s is installed on your "
                      "system, then please check that `%s` is in your "
                      "PATH.",
                      needed_tools[i].tool, needed_tools[i].package,
@@ -714,6 +911,17 @@ int check_development_tools(Options *op)
         }
 
         ui_expert(op, "found `%s` : `%s`", needed_tools[i].tool, tool);
+    }
+
+    /*
+     * Check if the libc development headers are installed; we need
+     * these to build the gcc version check utility.
+     */
+    if (access("/usr/include/stdio.h", F_OK) == -1) {
+        ui_error(op, "You do not appear to have libc header files "
+                 "installed on your system.  Please install your "
+                 "distribution's libc development package.");
+        return FALSE;
     }
 
     return TRUE;
@@ -917,7 +1125,7 @@ void should_install_opengl_headers(Options *op, Package *p)
 void should_install_compat32_files(Options *op, Package *p)
 {
 #if defined(NV_X86_64)
-    int i, have_compat32_files = FALSE;
+    int i, have_compat32_files = FALSE, install_compat32_files;
 
     /*
      * first, scan through the package to see if we have any
@@ -934,8 +1142,30 @@ void should_install_compat32_files(Options *op, Package *p)
     if (!have_compat32_files)
         return;
 
-    if (!ui_yes_no(op, TRUE, "Install NVIDIA's 32bit compatibility "
-                   "OpenGL libraries?")) {
+    /*
+     * Ask the user if the 32-bit compatibility libraries are
+     * to be installed. If yes, check if the chosen prefix
+     * exists. If not, notify the user and ask him/her if the
+     * files are to be installed anyway.
+     */
+    install_compat32_files = ui_yes_no(op, TRUE,
+                "Install NVIDIA's 32-bit compatibility OpenGL "
+                "libraries?");
+
+    if (install_compat32_files && op->compat32_prefix &&
+          access(op->compat32_prefix, F_OK) < 0) {
+        install_compat32_files = ui_yes_no(op, FALSE,
+            "The NVIDIA 32-bit compatibility OpenGL libraries are "
+            "to be installed relative to the prefix '%s'; however, "
+            "this directory does not exit.  Please consult your "
+            "distribution's documentation to confirm the correct "
+            "installation prefix for 32-bit compatiblity libraries."
+            "\n\nDo you wish to install the 32-bit NVIDIA OpenGL "
+            "compatibility libraries anyway?",
+            op->compat32_prefix);
+    }
+    
+    if (!install_compat32_files) {
         for (i = 0; i < p->num_entries; i++) {
             if (p->entries[i].flags & FILE_CLASS_COMPAT32) {
                 /* invalidate file */
@@ -1244,6 +1474,17 @@ static int tls_test_internal(Options *op, int which_tls,
         goto done;
     }
     
+    if (set_security_context(op, dso_tmpfile) == FALSE) {
+        /* We are on a system with SELinux and the chcon command failed.
+         * Assume that the system is recent enough to have the new TLS
+         */
+        ui_warn(op, "Unable to set the security context on file %s; "
+                    "assuming new tls.",
+                     dso_tmpfile);
+        ret = TRUE;
+        goto done;
+    }
+
     /* run the test */
 
     cmd = nvstrcat(tmpfile, " ", dso_tmpfile, NULL);
@@ -1355,6 +1596,34 @@ void collapse_multiple_slashes(char *s)
 }
 
 
+
+/*
+ * is_symbolic_link_to() - check if the file with path 'path' is
+ * a symbolic link pointing to 'dest'.  Returns TRUE if this is
+ * the case; if the file is not a symbolic link if it doesn't point
+ * to 'dest', is_symbolic_link_to() returns FALSE.
+ */
+
+int is_symbolic_link_to(const char *path, const char *dest)
+{
+    struct stat stat_buf0, stat_buf1;
+
+    if ((lstat(path, &stat_buf0) != 0)
+            || !S_ISLNK(stat_buf0.st_mode))
+        return FALSE;
+
+    if ((stat(path, &stat_buf0) == 0) &&
+        (stat(dest, &stat_buf1) == 0) &&
+        (stat_buf0.st_dev == stat_buf1.st_dev) &&
+        (stat_buf0.st_ino == stat_buf1.st_ino))
+        return TRUE;
+
+    return FALSE;
+
+} /* is_symbolic_link_to() */
+
+
+
 /*
  * rtld_test_internal() - this routine writes the test binaries to a file
  * and performs the test; the caller (rtld_test()) selects which array data
@@ -1367,9 +1636,10 @@ static int rtld_test_internal(Options *op, Package *p,
                               const int test_array_size,
                               int compat_32_libs)
 {
-    int i, ret = TRUE;
+    int fd, i, found = TRUE, ret = TRUE;
     char *name = NULL, *cmd = NULL, *data = NULL;
     char *tmpfile, *s;
+    char *tmpfile1 = NULL;
     struct stat stat_buf0, stat_buf1;
 
     if ((test_array == NULL) || (test_array_size == 0)) {
@@ -1389,6 +1659,19 @@ static int rtld_test_internal(Options *op, Package *p,
                 "installation.", strerror(errno));
         goto done;
     }
+
+    /* create another temporary file */
+
+    tmpfile1 = nvstrcat(op->tmpdir, "/nv-tmp-XXXXXX", NULL);
+    
+    fd = mkstemp(tmpfile1);
+    if (fd == -1) {
+        ui_warn(op, "Unable to create a temporary file for the runtime "
+                "configuration test program (%s); assuming successful "
+                "installation.", strerror(errno));
+        goto done;
+    }
+    close(fd);
 
     /* perform the test(s) */
 
@@ -1420,27 +1703,52 @@ static int rtld_test_internal(Options *op, Package *p,
         if (!s) goto next;
         *(s + strlen(".so.1")) = '\0';
 
-        cmd = nvstrcat(op->utils[LDD], " ", tmpfile, " | ",
-                       op->utils[GREP], " ", name, " | ",
-                       op->utils[CUT], " -d \" \" -f 3", NULL);
+        cmd = nvstrcat(op->utils[LDD], " ", tmpfile, " > ", tmpfile1, NULL);
 
-        if (run_command(op, cmd, &data, FALSE, 0, TRUE)) {
+        if (run_command(op, cmd, NULL, FALSE, 0, TRUE)) {
             ui_warn(op, "Unable to perform the runtime configuration "
-                    "check (%s); assuming successful installation.",
-                    strerror(errno));
+                    "check for library '%s' ('%s'); assuming successful "
+                    "installation.", name, p->entries[i].dst);
             goto done;
+        }
+
+        cmd = nvstrcat(op->utils[GREP], " ", name, " ", tmpfile1,
+                             " | ", op->utils[CUT], " -d \" \" -f 3", NULL);
+
+        if (run_command(op, cmd, &data, FALSE, 0, TRUE) ||
+                (data == NULL)) {
+            ui_warn(op, "Unable to perform the runtime configuration "
+                    "check for library '%s' ('%s'); assuming successful "
+                    "installation.", name, p->entries[i].dst);
+            goto done;
+        }
+
+        if (!strcmp(data, "not") || !strlen(data)) {
+            /*
+             * If the library didn't show up in ldd's output or
+             * wasn't found, set 'found' to false and notify the
+             * user with a more meaningful message below.
+             */
+            free(data); data = NULL;
+            found = FALSE;
+        } else {
+            /*
+             * Double slashes in /etc/ld.so.conf make it all the
+             * way to ldd's output on some systems. Strip them
+             * here to make sure they don't cause a false failure.
+             */
+            collapse_multiple_slashes(data);
         }
 
         nvfree(name); name = NULL;
         name = nvstrdup(p->entries[i].dst);
         if (!name) goto next;
 
-        collapse_multiple_slashes(data);
         s = strstr(name, ".so.1");
         if (!s) goto next;
         *(s + strlen(".so.1")) = '\0';
 
-        if ((strcmp(data, name) != 0)) {
+        if (!found || (strcmp(data, name) != 0)) {
             /*
              * XXX Handle the case where the same library is
              * referred to, once directly and once via a symbolic
@@ -1450,21 +1758,46 @@ static int rtld_test_internal(Options *op, Package *p,
 
             if ((stat(data, &stat_buf0) == 0) &&
                 (stat(name, &stat_buf1) == 0) &&
-                (memcmp(&stat_buf0, &stat_buf1, sizeof(struct stat)) == 0))
+                (stat_buf0.st_dev == stat_buf1.st_dev) &&
+                (stat_buf0.st_ino == stat_buf1.st_ino))
                 goto next;
 
-            ui_error(op, "The runtime configuration check failed for "
-                     "library '%s' (expected: '%s', found: '%s').  "
-                     "The most likely reason for this is that conflicting "
-                     "OpenGL libraries are installed in a location "
-                     "not inspected by nvidia-installer.  Please be sure "
-                     "you have uninstalled any third-party OpenGL and "
-                     "third-party graphics driver packages.",
-                     p->entries[i].name, name,
-                     (data && strlen(data)) ? data : "(not found)");
-
-            ret = FALSE;
-            goto done;
+            if (!found && !compat_32_libs) {
+                ui_error(op, "The runtime configuration check failed for "
+                         "library '%s' (expected: '%s', found: (not found)).  "
+                         "The most likely reason for this is that the library "
+                         "was installed to the wrong location or that your "
+                         "system's dynamic loader configuration needs to be "
+                         "updated.  Please check the OpenGL library installation "
+                         "prefix and/or the dynamic loader configuration.",
+                         p->entries[i].name, name);
+                ret = FALSE;
+                goto done;
+#if defined(NV_X86_64)
+            } else if (!found) {
+                ui_warn(op, "The runtime configuration check failed for "
+                        "library '%s' (expected: '%s', found: (not found)).  "
+                        "The most likely reason for this is that the library "
+                        "was installed to the wrong location or that your "
+                        "system's dynamic loader configuration needs to be "
+                        "updated.  Please check the 32-bit OpenGL compatibility "
+                        "library installation prefix and/or the dynamic loader "
+                        "configuration.",
+                         p->entries[i].name, name);
+                goto next;
+#endif /* NV_X86_64 */
+            } else {
+                ui_error(op, "The runtime configuration check failed for the "
+                         "library '%s' (expected: '%s', found: '%s').  The "
+                         "most likely reason for this is that conflicting "
+                         "OpenGL libraries are installed in a location not "
+                         "inspected by `nvidia-installer`.  Please be sure you "
+                         "have uninstalled any third-party OpenGL and/or "
+                         "third-party graphics driver packages.",
+                         p->entries[i].name, name, data);
+                ret = FALSE;
+                goto done;
+            }
         }
 
  next:
@@ -1477,6 +1810,10 @@ static int rtld_test_internal(Options *op, Package *p,
     if (tmpfile) {
         unlink(tmpfile);
         nvfree(tmpfile);
+    }
+    if (tmpfile1) {
+        unlink(tmpfile1);
+        nvfree(tmpfile1);
     }
 
     nvfree(name);
@@ -1499,8 +1836,35 @@ static int rtld_test_internal(Options *op, Package *p,
 
 Distribution get_distribution(Options *op)
 {
+    FILE *fp;
+    char *line = NULL, *ptr;
+    int eof = FALSE;
+
     if (access("/etc/SuSE-release", F_OK) == 0) return SUSE;
     if (access("/etc/UnitedLinux-release", F_OK) == 0) return UNITED_LINUX;
+    if (access("/etc/gentoo-release", F_OK) == 0) return GENTOO;
+
+    /*
+     * Attempt to determine if the host system is 'Ubuntu Linux'
+     * based by checking for a line matching DISTRIB_ID=Ubuntu in
+     * the file /etc/lsb-release.
+     */
+    fp = fopen("/etc/lsb-release", "r");
+    if (fp != NULL) {
+        while (((line = fget_next_line(fp, &eof))
+                    != NULL) && !eof) {
+            ptr = strstr(line, "DISTRIB_ID");
+            if (ptr != NULL) {
+                fclose(fp);
+                while (ptr != NULL && *ptr != '=') ptr++;
+                if (ptr != NULL && *ptr == '=') ptr++;
+                if (ptr != NULL && *ptr != '\0')
+                    if (!strcasecmp(ptr, "Ubuntu")) return UBUNTU;
+                break;
+            }
+        }
+    }
+
     if (access("/etc/debian_version", F_OK) == 0) return DEBIAN;
 
     return OTHER;
@@ -1553,7 +1917,68 @@ int check_for_running_x(Options *op)
 
 } /* check_for_running_x() */
 
-
+/*
+ * check_selinux() - check if selinux is available.
+ * Sets the variable op->selinux_enabled.
+ * Returns TRUE on success, FALSE otherwise.
+ */
+int check_selinux(Options *op)
+{
+    int selinux_available = TRUE;
+    
+    if (op->utils[CHCON] == NULL ||
+        op->utils[SELINUX_ENABLED] == NULL || 
+        op->utils[GETENFORCE] == NULL) {
+        selinux_available = FALSE;
+    }
+    
+    switch (op->selinux_option) {
+    case SELINUX_FORCE_YES:
+        if (selinux_available == FALSE) {
+            /* We have set the option --force-selinux=yes but SELinux 
+             * is not available on this system */
+            ui_error(op, "Invalid option '--force-selinux=yes'; "
+                        "SELinux is not available on this system");
+            return FALSE;
+        }
+        op->selinux_enabled = TRUE;
+        break;
+        
+    case SELINUX_FORCE_NO:
+        if (selinux_available == TRUE) {
+            char *data = NULL;
+            int ret = run_command(op, op->utils[GETENFORCE], &data, 
+                                  FALSE, 0, TRUE);
+            
+            if ((ret != 0) || (!data)) {
+                ui_warn(op, "Cannot check the current mode of SELinux; "
+                             "Command getenforce() failed"); 
+            } else if (!strcmp(data, "Enforcing")) {
+                /* We have set the option --force-selinux=no but SELinux 
+                 * is enforced on this system */
+                ui_warn(op, "The option '--force-selinux' has been set to 'no', "
+                            "but SELinux is enforced on this system; "
+                            "The X server may not start correctly ");
+            }
+            nvfree(data);
+        }        
+        op->selinux_enabled = FALSE;
+        break;
+        
+    case SELINUX_DEFAULT:
+        op->selinux_enabled = FALSE;
+        if (selinux_available == TRUE) {
+            int ret = run_command(op, op->utils[SELINUX_ENABLED], NULL, 
+                                  FALSE, 0, TRUE);
+            if (ret == 0) {
+                op->selinux_enabled = TRUE;
+            }
+        }
+        break;
+    }                 
+    
+    return TRUE;
+} /* check_selinux */
 /*
  * nv_format_text_rows() - this function breaks the given string str
  * into some number of rows, where each row is not longer than the

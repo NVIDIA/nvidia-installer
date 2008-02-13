@@ -49,6 +49,13 @@ typedef enum {
     MAX_SYSTEM_UTILS
 } SystemUtils;
 
+typedef enum {
+    CHCON = MAX_SYSTEM_UTILS,
+    SELINUX_ENABLED,
+    GETENFORCE,
+    MAX_SYSTEM_OPTIONAL_UTILS
+} SystemOptionalUtils;
+
 /*
  * Enumerated type, listing each of the module utilities we'll need.
  * Keep this enum in sync with the needed_utils string array in
@@ -56,7 +63,7 @@ typedef enum {
  */
 
 typedef enum {
-    INSMOD = MAX_SYSTEM_UTILS,
+    INSMOD = MAX_SYSTEM_OPTIONAL_UTILS,
     MODPROBE,
     RMMOD,
     LSMOD,
@@ -74,6 +81,8 @@ typedef enum {
     SUSE,
     UNITED_LINUX,
     DEBIAN,
+    UBUNTU,
+    GENTOO,
     OTHER
 } Distribution;
 
@@ -114,11 +123,16 @@ typedef struct __options {
     int no_backup;
     int no_network;
     int kernel_module_only;
+    int no_kernel_module;
     int no_abi_note;
     int no_rpms;
     int no_recursion;
+    int selinux_option;
+    int selinux_enabled;
+    int sigwinch_workaround;
 
     char *xfree86_prefix;
+    char *x_module_path;
     char *opengl_prefix;
     char *compat32_prefix;
     char *installer_prefix;
@@ -240,72 +254,102 @@ typedef struct {
 
 /* file types */
 
-#define FILE_TYPE_MASK              0x0000ffff
+#define FILE_TYPE_MASK               0x00ffffff
 
-#define FILE_TYPE_KERNEL_MODULE_SRC 0x00000001
-#define FILE_TYPE_KERNEL_MODULE_CMD 0x00000002
-#define FILE_TYPE_OPENGL_HEADER     0x00000004
-#define FILE_TYPE_OPENGL_LIB        0x00000008
-#define FILE_TYPE_XFREE86_LIB       0x00000010
-#define FILE_TYPE_DOCUMENTATION     0x00000020
-#define FILE_TYPE_OPENGL_SYMLINK    0x00000040
-#define FILE_TYPE_XFREE86_SYMLINK   0x00000080
-#define FILE_TYPE_KERNEL_MODULE     0x00000100
-#define FILE_TYPE_INSTALLER_BINARY  0x00000200
-#define FILE_TYPE_UTILITY_BINARY    0x00000400
-#define FILE_TYPE_LIBGL_LA          0x00000800
-#define FILE_TYPE_TLS_LIB           0x00001000
-#define FILE_TYPE_TLS_SYMLINK       0x00002000
+#define FILE_TYPE_KERNEL_MODULE_SRC  0x00000001
+#define FILE_TYPE_KERNEL_MODULE_CMD  0x00000002
+#define FILE_TYPE_OPENGL_HEADER      0x00000004
+#define FILE_TYPE_OPENGL_LIB         0x00000008
+#define FILE_TYPE_XLIB_STATIC_LIB    0x00000010
+#define FILE_TYPE_XLIB_SHARED_LIB    0x00000020
+#define FILE_TYPE_DOCUMENTATION      0x00000040
+#define FILE_TYPE_OPENGL_SYMLINK     0x00000080
+#define FILE_TYPE_XLIB_SYMLINK       0x00000100
+#define FILE_TYPE_KERNEL_MODULE      0x00000200
+#define FILE_TYPE_INSTALLER_BINARY   0x00000400
+#define FILE_TYPE_UTILITY_BINARY     0x00000800
+#define FILE_TYPE_LIBGL_LA           0x00001000
+#define FILE_TYPE_TLS_LIB            0x00002000
+#define FILE_TYPE_TLS_SYMLINK        0x00004000
+#define FILE_TYPE_UTILITY_LIB        0x00008000
+#define FILE_TYPE_DOT_DESKTOP        0x00010000
+#define FILE_TYPE_UTILITY_SYMLINK    0x00020000
+#define FILE_TYPE_XMODULE_STATIC_LIB 0x00040000
+#define FILE_TYPE_XMODULE_SHARED_LIB 0x00080000
+#define FILE_TYPE_XMODULE_SYMLINK    0x00100000
 
 /* file class: this is used to distinguish OpenGL libraries */
 
-#define FILE_CLASS_MASK             0xffff0000
+#define FILE_CLASS_MASK              0xff000000
 
-#define FILE_CLASS_NEW_TLS          0x00010000
-#define FILE_CLASS_CLASSIC_TLS      0x00020000
-#define FILE_CLASS_NATIVE           0x00040000
-#define FILE_CLASS_COMPAT32         0x00080000
+#define FILE_CLASS_NEW_TLS           0x01000000
+#define FILE_CLASS_CLASSIC_TLS       0x02000000
+#define FILE_CLASS_NATIVE            0x04000000
+#define FILE_CLASS_COMPAT32          0x08000000
 
+#define FILE_TYPE_XLIB_LIB         (FILE_TYPE_XLIB_STATIC_LIB | \
+                                    FILE_TYPE_XLIB_SHARED_LIB)
 
-#define FILE_TYPE_INSTALLABLE_FILE (FILE_TYPE_OPENGL_LIB       | \
-                                    FILE_TYPE_XFREE86_LIB      | \
-                                    FILE_TYPE_TLS_LIB          | \
-                                    FILE_TYPE_DOCUMENTATION    | \
-                                    FILE_TYPE_OPENGL_HEADER    | \
-                                    FILE_TYPE_KERNEL_MODULE    | \
-                                    FILE_TYPE_INSTALLER_BINARY | \
-                                    FILE_TYPE_UTILITY_BINARY   | \
-                                    FILE_TYPE_LIBGL_LA)
+#define FILE_TYPE_XMODULE_LIB      (FILE_TYPE_XMODULE_STATIC_LIB | \
+                                    FILE_TYPE_XMODULE_SHARED_LIB)
 
-#define FILE_TYPE_HAVE_PATH        (FILE_TYPE_OPENGL_LIB       | \
-                                    FILE_TYPE_OPENGL_SYMLINK   | \
-                                    FILE_TYPE_LIBGL_LA         | \
-                                    FILE_TYPE_XFREE86_LIB      | \
-                                    FILE_TYPE_XFREE86_SYMLINK  | \
-                                    FILE_TYPE_TLS_LIB          | \
-                                    FILE_TYPE_TLS_SYMLINK      | \
+#define FILE_TYPE_INSTALLABLE_FILE (FILE_TYPE_OPENGL_LIB         | \
+                                    FILE_TYPE_XLIB_LIB           | \
+                                    FILE_TYPE_TLS_LIB            | \
+                                    FILE_TYPE_UTILITY_LIB        | \
+                                    FILE_TYPE_DOCUMENTATION      | \
+                                    FILE_TYPE_OPENGL_HEADER      | \
+                                    FILE_TYPE_KERNEL_MODULE      | \
+                                    FILE_TYPE_INSTALLER_BINARY   | \
+                                    FILE_TYPE_UTILITY_BINARY     | \
+                                    FILE_TYPE_LIBGL_LA           | \
+                                    FILE_TYPE_XMODULE_LIB        | \
+                                    FILE_TYPE_DOT_DESKTOP)
+
+#define FILE_TYPE_HAVE_PATH        (FILE_TYPE_OPENGL_LIB         | \
+                                    FILE_TYPE_OPENGL_SYMLINK     | \
+                                    FILE_TYPE_LIBGL_LA           | \
+                                    FILE_TYPE_XLIB_LIB           | \
+                                    FILE_TYPE_XLIB_SYMLINK       | \
+                                    FILE_TYPE_TLS_LIB            | \
+                                    FILE_TYPE_TLS_SYMLINK        | \
+                                    FILE_TYPE_UTILITY_LIB        | \
+                                    FILE_TYPE_UTILITY_SYMLINK    | \
+                                    FILE_TYPE_XMODULE_LIB        | \
+                                    FILE_TYPE_XMODULE_SYMLINK    | \
                                     FILE_TYPE_DOCUMENTATION)
 
-#define FILE_TYPE_HAVE_ARCH        (FILE_TYPE_OPENGL_LIB       | \
-                                    FILE_TYPE_OPENGL_SYMLINK   | \
-                                    FILE_TYPE_LIBGL_LA         | \
-                                    FILE_TYPE_TLS_LIB          | \
+#define FILE_TYPE_HAVE_ARCH        (FILE_TYPE_OPENGL_LIB         | \
+                                    FILE_TYPE_OPENGL_SYMLINK     | \
+                                    FILE_TYPE_LIBGL_LA           | \
+                                    FILE_TYPE_TLS_LIB            | \
                                     FILE_TYPE_TLS_SYMLINK)
 
-#define FILE_TYPE_HAVE_CLASS       (FILE_TYPE_TLS_LIB          | \
+#define FILE_TYPE_HAVE_CLASS       (FILE_TYPE_TLS_LIB            | \
                                     FILE_TYPE_TLS_SYMLINK)
 
-#define FILE_TYPE_SYMLINK          (FILE_TYPE_OPENGL_SYMLINK   | \
-                                    FILE_TYPE_XFREE86_SYMLINK  | \
-                                    FILE_TYPE_TLS_SYMLINK)
+#define FILE_TYPE_SYMLINK          (FILE_TYPE_OPENGL_SYMLINK     | \
+                                    FILE_TYPE_XLIB_SYMLINK       | \
+                                    FILE_TYPE_TLS_SYMLINK        | \
+                                    FILE_TYPE_XMODULE_SYMLINK    | \
+                                    FILE_TYPE_UTILITY_SYMLINK)
 
-#define FILE_TYPE_RTLD_CHECKED     (FILE_TYPE_OPENGL_LIB       | \
+#define FILE_TYPE_RTLD_CHECKED     (FILE_TYPE_OPENGL_LIB         | \
                                     FILE_TYPE_TLS_LIB)
 
+#define FILE_TYPE_SHARED_LIB       (FILE_TYPE_OPENGL_LIB         | \
+                                    FILE_TYPE_XLIB_SHARED_LIB    | \
+                                    FILE_TYPE_TLS_LIB            | \
+                                    FILE_TYPE_XMODULE_SHARED_LIB | \
+                                    FILE_TYPE_UTILITY_LIB)
 
 #define TLS_LIB_TYPE_FORCED         0x0001
 #define TLS_LIB_NEW_TLS             0x0002
 #define TLS_LIB_CLASSIC_TLS         0x0004
+
+#define SELINUX_DEFAULT             0x0000
+#define SELINUX_FORCE_YES           0x0001
+#define SELINUX_FORCE_NO            0x0002
 
 #define FORCE_CLASSIC_TLS          (TLS_LIB_CLASSIC_TLS | TLS_LIB_TYPE_FORCED)
 #define FORCE_NEW_TLS              (TLS_LIB_NEW_TLS | TLS_LIB_TYPE_FORCED)
@@ -328,6 +372,8 @@ typedef struct {
 #define OPENGL_HEADER_DST_PATH "include/GL"
 #define INSTALLER_BINARY_DST_PATH "bin"
 #define UTILITY_BINARY_DST_PATH "bin"
+#define DOCUMENTATION_DST_PATH "share/doc/NVIDIA_GLX-1.0"
+#define DOT_DESKTOP_DST_PATH "share/applications"
 
 #define LICENSE_FILE "LICENSE"
 

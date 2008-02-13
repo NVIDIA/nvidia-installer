@@ -54,8 +54,7 @@
 
 
 static Package *parse_manifest(Options *op);
-
-
+static int install_kernel_module(Options *op,  Package *p);
 
 
 /*
@@ -117,77 +116,20 @@ int install_from_cwd(Options *op)
      */
 
     if (!check_for_existing_driver(op, p)) return FALSE;
-    
-    /* determine where to install the kernel module */
-    
-    if (!determine_kernel_module_installation_path(op)) goto failed;
 
-    /*
-     * do nvchooser-style logic to decide if we have a prebuilt kernel
-     * module for their kernel
-     *
-     * XXX One could make the argument that we should not actually do
-     * the building/linking now, but just add this to the list of
-     * operations and do it when we execute the operation list.  I
-     * think it's better to make sure we have a kernel module early on
-     * -- a common problem for users will be not having a prebuilt
-     * kernel interface for their kernel, and not having the kernel
-     * headers installed, so it's better to catch that earlier on.
-     */
-    
-    if (find_precompiled_kernel_interface(op, p)) {
+    /* attempt to build a kernel module for the target kernel */
 
-        /*
-         * we have a prebuild kernel interface, so now link the kernel
-         * interface with the binary portion of the kernel module.
-         *
-         * XXX if linking fails, maybe we should fall through and
-         * attempt to build the kernel module?  No, if linking fails,
-         * then there is something pretty seriously wrong... better to
-         * abort.
-         */
-        
-        if (!link_kernel_module(op, p)) goto failed;
-
+    if (!op->no_kernel_module) {
+        if (!install_kernel_module(op, p)) goto failed;
     } else {
-        /*
-         * make sure the required development tools are present on
-         * this system before attempting to verify the compiler and
-         * trying to build a custom kernel interface.
-         */
-        if (!check_development_tools(op)) goto failed;
-
-        /*
-         * we do not have a prebuilt kernel interface; thus we'll need
-         * to compile the kernel interface, so determine where the
-         * kernel header files are
-         */
-        
-        if (!determine_kernel_source_path(op)) goto failed;
-        determine_kernel_output_path(op);
-    
-        /*
-         * make sure that the selected or default system compiler
-         * is compatible with the target kernel; the user may choose
-         * to override the check.
-         */
-        if (!check_cc_version(op, p)) goto failed;
-
-        /* and now, build the kernel interface */
-        
-        if (!build_kernel_module(op, p)) goto failed;
+        ui_warn(op, "You specified the '--no-kernel-module' command line "
+                "option, nvidia-installer will not install a kernel "
+                "module as part of this driver installation, and it will "
+                "not remove existing NVIDIA kernel modules not part of "
+                "an earlier NVIDIA driver installation.  Please ensure "
+                "that an NVIDIA kernel module matching this driver version "
+                "is installed seperately.");
     }
-
-    /*
-     * if we got this far, we have a complete kernel module; test it
-     * to be sure it's OK
-     */
-    
-    if (!test_kernel_module(op, p)) goto failed;
-    
-    /* add the kernel module to the list of things to install */
-    
-    if (!add_kernel_module_to_package(op, p)) goto failed;
     
     /*
      * if we are only installing the kernel module, then remove
@@ -215,13 +157,14 @@ int install_from_cwd(Options *op)
         select_tls_class(op, p);
 
         /*
-         * if the package contains any libGL.la files, process them
-         * (perform some search and replacing so that they reflect the
-         * correct installation path, etc) and add them to the
-         * packagelist to be installed.
+         * if the package contains any libGL.la or .desktop files,
+         * process them (perform some search and replacing so
+         * that they reflect the correct installation path, etc)
+         * and add them to the package list (files to be installed).
          */
         
         process_libGL_la_files(op, p);
+        process_dot_desktop_files(op, p);
 
 #if defined(NV_X86_64)
         /*
@@ -260,7 +203,7 @@ int install_from_cwd(Options *op)
 
     /* call the ui to get approval for the list of commands */
     
-    if (!ui_approve_command_list(op, c, p->description)) return FALSE;
+    if (!ui_approve_command_list(op, c, "%s", p->description)) return FALSE;
     
     /* initialize the backup log file */
 
@@ -326,6 +269,97 @@ int install_from_cwd(Options *op)
 
 
 /*
+ * install_kernel_module() - attempt to build and install a kernel
+ * module for the running kernel; we first check if a prebuilt kernel
+ * interface file exists. If yes, we try to link it into the final
+ * kernel module, else we try to build one from source.
+ *
+ * If we succeed in building a kernel module, we attempt to load it
+ * into the host kernel and add it to the list of files to install if
+ * the load attempt succeeds.
+ */
+
+static int install_kernel_module(Options *op,  Package *p)
+{
+    /* determine where to install the kernel module */
+    
+    if (!determine_kernel_module_installation_path(op)) return FALSE;
+
+    /* check '/proc/sys/kernel/modprobe' */
+
+    if (!check_proc_modprobe_path(op)) return FALSE;
+
+    /*
+     * do nvchooser-style logic to decide if we have a prebuilt kernel
+     * module for their kernel
+     *
+     * XXX One could make the argument that we should not actually do
+     * the building/linking now, but just add this to the list of
+     * operations and do it when we execute the operation list.  I
+     * think it's better to make sure we have a kernel module early on
+     * -- a common problem for users will be not having a prebuilt
+     * kernel interface for their kernel, and not having the kernel
+     * headers installed, so it's better to catch that earlier on.
+     */
+    
+    if (find_precompiled_kernel_interface(op, p)) {
+
+        /*
+         * we have a prebuild kernel interface, so now link the kernel
+         * interface with the binary portion of the kernel module.
+         *
+         * XXX if linking fails, maybe we should fall through and
+         * attempt to build the kernel module?  No, if linking fails,
+         * then there is something pretty seriously wrong... better to
+         * abort.
+         */
+        
+        if (!link_kernel_module(op, p)) return FALSE;
+
+    } else {
+        /*
+         * make sure that the selected or default system compiler
+         * is compatible with the target kernel; the user may choose
+         * to override the check.
+         */
+        if (!check_cc_version(op, p)) return FALSE;
+
+        /*
+         * make sure the required development tools are present on
+         * this system before attempting to verify the compiler and
+         * trying to build a custom kernel interface.
+         */
+        if (!check_development_tools(op)) return FALSE;
+
+        /*
+         * we do not have a prebuilt kernel interface; thus we'll need
+         * to compile the kernel interface, so determine where the
+         * kernel source files are.
+         */
+        
+        if (!determine_kernel_source_path(op, p)) return FALSE;
+    
+        /* and now, build the kernel interface */
+        
+        if (!build_kernel_module(op, p)) return FALSE;
+    }
+
+    /*
+     * if we got this far, we have a complete kernel module; test it
+     * to be sure it's OK
+     */
+    
+    if (!test_kernel_module(op, p)) return FALSE;
+    
+    /* add the kernel module to the list of things to install */
+    
+    if (!add_kernel_module_to_package(op, p)) return FALSE;
+    
+    return TRUE;
+}
+
+
+/*
  * add_this_kernel() - build a precompiled kernel interface for the
  * running kernel, and repackage the .run file to include the new
  * precompiled kernel interface.
@@ -341,7 +375,7 @@ int add_this_kernel(Options *op)
 
     /* find the kernel header files */
 
-    if (!determine_kernel_source_path(op)) goto failed;
+    if (!determine_kernel_source_path(op, p)) goto failed;
 
     /* build the precompiled kernel interface */
 
@@ -424,13 +458,13 @@ static Package *parse_manifest (Options *op)
     /* the first line is the description */
 
     line = 1;
-    p->description = get_next_line(manifest, &ptr);
+    p->description = get_next_line(manifest, &ptr, manifest, len);
     if (!p->description) goto invalid_manifest_file;
     
     /* the second line is the version */
     
     line++;
-    p->version_string = get_next_line(ptr, &ptr);
+    p->version_string = get_next_line(ptr, &ptr, manifest, len);
     if (!p->version_string) goto invalid_manifest_file;
     if (!nvid_version(p->version_string, &p->major, &p->minor, &p->patch))
         goto invalid_manifest_file;
@@ -438,13 +472,13 @@ static Package *parse_manifest (Options *op)
     /* new third line is the kernel interface filename */
 
     line++;
-    p->kernel_interface_filename = get_next_line(ptr, &ptr);
+    p->kernel_interface_filename = get_next_line(ptr, &ptr, manifest, len);
     if (!p->kernel_interface_filename) goto invalid_manifest_file;
 
     /* the fourth line is the kernel module name */
 
     line++;
-    p->kernel_module_name = get_next_line(ptr, &ptr);
+    p->kernel_module_name = get_next_line(ptr, &ptr, manifest, len);
     if (!p->kernel_module_name) goto invalid_manifest_file;
 
     /*
@@ -453,7 +487,7 @@ static Package *parse_manifest (Options *op)
      */
 
     line++;
-    tmpstr = get_next_line(ptr, &ptr);
+    tmpstr = get_next_line(ptr, &ptr, manifest, len);
     if (!tmpstr) goto invalid_manifest_file;
 
     p->bad_modules = NULL;
@@ -474,7 +508,7 @@ static Package *parse_manifest (Options *op)
      */
 
     line++;
-    tmpstr = get_next_line(ptr, &ptr);
+    tmpstr = get_next_line(ptr, &ptr, manifest, len);
     if (!tmpstr) goto invalid_manifest_file;
 
     p->bad_module_filenames = NULL;
@@ -491,7 +525,7 @@ static Package *parse_manifest (Options *op)
     /* the seventh line is the kernel module build directory */
 
     line++;
-    p->kernel_module_build_directory = get_next_line(ptr, &ptr);
+    p->kernel_module_build_directory = get_next_line(ptr, &ptr, manifest, len);
     if (!p->kernel_module_build_directory) goto invalid_manifest_file;
     remove_trailing_slashes(p->kernel_module_build_directory);
 
@@ -501,7 +535,8 @@ static Package *parse_manifest (Options *op)
      */
 
     line++;
-    p->precompiled_kernel_interface_directory = get_next_line(ptr, &ptr);
+    p->precompiled_kernel_interface_directory =
+        get_next_line(ptr, &ptr, manifest, len);
     if (!p->precompiled_kernel_interface_directory)
         goto invalid_manifest_file;
     remove_trailing_slashes(p->precompiled_kernel_interface_directory);
@@ -512,7 +547,7 @@ static Package *parse_manifest (Options *op)
     line++;
     
     do {
-        buf = get_next_line(ptr, &ptr);
+        buf = get_next_line(ptr, &ptr, manifest, len);
         if ((!buf) || (buf[0] == '\0')) {
             done = TRUE;
         } else {
@@ -564,22 +599,32 @@ static Package *parse_manifest (Options *op)
                 p->entries[n].flags |= FILE_TYPE_OPENGL_LIB;
             else if (strcmp(flag, "LIBGL_LA") == 0)
                 p->entries[n].flags |= FILE_TYPE_LIBGL_LA;
-            else if (strcmp(flag, "XFREE86_LIB") == 0)
-                p->entries[n].flags |= FILE_TYPE_XFREE86_LIB;
+            else if (strcmp(flag, "XLIB_STATIC_LIB") == 0)
+                p->entries[n].flags |= FILE_TYPE_XLIB_STATIC_LIB;
+            else if (strcmp(flag, "XLIB_SHARED_LIB") == 0)
+                p->entries[n].flags |= FILE_TYPE_XLIB_SHARED_LIB;
             else if (strcmp(flag, "TLS_LIB") == 0)
                 p->entries[n].flags |= FILE_TYPE_TLS_LIB;
             else if (strcmp(flag, "DOCUMENTATION") == 0)
                 p->entries[n].flags |= FILE_TYPE_DOCUMENTATION;
             else if (strcmp(flag, "OPENGL_SYMLINK") == 0)
                 p->entries[n].flags |= FILE_TYPE_OPENGL_SYMLINK;
-            else if (strcmp(flag, "XFREE86_SYMLINK") == 0)
-                p->entries[n].flags |= FILE_TYPE_XFREE86_SYMLINK;
+            else if (strcmp(flag, "XLIB_SYMLINK") == 0)
+                p->entries[n].flags |= FILE_TYPE_XLIB_SYMLINK;
             else if (strcmp(flag, "TLS_SYMLINK") == 0)
                 p->entries[n].flags |= FILE_TYPE_TLS_SYMLINK;
             else if (strcmp(flag, "INSTALLER_BINARY") == 0)
                 p->entries[n].flags |= FILE_TYPE_INSTALLER_BINARY;
             else if (strcmp(flag, "UTILITY_BINARY") == 0)
                 p->entries[n].flags |= FILE_TYPE_UTILITY_BINARY;
+            else if (strcmp(flag, "DOT_DESKTOP") == 0)
+                p->entries[n].flags |= FILE_TYPE_DOT_DESKTOP;
+            else if (strcmp(flag, "XMODULE_STATIC_LIB") == 0)
+                p->entries[n].flags |= FILE_TYPE_XMODULE_STATIC_LIB;
+            else if (strcmp(flag, "XMODULE_SHARED_LIB") == 0)
+                p->entries[n].flags |= FILE_TYPE_XMODULE_SHARED_LIB;
+            else if (strcmp(flag, "XMODULE_SYMLINK") == 0)
+                p->entries[n].flags |= FILE_TYPE_XMODULE_SYMLINK;
             else {
                 nvfree(flag);
                 goto invalid_manifest_file;

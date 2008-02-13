@@ -28,7 +28,7 @@
 #include "nvidia-installer.h"
 
 int determine_kernel_module_installation_path (Options*);
-int determine_kernel_source_path              (Options*);
+int determine_kernel_source_path              (Options*, Package*);
 int determine_kernel_output_path              (Options*);
 int link_kernel_module                        (Options*, Package*);
 int check_cc_version                          (Options*, Package*);
