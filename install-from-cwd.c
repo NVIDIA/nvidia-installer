@@ -655,8 +655,6 @@ static Package *parse_manifest (Options *op)
                 p->entries[n].flags |= FILE_TYPE_XMODULE_SHARED_LIB;
             else if (strcmp(flag, "XMODULE_SYMLINK") == 0)
                 p->entries[n].flags |= FILE_TYPE_XMODULE_SYMLINK;
-            else if (strcmp(flag, "XMODULE_NEWSYM") == 0)
-                p->entries[n].flags |= FILE_TYPE_XMODULE_NEWSYM;
             else {
                 nvfree(flag);
                 goto invalid_manifest_file;
@@ -709,9 +707,9 @@ static Package *parse_manifest (Options *op)
                 p->entries[n].path = NULL;
             }
             
-            /* symlinks and newsyms have a target */
+            /* symlinks have a target */
 
-            if (p->entries[n].flags & FILE_TYPE_HAVE_TARGET) {
+            if (p->entries[n].flags & FILE_TYPE_SYMLINK) {
                 p->entries[n].target = read_next_word(c, &c);
                 if (!p->entries[n].target) goto invalid_manifest_file;
             } else {

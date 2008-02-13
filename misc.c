@@ -1237,8 +1237,6 @@ void check_installed_files_from_package(Options *op, Package *p)
         ui_status_update(op, percent, p->entries[i].dst);
         
         if (p->entries[i].flags & FILE_TYPE_SYMLINK) {
-            /* Don't bother checking FILE_TYPE_NEWSYMs because we may not have
-             * installed them. */
             if (!check_symlink(op, p->entries[i].target,
                                p->entries[i].dst,
                                p->description)) {
@@ -2080,24 +2078,11 @@ int check_for_nvidia_graphics_devices(Options *op, Package *p)
             int found_legacy_device = FALSE;
             for (i = 0; i < sizeof(LegacyList) / sizeof(LEGACY_INFO); i++) {
                 if (dev->device_id == LegacyList[i].uiDevId) {
-                    int j, nstrings;
-                    const char *branch_string = "";
-                    nstrings = sizeof(LegacyStrings) / sizeof(LEGACY_STRINGS);
-                    for (j = 0; j < nstrings; j++) {
-                        if (LegacyStrings[j].branch == LegacyList[i].branch) {
-                            branch_string = LegacyStrings[j].description;
-                            break;
-                        }
-                    }
-                    
                     ui_warn(op, "The NVIDIA %s GPU installed in this system is supported "
-                            "through the NVIDIA %s legacy Linux graphics drivers.  Please "
+                            "through the NVIDIA legacy Linux graphics drivers.  Please "
                             "visit http://www.nvidia.com/object/unix.html for more "
                             "information.  The %s NVIDIA Linux graphics driver will "
-                            "ignore this GPU.",
-                            LegacyList[i].AdapterString,
-                            branch_string,
-                            p->version_string);
+                            "ignore this GPU.", LegacyList[i].AdapterString, p->version_string);
                     found_legacy_device = TRUE;
                 }
             }

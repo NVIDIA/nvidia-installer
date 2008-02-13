@@ -433,8 +433,8 @@ void ui_status_end(Options *op, const char *fmt, ...)
 
 void ui_close (Options *op)
 {
-    if (__ui) __ui->close(op);
-                       
+    __ui->close(op);
+
     if (__extracted_user_interface_filename) {
         unlink(__extracted_user_interface_filename);
     }
@@ -582,12 +582,11 @@ static void ui_signal_handler(int n)
     };
     
     const char *s;
-    
-    ui_close(NULL); /* 
-                     * XXX don't have an Options struct to
-                     * pass to ui_close()
-                     */
-    
+
+    if (__ui) __ui->close(NULL); /* 
+                                  * XXX don't have an Options struct to
+                                  * pass to close()
+                                  */
     /*
      * print to stderr with write(2) rather than fprintf(3), since
      * fprintf isn't guaranteed to be reentrant

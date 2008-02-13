@@ -494,9 +494,9 @@ static int do_uninstall(Options *op)
         "Your driver installation has been "
         "altered since it was initially installed; this may happen, "
         "for example, if you have since installed the NVIDIA driver through "
-        "a mechanism other than the nvidia-installer (such as rpm or "
-        "with the NVIDIA tarballs).  The nvidia-installer will "
-        "attempt to uninstall as best it can.";
+        "a mechanism other than nvidia-installer (such as your "
+        "distribution's native package management system).  "
+        "nvidia-installer will attempt to uninstall as best it can.";
     
     /* do we even have a backup directory? */
 
