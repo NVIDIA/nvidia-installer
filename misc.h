@@ -30,9 +30,44 @@
 
 #include <stdio.h>
 #include <stdarg.h>
+#include <stdlib.h>
 
 #include "nvidia-installer.h"
 #include "command-list.h"
+
+/*
+ * NV_VSNPRINTF() - takes a fmt string, and uses vsnprintf to build
+ * the resulting string whic it assigns to buf.  The caller of this
+ * function is responsible for freeing the returned string.
+ */
+#define NV_VSNPRINTF(buf, fmt)                                  \
+do {                                                            \
+    if (!fmt) {                                                 \
+        (buf) = NULL;                                           \
+    } else {                                                    \
+        va_list ap;                                             \
+        int len, current_len = NV_LINE_LEN;                     \
+                                                                \
+        (buf) = malloc(current_len);                            \
+                                                                \
+        while (1) {                                             \
+            va_start(ap, fmt);                                  \
+            len = vsnprintf((buf), current_len, (fmt), ap);     \
+            va_end(ap);                                         \
+                                                                \
+            if ((len > -1) && (len < current_len)) {            \
+                break;                                          \
+            } else if (len > -1) {                              \
+                current_len = len + 1;                          \
+            } else {                                            \
+                current_len += NV_LINE_LEN;                     \
+            }                                                   \
+                                                                \
+            (buf) = realloc(buf, current_len);                  \
+        }                                                       \
+    }                                                           \
+} while (0)
+
 
 void *nvalloc(size_t size);
 void *nvrealloc(void *ptr, size_t size);

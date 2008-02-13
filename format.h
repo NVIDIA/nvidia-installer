@@ -37,7 +37,5 @@ void fmtoutp(const char *prefix, const char *fmt, ...);
 void fmterr(const char *fmt, ...);
 void fmterrp(const char *prefix, const char *fmt, ...);
 void format(FILE *stream, const char *prefix, const char *fmt, ...);
-void vformat(FILE *stream, const int wb,
-             const char *prefix, const char *fmt, va_list ap);
 
 #endif /* __NVIDIA_INSTALLER_FORMAT_H__ */

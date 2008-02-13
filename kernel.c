@@ -28,6 +28,7 @@
 #include <sys/utsname.h>
 #include <sys/types.h>
 #include <sys/stat.h>
+#include <sys/sysctl.h>
 #include <ctype.h>
 #include <stdlib.h>
 #include <dirent.h>
@@ -52,7 +53,7 @@ static int rmmod_kernel_module(Options *op, const char *);
 static PrecompiledInfo *download_updated_kernel_interface(Options*, Package*,
                                                           const char*);
 static int rivafb_check(Options *op, Package *p);
-static void rivafb_module_check(Options *op, Package *p);
+static void change_page_attr_check(Options  *op, Package *p);
 
 static PrecompiledInfo *scan_dir(Options *op, Package *p,
                                  const char *directory_name,
@@ -450,7 +451,7 @@ int build_kernel_module(Options *op, Package *p)
     }
 
     if (!rivafb_check(op, p)) return FALSE;
-    rivafb_module_check(op, p);
+    change_page_attr_check(op, p);
 
     cmd = nvstrcat("cd ", p->kernel_module_build_directory,
                    "; make print-module-filename",
@@ -627,15 +628,14 @@ int build_kernel_interface(Options *op, Package *p)
 /*
  * test_kernel_module() - attempt to insmod the kernel module and then
  * rmmod it.  Return TRUE if the insmod succeeded, or FALSE otherwise.
- *
- * Pass the special silence_nvidia_output option to the kernel module
- * to prevent any console output while testing.
  */
 
 int test_kernel_module(Options *op, Package *p)
 {
     char *cmd = NULL, *data;
-    int ret;
+    int old_loglevel, new_loglevel = 0;
+    int ret, name[] = { CTL_KERN, KERN_PRINTK };
+    size_t len = sizeof(int);
 
     /* 
      * If we're building/installing for a different kernel, then we
@@ -644,10 +644,20 @@ int test_kernel_module(Options *op, Package *p)
 
     if (op->kernel_name) return TRUE;
 
+    /*
+     * Temporarily disable most console messages to keep the curses
+     * interface from being clobbered when the module is loaded.
+     * Save the original console loglevel to allow restoring it once
+     * we're done.
+     */
+    if (!sysctl(name, 2, &old_loglevel, &len, NULL, 0)) {
+        new_loglevel = 2; /* KERN_CRIT */
+        sysctl(name, 2, NULL, 0, &new_loglevel, len);
+    }
+
     cmd = nvstrcat(op->utils[INSMOD], " ",
                    p->kernel_module_build_directory, "/",
-                   p->kernel_module_filename, " silence_nvidia_output=1",
-                   NULL);
+                   p->kernel_module_filename, NULL);
     
     /* only output the result of the test if in expert mode */
 
@@ -677,7 +687,7 @@ int test_kernel_module(Options *op, Package *p)
          */
 
         cmd = nvstrcat(op->utils[DMESG], " | ",
-                       op->utils[TAIL], " -n 5", NULL);
+                       op->utils[TAIL], " -n 15", NULL);
 
         if (!run_command(op, cmd, &data, FALSE, 0, TRUE))
             ui_log(op, "Kernel messages:\n%s", data);
@@ -696,6 +706,8 @@ int test_kernel_module(Options *op, Package *p)
     
     if (cmd) free(cmd);
     if (data) free(data);
+    
+    if (new_loglevel != 0) sysctl(name, 2, NULL, 0, &old_loglevel, len);
     
     return ret;
     
@@ -1408,6 +1420,16 @@ int check_cc_version(Options *op, Package *p)
         return TRUE;
     }
 
+    /*
+     * Check if the libc development headers are installed; we need
+     * these to build the gcc version check utility.
+     */
+    if (access("/usr/include/stdio.h", F_OK) == -1) {
+        ui_error(op, "You do not appear to have libc header files "
+                 "installed on your system.  Please install your "
+                 "distribution's libc development package.");
+        return FALSE;
+    }
 
     CC = getenv("CC");
     if (!CC) CC = "cc";
@@ -1478,37 +1500,34 @@ static int rivafb_check(Options *op, Package *p)
 } /* rivafb_check() */
 
 
-
 /*
- * rivafb_module_check() - run the rivafb_module_sanity_check
- * conftest; if the test prints anything, print the warning text
- * outputted by the test.
+ * change_page_attr_check() - run the change_page_attr_sanity_check
+ * conftest; if the test fails, print a warning messages, but continue
+ * the installation.
  */
 
-static void rivafb_module_check(Options *op, Package *p)
+static void change_page_attr_check(Options  *op, Package *p)
 {
+#if defined(NV_X86_64)
     char *cmd, *result;
     int ret;
-    
-    ui_log(op, "Performing rivafb module check.");
-    
+
+    ui_log(op, "Performing change_page_attr() check.");
+
     cmd = nvstrcat("sh ", p->kernel_module_build_directory,
                    "/conftest.sh cc ",
                    op->kernel_source_path, " ",
                    op->kernel_output_path, " ",
-                   "rivafb_module_sanity_check just_msg", NULL);
+                   "change_page_attr_sanity_check just_msg", NULL);
     
     ret = run_command(op, cmd, &result, FALSE, 0, TRUE);
-    
     nvfree(cmd);
-    
-    if (result && result[0]) {
-        ui_warn(op, result);
-    }
-    
+
+    if (result && *result) ui_warn(op, result);
     nvfree(result);
 
-} /* rivafb_module_check() */
+#endif /* NV_X86_64 */
+}
 
 
 

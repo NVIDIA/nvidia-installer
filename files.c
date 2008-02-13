@@ -394,7 +394,13 @@ void select_tls_class(Options *op, Package *p)
         for (i = 0; i < p->num_entries; i++) {
             if ((p->entries[i].flags & FILE_CLASS_NEW_TLS) &&
                 (p->entries[i].flags & FILE_CLASS_NATIVE)) {
-                nvfree(p->entries[i].dst);
+                /*
+                 * XXX don't try to free the destination string for
+                 * these invalidated TLS libraries; this prevents
+                 * a crash on some Slackware 10.0 installations that
+                 * I've been unable to reproduce/root cause.
+                 */
+                /* nvfree(p->entries[i].dst); */
                 p->entries[i].flags &= ~FILE_TYPE_MASK;
                 p->entries[i].dst = NULL;
             }
@@ -433,7 +439,13 @@ void select_tls_class(Options *op, Package *p)
         for (i = 0; i < p->num_entries; i++) {
             if ((p->entries[i].flags & FILE_CLASS_NEW_TLS) &&
                 (p->entries[i].flags & FILE_CLASS_COMPAT32)) {
-                nvfree(p->entries[i].dst);
+                /*
+                 * XXX don't try to free the destination string for
+                 * these invalidated TLS libraries; this prevents
+                 * a crash on some Slackware 10.0 installations that
+                 * I've been unable to reproduce/root cause.
+                 */
+                /* nvfree(p->entries[i].dst); */
                 p->entries[i].flags &= ~FILE_TYPE_MASK;
                 p->entries[i].dst = NULL;
             }

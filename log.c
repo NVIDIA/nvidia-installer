@@ -186,13 +186,10 @@ void log_printf(Options *op, const int wb,
     char *buf;
     int i;
     TextRows *t;
-    va_list ap;
-    
+
     if (!op->logging) return;
 
-    va_start(ap, fmt);
-    
-    buf = assemble_string(fmt, ap);
+    NV_VSNPRINTF(buf, fmt);
     t = nv_format_text_rows(prefix, buf, LOG_WIDTH, wb);
     
     for (i = 0; i < t->n; i++) fprintf(log_file_stream, "%s\n", t->t[i]);
@@ -200,8 +197,6 @@ void log_printf(Options *op, const int wb,
     nv_free_text_rows(t);
     nvfree(buf);
     
-    va_end(ap);
-
     /* flush, just to be safe */
 
     fflush(log_file_stream);

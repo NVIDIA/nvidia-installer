@@ -41,6 +41,24 @@ static unsigned short __terminal_width = 0;
 
 #define DEFAULT_WIDTH 75
 
+/* 
+ * Format and display a printf style string such that it fits within
+ * the terminal width 
+ */
+
+#define NV_VFORMAT(stream, wb, prefix, fmt)     \
+do {                                            \
+    char *buf;                                  \
+    NV_VSNPRINTF(buf, fmt);                     \
+    vformat(stream, wb, prefix, buf);           \
+    free (buf);                                 \
+} while(0)
+
+
+static void vformat(FILE *stream, const int wb,
+                    const char *prefix, const char *buf);
+
+
 /*
  * reset_current_terminal_width() - if new_val is zero, then use the
  * TIOCGWINSZ ioctl to get the current width of the terminal, and
@@ -73,11 +91,7 @@ void reset_current_terminal_width(unsigned short new_val)
 
 void fmtout(const char *fmt, ...)
 {
-    va_list ap;
- 
-    va_start(ap, fmt);
-    vformat(stdout, TRUE, NULL, fmt, ap);
-    va_end(ap);
+    NV_VFORMAT(stdout, TRUE, NULL, fmt);
 
 } /* fmtout() */
 
@@ -90,11 +104,7 @@ void fmtout(const char *fmt, ...)
 
 void fmtoutp(const char *prefix, const char *fmt, ...)
 {
-    va_list ap;
- 
-    va_start(ap, fmt);
-    vformat(stdout, TRUE, prefix, fmt, ap);
-    va_end(ap);
+    NV_VFORMAT(stdout, TRUE, prefix, fmt);
 
 } /* fmtoutp() */
 
@@ -107,11 +117,7 @@ void fmtoutp(const char *prefix, const char *fmt, ...)
 
 void fmterr(const char *fmt, ...)
 {
-    va_list ap;
- 
-    va_start(ap, fmt);
-    vformat(stderr, TRUE, NULL, fmt, ap);
-    va_end(ap);
+    NV_VFORMAT(stderr, TRUE, NULL, fmt);
 
 } /* fmterr() */
 
@@ -124,11 +130,7 @@ void fmterr(const char *fmt, ...)
 
 void fmterrp(const char *prefix, const char *fmt, ...)
 {
-    va_list ap;
- 
-    va_start(ap, fmt);
-    vformat(stderr, TRUE, prefix, fmt, ap);
-    va_end(ap);
+    NV_VFORMAT(stderr, TRUE, prefix, fmt);
 
 } /* fmterrp() */
 
@@ -136,7 +138,7 @@ void fmterrp(const char *prefix, const char *fmt, ...)
 
 /*
  * format() & vformat() - these takes a printf-style format string and
- * a variable list of args.  We use assemble_string to generate the
+ * a variable list of args.  We use NV_VSNPRINTF to generate the
  * desired string, and then call nv_format_text_rows() to format the
  * string so that not more than __terminal_width characters are
  * printed across.
@@ -151,29 +153,24 @@ void fmterrp(const char *prefix, const char *fmt, ...)
 
 void format(FILE *stream, const char *prefix, const char *fmt, ...)
 {
-    va_list ap;
-
-    va_start(ap, fmt);
-    vformat(stream, TRUE, prefix, fmt, ap);
-    va_end(ap);
+    NV_VFORMAT(stream, TRUE, prefix, fmt);
 
 } /* format() */
 
-void vformat(FILE *stream, const int wb,
-             const char *prefix, const char *fmt, va_list ap)
+
+
+static void vformat(FILE *stream, const int wb,
+                    const char *prefix, const char *buf)
 {
-    char *buf;
     int i;
     TextRows *t;
     
     if (!__terminal_width) reset_current_terminal_width(0);
 
-    buf = assemble_string(fmt, ap);
     t = nv_format_text_rows(prefix, buf, __terminal_width, wb);
 
     for (i = 0; i < t->n; i++) fprintf(stream, "%s\n", t->t[i]);
     
     nv_free_text_rows(t);
-    free(buf);
     
-} /* vformat_b() */
+} /* vformat() */

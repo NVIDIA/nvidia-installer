@@ -175,13 +175,10 @@ int ui_init(Options *op)
 void ui_set_title(Options *op, const char *fmt, ...)
 {
     char *title;
-    va_list ap;
     
     if (op->silent) return;
 
-    va_start(ap, fmt);
-    title = assemble_string(fmt, ap);
-    va_end(ap);
+    NV_VSNPRINTF(title, fmt);
 
     __ui->set_title(op, title);
     free(title);
@@ -197,11 +194,8 @@ void ui_set_title(Options *op, const char *fmt, ...)
 char *ui_get_input(Options *op, const char *def, const char *fmt, ...)
 {
     char *msg, *tmp = NULL, *ret;
-    va_list ap;
     
-    va_start(ap, fmt);
-    msg = assemble_string(fmt, ap);
-    va_end(ap);
+    NV_VSNPRINTF(msg, fmt);
 
     if (op->no_questions) {
         ret = nvstrdup(def ? def : "");
@@ -244,11 +238,8 @@ int ui_display_license (Options *op, const char *license)
 void ui_error(Options *op, const char *fmt, ...)
 {
     char *msg;
-    va_list ap;
     
-    va_start(ap, fmt);
-    msg = assemble_string(fmt, ap);
-    va_end(ap);
+    NV_VSNPRINTF(msg, fmt);
 
     __ui->message(op, NV_MSG_LEVEL_ERROR, msg);
     log_printf(op, TRUE, "ERROR: ", msg);
@@ -262,11 +253,8 @@ void ui_error(Options *op, const char *fmt, ...)
 void ui_warn(Options *op, const char *fmt, ...)
 {
     char *msg;
-    va_list ap;
 
-    va_start(ap, fmt);
-    msg = assemble_string(fmt, ap);
-    va_end(ap);
+    NV_VSNPRINTF(msg, fmt);
 
     __ui->message(op, NV_MSG_LEVEL_WARNING, msg);
     log_printf(op, TRUE, "WARNING: ", msg);
@@ -280,11 +268,8 @@ void ui_warn(Options *op, const char *fmt, ...)
 void ui_message(Options *op, const char *fmt, ...)
 {
     char *msg;
-    va_list ap;
 
-    va_start(ap, fmt);
-    msg = assemble_string(fmt, ap);
-    va_end(ap);
+    NV_VSNPRINTF(msg, fmt);
 
     if (!op->silent) __ui->message(op, NV_MSG_LEVEL_MESSAGE, msg);
     
@@ -298,11 +283,8 @@ void ui_message(Options *op, const char *fmt, ...)
 void ui_log(Options *op, const char *fmt, ...)
 {
     char *msg;
-    va_list ap;
 
-    va_start(ap, fmt);
-    msg = assemble_string(fmt, ap);
-    va_end(ap);
+    NV_VSNPRINTF(msg, fmt);
 
     if (!op->silent) __ui->message(op, NV_MSG_LEVEL_LOG, msg);
     log_printf(op, TRUE, NV_BULLET_STR, msg);
@@ -320,13 +302,10 @@ void ui_log(Options *op, const char *fmt, ...)
 void ui_expert(Options *op, const char *fmt, ...)
 {
     char *msg;
-    va_list ap;
 
     if (!op->expert) return;
 
-    va_start(ap, fmt);
-    msg = assemble_string(fmt, ap);
-    va_end(ap);
+    NV_VSNPRINTF(msg, fmt);
 
     if (!op->silent) __ui->message(op, NV_MSG_LEVEL_LOG, msg);
     log_printf(op, FALSE, NV_BULLET_STR, msg);
@@ -340,11 +319,8 @@ void ui_expert(Options *op, const char *fmt, ...)
 void ui_command_output(Options *op, const char *fmt, ...)
 {
     char *msg;
-    va_list ap;
 
-    va_start(ap, fmt);
-    msg = assemble_string(fmt, ap);
-    va_end(ap);
+    NV_VSNPRINTF(msg, fmt);
 
     if (!op->silent) __ui->command_output(op, msg);
 
@@ -364,13 +340,10 @@ int ui_approve_command_list(Options *op, CommandList *c, const char *fmt, ...)
 {
     char *msg;
     int ret;
-    va_list ap;
     
     if (!op->expert || op->no_questions) return TRUE;
 
-    va_start(ap, fmt);
-    msg = assemble_string(fmt, ap);
-    va_end(ap);
+    NV_VSNPRINTF(msg, fmt);
 
     ret = __ui->approve_command_list(op, c, msg);
     free(msg);
@@ -391,11 +364,8 @@ int ui_yes_no (Options *op, const int def, const char *fmt, ...)
 {
     char *msg, *tmp = NULL;
     int ret;
-    va_list ap;
     
-    va_start(ap, fmt);
-    msg = assemble_string(fmt, ap);
-    va_end(ap);
+    NV_VSNPRINTF(msg, fmt);
     
     if (op->no_questions) {
         ret = def;
@@ -421,15 +391,12 @@ int ui_yes_no (Options *op, const int def, const char *fmt, ...)
 void ui_status_begin(Options *op, const char *title, const char *fmt, ...)
 {
     char *msg;
-    va_list ap;
 
     log_printf(op, TRUE, NV_BULLET_STR, title);
 
     if (op->silent) return;
  
-    va_start(ap, fmt);
-    msg = assemble_string(fmt, ap);
-    va_end(ap);
+    NV_VSNPRINTF(msg, fmt);
 
     __ui->status_begin(op, title, msg);
     free(msg);
@@ -440,13 +407,10 @@ void ui_status_begin(Options *op, const char *title, const char *fmt, ...)
 void ui_status_update(Options *op, const float percent, const char *fmt, ...)
 {
     char *msg;
-    va_list ap;
 
     if (op->silent) return;
 
-    va_start(ap, fmt);
-    msg = assemble_string(fmt, ap);
-    va_end(ap);
+    NV_VSNPRINTF(msg, fmt);
 
     __ui->status_update(op, percent, msg);
     free(msg);
@@ -457,11 +421,8 @@ void ui_status_update(Options *op, const float percent, const char *fmt, ...)
 void ui_status_end(Options *op, const char *fmt, ...)
 {
     char *msg;
-    va_list ap;
 
-    va_start(ap, fmt);
-    msg = assemble_string(fmt, ap);
-    va_end(ap);
+    NV_VSNPRINTF(msg, fmt);
 
     if (!op->silent) __ui->status_end(op, msg);
     log_printf(op, TRUE, NV_BULLET_STR, msg);

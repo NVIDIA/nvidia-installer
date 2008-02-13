@@ -232,62 +232,6 @@ char *read_next_word (char *buf, char **e)
 
 
 /*
- * assemble_string() - takes a fmt string and a va_list, and uses
- * vsnprintf to build the resulting string.  The caller of this
- * function is responsible for freeing the returned string.
- *
- * XXX replace this with a macro (see X driver sources)
- */
-
-char *assemble_string(const char *fmt, va_list ap)
-{
-    char *buf;
-    int current_len, len, done;
-
-    if (!fmt) return NULL;
-
-    done = FALSE;
-    current_len = NV_LINE_LEN;
-    
-    do {
-        buf = (char *) nvalloc (current_len);
-
-        len = vsnprintf (buf, current_len, fmt, ap);
-        
-        if ((len == -1) || len > current_len) {
-            
-            /*
-             * if we get in here we know that vsnprintf had to
-             * truncate the string to make it fit in the buffer... we
-             * need to extend the buffer to encompass the string.
-             * Unfortunately, we have to deal with two different
-             * semantics of the return value from (v)snprintf:
-             *
-             * -1 when the buffer is not long enough (glibc < 2.1)
-             * 
-             * or
-             *
-             * the length the string would have been if the buffer had
-             * been large enough (glibc >= 2.1)
-             */
-            
-            if (len == -1) current_len += NV_LINE_LEN;
-            else current_len = len+1;
-            
-            free (buf);
-        }
-        else done = TRUE;
-        
-    } while (!done);
-    
-    return buf;
-
-} /* assemble_string() */
-
-
-
-
-/*
  * check_euid() - this function checks that the effective uid of this
  * application is root, and calls the ui to print an error if it's not
  * root.
@@ -876,11 +820,8 @@ int continue_after_error(Options *op, const char *fmt, ...)
 {
     char *msg;
     int ret;
-    va_list ap;
 
-    va_start (ap, fmt);
-    msg = assemble_string (fmt, ap);
-    va_end (ap);
+    NV_VSNPRINTF(msg, fmt);
     
     ret = ui_yes_no(op, TRUE, "The installer has encountered the following "
                     "error during installation: '%s'.  Continue anyway? "
@@ -1395,6 +1336,26 @@ int check_runtime_configuration(Options *op, Package *p)
 
 
 /*
+ * collapse_multiple_slashes() - remove any/all occurances of "//" from the
+ * argument string.
+ */
+
+void collapse_multiple_slashes(char *s)
+{
+    char *p;
+    unsigned int i, len;
+
+    while ((p = strstr(s, "//")) != NULL) {
+        p++; /* advance to second '/' */
+        while (*p == '/') {
+            len = strlen(p);
+            for (i = 0; i < len; i++) p[i] = p[i+1];
+        }
+    }
+}
+
+
+/*
  * rtld_test_internal() - this routine writes the test binaries to a file
  * and performs the test; the caller (rtld_test()) selects which array data
  * is used (native, compat_32).
@@ -1474,6 +1435,7 @@ static int rtld_test_internal(Options *op, Package *p,
         name = nvstrdup(p->entries[i].dst);
         if (!name) goto next;
 
+        collapse_multiple_slashes(data);
         s = strstr(name, ".so.1");
         if (!s) goto next;
         *(s + strlen(".so.1")) = '\0';
