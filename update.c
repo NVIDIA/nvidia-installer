@@ -195,13 +195,6 @@ char *append_update_arguments(char *s, int c, const char *arg,
 
     if (!s) s = nvstrcat(" ", NULL);
     
-    /*
-     * don't place "--update" or "--force-update" in the update
-     * argument list (avoid infinite loop)
-     */
-    
-    if ((c == 'u') || (c == 'f')) return s;
-
     do {
         if (l[i].val == c) {
             t = nvstrcat(s, " --", l[i].name, NULL);
@@ -230,6 +223,7 @@ static char *get_latest_driver_version_and_filename(Options *op, int *major,
                                                     int *minor, int *patch)
 {
     int fd = -1;
+    int length;
     char *tmpfile = NULL;
     char *url = NULL;
     char *str = (void *) -1;
@@ -259,8 +253,10 @@ static char *get_latest_driver_version_and_filename(Options *op, int *major,
                  strerror(errno));
         goto done;
     }
+
+    length = stat_buf.st_size;
     
-    str = mmap(0, stat_buf.st_size, PROT_READ, MAP_FILE | MAP_SHARED, fd, 0);
+    str = mmap(0, length, PROT_READ, MAP_FILE | MAP_SHARED, fd, 0);
     if (str == (void *) -1) {
         ui_error(op, "Unable to determine most recent NVIDIA %s-%s driver "
                  "version (%s).", INSTALLER_OS, INSTALLER_ARCH,
@@ -268,7 +264,7 @@ static char *get_latest_driver_version_and_filename(Options *op, int *major,
         goto done;
     }
     
-    buf = get_next_line(str, NULL);
+    buf = get_next_line(str, NULL, str, length);
 
     if (!nvid_version(buf, major, minor, patch)) {
         ui_error(op, "Unable to determine latest NVIDIA %s-%s driver "

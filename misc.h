@@ -68,6 +68,18 @@ do {                                                            \
     }                                                           \
 } while (0)
 
+/*
+ * NV_STRCAT() - takes a dynamically allocated string followed by a
+ * NULL-terminated list of arbitrary strings and concatenates the
+ * strings with nvstrcat(); the newly allocated string replaces the
+ * original one, which is freed.
+ */
+#define NV_STRCAT(str, args...)              \
+do {                                         \
+    char *__tmp_str = (str);                 \
+    (str) = nvstrcat(__tmp_str, ##args);     \
+    nvfree(__tmp_str);                       \
+} while (0)
 
 void *nvalloc(size_t size);
 void *nvrealloc(void *ptr, size_t size);
@@ -76,13 +88,12 @@ void nvfree(char *s);
 char *nvstrtolower(char *s);
 char *nvstrcat(const char *str, ...);
 char *read_next_word (char *buf, char **e);
-char *assemble_string(const char *fmt, va_list ap);
 
 int check_euid(Options *op);
 int check_runlevel(Options *op);
 int adjust_cwd(Options *op, const char *program_name);
 char *fget_next_line(FILE *fp, int *eof);
-char *get_next_line(char *buf, char **e);
+char *get_next_line(char *buf, char **e, char *start, int length);
 int run_command(Options *op, const char *cmd, char **data,
                 int output, int status, int redirect);
 int read_text_file(const char *filename, char **buf);
@@ -105,6 +116,7 @@ void collapse_multiple_slashes(char *s);
 int is_symbolic_link_to(const char *path, const char *dest);
 Distribution get_distribution(Options *op);
 int check_for_running_x(Options *op);
+int check_for_nvidia_graphics_devices(Options *op, Package *p);
 int run_nvidia_xconfig(Options *op);
 
 TextRows *nv_format_text_rows(const char *prefix, const char *buf,

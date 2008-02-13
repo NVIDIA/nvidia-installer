@@ -162,7 +162,8 @@ CommandList *build_command_list(Options *op, Package *p)
 #endif /* NV_X86_64 */
     }
     
-    find_conflicting_kernel_modules(op, p, l);
+    if (!op->no_kernel_module)
+        find_conflicting_kernel_modules(op, p, l);
     
     /*
      * find any existing files that clash with what we're going to
@@ -506,6 +507,7 @@ static ConflictingFileInfo __opengl_libs[] = {
     { "libGL.",         6  /* strlen("libGL.") */         },
     { "libnvidia-tls.", 14 /* strlen("libnvidia-tls.") */ },
     { "libGLwrapper.",  13 /* strlen("libGLwrapper.") */  },
+    { "libnvidia-cfg.", 14 /* strlen("libnvidia-cfg.") */ },
     { NULL, 0 }
 };
 
@@ -733,7 +735,8 @@ void condense_file_list(FileList *l)
     for (i = 0; i < l->num; i++) {
         match = FALSE;
 
-        lstat(l->filename[i], &stat_buf);
+        if (lstat(l->filename[i], &stat_buf) == -1)
+            continue;
         
         for (j = 0; j < n; j++) {
 

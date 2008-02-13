@@ -1869,9 +1869,10 @@ static void nv_ncurses_pager_update(DataStruct *d, PagerStruct *p)
 static void nv_ncurses_pager_handle_events(DataStruct *d,
                                            PagerStruct *p, int ch)
 {
-    int n = p->t->n - (p->region->h - 1);
-
+    int n;
+    
     if (!p) return;
+    n = p->t->n - (p->region->h - 1);
 
     switch (ch) {
     case KEY_UP:

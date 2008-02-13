@@ -107,7 +107,7 @@ static char *get_line(UrlResource *rsrc, int control)
     char *end;
     char buf[SNARF_BUFSIZE+1];
 
-    while ((bytes_read = read(control, buf, SNARF_BUFSIZE))) {
+    while ((bytes_read = read(control, buf, SNARF_BUFSIZE)) > 0) {
                 
         if (buf[0] == '4' || buf[0] == '5') return NULL;
         

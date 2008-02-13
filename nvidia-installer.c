@@ -82,6 +82,34 @@ static void print_version(void)
 }
 
 
+/*
+ * cook_description() - the description string may contain text within
+ * brackets, which is used by the manpage generator to denote text to
+ * be italicized.  We want to omit the bracket characters here.
+ */
+
+static char *cook_description(const char *description)
+{
+    int len;
+    char *s, *dst;
+    const char *src;
+    
+    len = strlen(description);
+    s = nvalloc(len + 1);
+    
+    for (src = description, dst = s; *src; src++) {
+        if (*src != '[' && (*src != ']')) {
+            *dst = *src;
+            dst++;
+        }
+    }
+
+    *dst = '\0';
+
+    return s;
+    
+} /* cook_description() */
+
 
 /*
  * print_help() - print usage information
@@ -139,12 +167,16 @@ static void print_help_args_only(int args_only, int advanced)
             len = strlen(o->name);
             for (j = 0; j < len; j++) scratch[j] = toupper(o->name[j]);
             scratch[len] = '\0';
-            tmp = nvstrcat(msg, "=[", scratch, "]", NULL);
+            tmp = nvstrcat(msg, "=", scratch, NULL);
             nvfree(msg);
             msg = tmp;
         }
         fmtoutp(TAB, msg);
-        if (o->description) fmtoutp(BIGTAB, o->description);
+        if (o->description) {
+            tmp = cook_description(o->description);
+            fmtoutp(BIGTAB, tmp);
+            free(tmp);
+        }
         fmtout("");
         nvfree(msg);
     }
@@ -253,7 +285,10 @@ Options *parse_commandline(int argc, char *argv[])
         case 'A': print_help(TRUE); exit(0); break;
         case 'q': op->no_questions = TRUE; break;
         case 'b': op->no_backup = TRUE; break;
-        case 'K': op->kernel_module_only = TRUE; break;
+        case 'K':
+            op->kernel_module_only = TRUE;
+            op->no_kernel_module = FALSE; /* conflicts  */
+            break;
         case 'X': op->run_nvidia_xconfig = TRUE; break;
         case 's':
             op->silent = op->no_questions = op->accept_license = TRUE;
@@ -345,7 +380,7 @@ Options *parse_commandline(int argc, char *argv[])
         case 'N':
             op->no_network = TRUE;
             break;
-        case PRECOMPILED_KERNEL_INTERFACES_PATH:
+        case PRECOMPILED_KERNEL_INTERFACES_PATH_OPTION:
             op->precompiled_kernel_interfaces_path = optarg;
             break;
         case NO_ABI_NOTE_OPTION:
@@ -357,7 +392,7 @@ Options *parse_commandline(int argc, char *argv[])
         case NO_RECURSION_OPTION:
             op->no_recursion = TRUE;
             break;
-        case FORCE_SELINUX:
+        case FORCE_SELINUX_OPTION:
             if (strcasecmp(optarg, "yes") == 0)
                 op->selinux_option = SELINUX_FORCE_YES;
             else if (strcasecmp(optarg, "no") == 0)
@@ -371,9 +406,14 @@ Options *parse_commandline(int argc, char *argv[])
                 exit(1);
             }
             break;
-        case NO_SIGWINCH_WORKAROUND:
+        case NO_SIGWINCH_WORKAROUND_OPTION:
             op->sigwinch_workaround = FALSE;
             break;
+        case NO_KERNEL_MODULE_OPTION:
+            op->no_kernel_module = TRUE;
+            op->kernel_module_only = FALSE; /* conflicts */
+            break;
+
         default:
             fmterr("");
             fmterr("Invalid commandline, please run `%s --help` "
@@ -382,9 +422,21 @@ Options *parse_commandline(int argc, char *argv[])
             exit(1);
         }
 
-        op->update_arguments = append_update_arguments(op->update_arguments,
-                                                       c, optarg,
-                                                       long_options);
+        /*
+         * as we go, build a list of options that we would pass on to
+         * a new invocation of the installer if we were to download a
+         * new driver and run its installer (update mode).  Be sure
+         * not to place "--update" or "--force-update" in the update
+         * argument list (avoid infinite loop)
+         */
+    
+        if ((c != UPDATE_OPTION) && (c != 'f')) {
+            
+            op->update_arguments =
+                append_update_arguments(op->update_arguments,
+                                        c, optarg,
+                                        long_options);
+        }
     }
 
     nvfree((void*)long_options);

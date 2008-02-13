@@ -659,7 +659,7 @@ static BackupInfo *read_backup_log_file(Options *op)
 {
     struct stat stat_buf;
     char *buf, *c, *line, *filename;
-    int fd, num, line_num = 0;
+    int fd, num, length, line_num = 0;
     float percent;
     
     BackupLogEntry *e;
@@ -698,7 +698,9 @@ static BackupInfo *read_backup_log_file(Options *op)
 
     /* map the file */
 
-    buf = mmap(0, stat_buf.st_size, PROT_READ, MAP_FILE | MAP_SHARED, fd, 0);
+    length = stat_buf.st_size;
+
+    buf = mmap(0, length, PROT_READ, MAP_FILE | MAP_SHARED, fd, 0);
     if (!buf) {
         ui_error(op, "Unable to mmap file '%s' (%s).", strerror(errno));
         return NULL;
@@ -708,13 +710,13 @@ static BackupInfo *read_backup_log_file(Options *op)
 
     b = nvalloc(sizeof(BackupInfo));
 
-    b->version = get_next_line(buf, &c);
+    b->version = get_next_line(buf, &c, buf, length);
     if (!b->version || !c) goto parse_error;
     
     percent = (float) (c - buf) / (float) stat_buf.st_size;
     ui_status_update(op, percent, NULL);
 
-    b->description = get_next_line(c, &c);
+    b->description = get_next_line(c, &c, buf, length);
     if (!b->description || !c) goto parse_error;
 
     b->n = 0;
@@ -728,7 +730,7 @@ static BackupInfo *read_backup_log_file(Options *op)
         
         /* read and parse the next line */
 
-        line = get_next_line(c, &c);
+        line = get_next_line(c, &c, buf, length);
         if (!line) break;
 
         if (!parse_first_line(line, &num, &filename)) goto parse_error;
@@ -749,7 +751,8 @@ static BackupInfo *read_backup_log_file(Options *op)
         switch(e->num) {
 
         case INSTALLED_FILE:
-            if ((line = get_next_line(c, &c)) == NULL) goto parse_error;
+            line = get_next_line(c, &c, buf, length);
+            if (line == NULL) goto parse_error;
             line_num++;
 
             if (!parse_crc(line, &e->crc)) goto parse_error;
@@ -758,7 +761,8 @@ static BackupInfo *read_backup_log_file(Options *op)
             break;
 
         case INSTALLED_SYMLINK:
-            if ((line = get_next_line(c, &c)) == NULL) goto parse_error;
+            line = get_next_line(c, &c, buf, length);
+            if (line == NULL) goto parse_error;
             line_num++;
             
             e->target = line;
@@ -766,12 +770,14 @@ static BackupInfo *read_backup_log_file(Options *op)
             break;
             
         case BACKED_UP_SYMLINK:
-            if ((line = get_next_line(c, &c)) == NULL) goto parse_error;
+            line = get_next_line(c, &c, buf, length);
+            if (line == NULL) goto parse_error;
             line_num++;
             
             e->target = line;
 
-            if ((line = get_next_line(c, &c)) == NULL) goto parse_error;
+            line = get_next_line(c, &c, buf, length);
+            if (line == NULL) goto parse_error;
             line_num++;
 
             if (!parse_mode_uid_gid(line, &e->mode, &e->uid, &e->gid))
@@ -783,7 +789,8 @@ static BackupInfo *read_backup_log_file(Options *op)
         default:
             if (num < BACKED_UP_FILE_NUM) goto parse_error;
             
-            if ((line = get_next_line(c, &c)) == NULL) goto parse_error;
+            line = get_next_line(c, &c, buf, length);
+            if (line == NULL) goto parse_error;
             line_num++;
 
             if (!parse_crc_mode_uid_gid(line, &e->crc, &e->mode,
@@ -980,23 +987,25 @@ char *get_installed_driver_version_and_descr(Options *op, int *major,
 {
     struct stat stat_buf;
     char *c, *version = NULL, *descr = NULL, *buf = NULL;
-    int fd = -1;
+    int length, fd = -1;
 
     if ((fd = open(BACKUP_LOG, O_RDONLY)) == -1) goto done;
     
     if (fstat(fd, &stat_buf) == -1) goto done;
     
     /* map the file */
+
+    length = stat_buf.st_size;
     
-    buf = mmap(0, stat_buf.st_size, PROT_READ, MAP_FILE | MAP_SHARED, fd, 0);
+    buf = mmap(0, length, PROT_READ, MAP_FILE | MAP_SHARED, fd, 0);
     if (!buf) goto done;
     
-    version = get_next_line(buf, &c);
+    version = get_next_line(buf, &c, buf, length);
     if (!version) goto done;
 
     if (!nvid_version(version, major, minor, patch)) goto done;
     
-    descr = get_next_line(c, NULL);
+    descr = get_next_line(c, NULL, buf, length);
 
  done:
     if (version) free(version);

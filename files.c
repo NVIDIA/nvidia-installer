@@ -691,7 +691,7 @@ int set_destinations(Options *op, Package *p)
 int get_license_acceptance(Options *op)
 {
     struct stat buf;
-    char *text;
+    char *text, *tmp;
     int fd;
 
     /* trivial accept if the user accepted on the command line */
@@ -709,8 +709,18 @@ int get_license_acceptance(Options *op)
                               MAP_FILE|MAP_SHARED,
                               fd, 0x0)) == (char *) -1) goto failed;
     
-    if (!ui_display_license(op, text)) {
+    /*
+     * the mmap'ed license file may not be NULL terminated, so copy it
+     * into a temporary buffer and explicity NULL terminate the string
+     */
+
+    tmp = nvalloc(buf.st_size + 1);
+    memcpy(tmp, text, buf.st_size);
+    tmp[buf.st_size] = '\0';
+    
+    if (!ui_display_license(op, tmp)) {
         ui_message(op, "License not accepted.  Aborting installation.");
+        nvfree(tmp);
         munmap(text, buf.st_size);
         close(fd);
         return FALSE;
@@ -718,6 +728,7 @@ int get_license_acceptance(Options *op)
     
     ui_log(op, "License accepted.");
     
+    nvfree(tmp);
     munmap(text, buf.st_size);
     close(fd);
     
@@ -1573,19 +1584,27 @@ char *process_template_file(Options *op, PackageEntry *pe,
         failed = TRUE; goto done;
     }
 
+    /*
+     * allocate a string to hold the contents of the mmap'ed file,
+     * plus explicit NULL termination
+     */
+
+    tmp = nvalloc(stat_buf.st_size + 1);
+    memcpy(tmp, src, stat_buf.st_size);
+    tmp[stat_buf.st_size] = '\0';
+
+    /* setup to walk the tokens and replacements arrays */
+    
     token = *tokens;
     replacement = *replacements;
-    tmp = src;
 
     while (token != NULL && replacement != NULL) {
         /*
          * Replace any occurances of 'token' with 'replacement' in
-         * the source string and free the source unless it points
-         * to the source file mapping, in which case the unmap has
-         * to be deferred.
+         * the source string and free the source
          */
         tmp0 = nv_strreplace(tmp, token, replacement);
-        if (tmp != src) nvfree(tmp);
+        nvfree(tmp);
         tmp = tmp0;
         token = *(++tokens);
         replacement = *(++replacements);

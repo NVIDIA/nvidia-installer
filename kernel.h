@@ -40,6 +40,5 @@ int check_kernel_module_version               (Options*, Package*);
 int check_for_unloaded_kernel_module          (Options*, Package*);
 int find_precompiled_kernel_interface         (Options*, Package*);
 char *get_kernel_name                         (Options*);
-int check_for_legacy_gpu                      (Options*, Package*);
 
 #endif /* __NVIDIA_INSTALLER_KERNEL_H__ */

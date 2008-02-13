@@ -40,6 +40,7 @@
 #include <sys/mman.h>
 #include <dirent.h>
 #include <libgen.h>
+#include <pci/pci.h>
 
 #include "nvidia-installer.h"
 #include "user-interface.h"
@@ -47,6 +48,7 @@
 #include "files.h"
 #include "misc.h"
 #include "crc.h"
+#include "nvLegacy.h"
 
 static int check_symlink(Options*, const char*, const char*, const char*);
 static int check_file(Options*, const char*, const mode_t, const uint32);
@@ -415,11 +417,15 @@ char *fget_next_line(FILE *fp, int *eof)
 
 
 /*
- * get_next_line() - this function scans for the next newline or
- * carriage return in buf.  If non-NULL, the passed-by-reference
- * parameter e is set to point to the next printable character in the
- * buffer, or NULL if EOF is encountered.
+ * get_next_line() - this function scans for the next newline,
+ * carriage return, NUL terminator, or EOF in buf.  If non-NULL, the
+ * passed-by-reference parameter 'end' is set to point to the next
+ * printable character in the buffer, or NULL if EOF is encountered.
  *
+ * If the parameter 'start' is non-NULL, then that is interpretted as
+ * the start of the buffer string, and we check that we never walk
+ * 'length' bytes past 'start'.
+ * 
  * On success, a newly allocated buffer is allocated containing the
  * next line of text (with a NULL terminator in place of the
  * newline/carriage return).
@@ -427,27 +433,46 @@ char *fget_next_line(FILE *fp, int *eof)
  * On error, NULL is returned.
  */
 
-char *get_next_line(char *buf, char **e)
+char *get_next_line(char *buf, char **end, char *start, int length)
 {
     char *c, *retbuf;
     int len;
 
-    if (e) *e = NULL;
-    
-    if ((!buf) || (*buf == '\0') || (*buf == EOF)) return NULL;
+    if (start && (length < 1)) return NULL;
 
+#define __AT_END(_start, _current, _length) \
+    ((_start) && (((_current) - (_start)) >= (_length)))
+    
+    if (end) *end = NULL;
+    
+    if ((!buf) ||
+        __AT_END(start, buf, length) ||
+        (*buf == '\0') ||
+        (*buf == EOF)) return NULL;
+    
     c = buf;
-    while ((*c != '\0') && (*c != EOF) && (*c != '\n') && (*c != '\r')) c++;
+    
+    while ((!__AT_END(start, c, length)) &&
+           (*c != '\0') &&
+           (*c != EOF) &&
+           (*c != '\n') &&
+           (*c != '\r')) c++;
 
     len = c - buf;
     retbuf = nvalloc(len + 1);
     strncpy(retbuf, buf, len);
     retbuf[len] = '\0';
     
-    if (e) {
-        while ((*c != '\0') && (*c != EOF) && (!isprint(*c))) c++;
-        if ((*c == '\0') || (*c == EOF)) *e = NULL;
-        else *e = c;
+    if (end) {
+        while ((!__AT_END(start, c, length)) &&
+               (*c != '\0') &&
+               (*c != EOF) &&
+               (!isprint(*c))) c++;
+        
+        if (__AT_END(start, c, length) ||
+            (*c == '\0') ||
+            (*c == EOF)) *end = NULL;
+        else *end = c;
     }
     
     return retbuf;
@@ -703,12 +728,12 @@ int find_system_utils(Options *op)
                   needed_utils[i].util, op->utils[i]);
     }
     
-    for (j=0, i = MAX_SYSTEM_UTILS; i < MAX_SYSTEM_OPTIONAL_UTILS; i++, j++) {
+    for (j = 0, i = MAX_SYSTEM_UTILS; i < MAX_SYSTEM_OPTIONAL_UTILS; i++, j++) {
         
         op->utils[i] = find_system_util(optional_utils[j].util);
         if (op->utils[i]) {     
             ui_expert(op, "found `%s` : `%s`",
-                  optional_utils[i].util, op->utils[i]);
+                  optional_utils[j].util, op->utils[i]);
         } else {
             op->utils[i] = NULL;
         }
@@ -1012,6 +1037,8 @@ int continue_after_error(Options *op, const char *fmt, ...)
     ret = ui_yes_no(op, TRUE, "The installer has encountered the following "
                     "error during installation: '%s'.  Continue anyway? "
                     "(\"no\" will abort)?", msg);
+
+    nvfree(msg);
 
     return ret;
 
@@ -1884,8 +1911,8 @@ int check_for_running_x(Options *op)
                    "running", path);
             ui_error(op, "You appear to be running an X server; please exit "
                      "X before installing.  For further details, please see "
-                     "the chapter \"Installing the NVIDIA Driver\" in the "
-                     "README available on the Linux driver download page at "
+                     "the section INSTALLING THE NVIDIA DRIVER in the README "
+                     "available on the Linux driver download page at "
                      "www.nvidia.com.");
             return FALSE;
         }
@@ -1894,6 +1921,78 @@ int check_for_running_x(Options *op)
     return TRUE;
 
 } /* check_for_running_x() */
+
+
+/*
+ * check_for_nvidia_graphics_devices() - check if there are supported
+ * NVIDIA graphics devices installed in this system. If one or more
+ * supported devices are found, the function returns TRUE, else it prints
+ * a warning message and returns FALSE. If legacy devices are detected
+ * in the system, a warning message is printed for each one.
+ */
+
+static void ignore_libpci_output(char *fmt, ...)
+{
+}
+
+int check_for_nvidia_graphics_devices(Options *op, Package *p)
+{
+    struct pci_access *pacc;
+    struct pci_dev *dev;
+    int i, found_supported_device = FALSE;
+    uint16 class;
+
+    pacc = pci_alloc();
+    if (!pacc) return TRUE;
+
+    pacc->error = ignore_libpci_output;
+    pacc->warning = ignore_libpci_output;
+    pci_init(pacc);
+    if (!pacc->methods) return TRUE;
+
+    pci_scan_bus(pacc);
+
+    for (dev = pacc->devices; dev != NULL; dev = dev->next) {
+        if ((pci_fill_info(dev, PCI_FILL_IDENT) & PCI_FILL_IDENT) &&
+              ((class = pci_read_word(dev, PCI_CLASS_DEVICE)) == PCI_CLASS_DISPLAY_VGA) &&
+              (dev->vendor_id == 0x10de) /* NVIDIA */ &&
+              (dev->device_id >= 0x0020) /* TNT or later */) {
+            /*
+             * First check if this GPU is a "legacy" GPU; if it is, print a
+             * warning message and point the user to the NVIDIA Linux
+             * driver download page for.
+             */
+            int found_legacy_device = FALSE;
+            for (i = 0; i < sizeof(LegacyList) / sizeof(LEGACY_INFO); i++) {
+                if (dev->device_id == LegacyList[i].uiDevId) {
+                    ui_warn(op, "The NVIDIA %s GPU installed in this system is supported "
+                            "through the NVIDIA legacy Linux graphics drivers.  Please "
+                            "visit http://www.nvidia.com/object/unix.html for more "
+                            "information.  The %s NVIDIA Linux graphics driver will "
+                            "ignore this GPU.", LegacyList[i].AdapterString, p->version_string);
+                    found_legacy_device = TRUE;
+                }
+            }
+            if (!found_legacy_device) found_supported_device = TRUE;
+        }
+    }
+
+    pci_cleanup(pacc);
+    if (!pacc->devices) return TRUE;
+
+    if (!found_supported_device) {
+        ui_warn(op, "You do not appear to have an NVIDIA GPU supported by the "
+                 "%s NVIDIA Linux graphics driver installed in this system.  "
+                 "For further details, please see the appendix SUPPORTED "
+                 "NVIDIA GRAPHICS CHIPS in the README available on the Linux "
+                 "driver download page at www.nvidia.com.", p->version_string);
+        return FALSE;
+    }
+
+    return TRUE;
+
+} /* check_for_nvidia_graphics_devices() */
+
 
 /*
  * check_selinux() - check if selinux is available.

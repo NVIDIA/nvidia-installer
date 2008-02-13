@@ -10,38 +10,41 @@ typedef struct {
     char *description; /* not used by nvgetopt() */
 } NVOption;
 
-#define XFREE86_PREFIX_OPTION           1
-#define OPENGL_PREFIX_OPTION            2
-#define KERNEL_INCLUDE_PATH_OPTION      3
-#define KERNEL_INSTALL_PATH_OPTION      4
-#define UNINSTALL_OPTION                5
-#define PROC_MOUNT_POINT_OPTION         6
-#define USER_INTERFACE_OPTION           7
-#define LOG_FILE_NAME_OPTION            8
-#define HELP_ARGS_ONLY_OPTION           9
-#define TMPDIR_OPTION                   10
-#define NO_OPENGL_HEADERS_OPTION        11
-#define INSTALLER_PREFIX_OPTION         12
-#define FORCE_TLS_OPTION                13
-#define SANITY_OPTION                   14
-#define ADVANCED_OPTIONS_ARGS_ONLY_OPTION 15
-#define UTILITY_PREFIX_OPTION           16
-#define ADD_THIS_KERNEL_OPTION          17
-#define RPM_FILE_LIST_OPTION            18
-#define NO_RUNLEVEL_CHECK_OPTION        19
-#define PRECOMPILED_KERNEL_INTERFACES_PATH 20
-#define NO_ABI_NOTE_OPTION              21
-#define KERNEL_SOURCE_PATH_OPTION       22
-#define NO_RPMS_OPTION                  23
-#define X_PREFIX_OPTION                 24
-#define KERNEL_OUTPUT_PATH_OPTION       25
-#define NO_RECURSION_OPTION             26
-#define FORCE_TLS_COMPAT32_OPTION       27
-#define COMPAT32_PREFIX_OPTION          28
-#define UPDATE_OPTION                   29
-#define FORCE_SELINUX                   30
-#define NO_SIGWINCH_WORKAROUND          31
-#define X_MODULE_PATH_OPTION            32
+enum {
+    XFREE86_PREFIX_OPTION = 1,
+    OPENGL_PREFIX_OPTION,
+    KERNEL_INCLUDE_PATH_OPTION,
+    KERNEL_INSTALL_PATH_OPTION,
+    UNINSTALL_OPTION,
+    PROC_MOUNT_POINT_OPTION,
+    USER_INTERFACE_OPTION,
+    LOG_FILE_NAME_OPTION,
+    HELP_ARGS_ONLY_OPTION,
+    TMPDIR_OPTION,
+    NO_OPENGL_HEADERS_OPTION,
+    INSTALLER_PREFIX_OPTION,
+    FORCE_TLS_OPTION,
+    SANITY_OPTION,
+    ADVANCED_OPTIONS_ARGS_ONLY_OPTION,
+    UTILITY_PREFIX_OPTION,
+    ADD_THIS_KERNEL_OPTION,
+    RPM_FILE_LIST_OPTION,
+    NO_RUNLEVEL_CHECK_OPTION,
+    PRECOMPILED_KERNEL_INTERFACES_PATH_OPTION,
+    NO_ABI_NOTE_OPTION,
+    KERNEL_SOURCE_PATH_OPTION,
+    NO_RPMS_OPTION,
+    X_PREFIX_OPTION,
+    KERNEL_OUTPUT_PATH_OPTION,
+    NO_RECURSION_OPTION,
+    FORCE_TLS_COMPAT32_OPTION,
+    COMPAT32_PREFIX_OPTION,
+    UPDATE_OPTION,
+    FORCE_SELINUX_OPTION,
+    NO_SIGWINCH_WORKAROUND_OPTION,
+    X_MODULE_PATH_OPTION,
+    NO_KERNEL_MODULE_OPTION
+};
 
 static const NVOption __options[] = {
     /* These options are printed by "nvidia-installer --help" */
@@ -215,7 +218,7 @@ static const NVOption __options[] = {
 
     { "ui", USER_INTERFACE_OPTION, NVOPT_HAS_ARGUMENT,
       "Specify what user interface to use, if available.  "
-      "Valid values are 'ncurses' (the default) or 'none'. "
+      "Valid values for [UI] are 'ncurses' (the default) or 'none'. "
       "If the ncurses interface fails to initialize, or 'none' "
       "is specified, then a simple printf/scanf interface will "
       "be used." },
@@ -236,7 +239,7 @@ static const NVOption __options[] = {
       "The nvidia-installer will select the OpenGL "
       "libraries appropriate for your system; however, you may use "
       "this option to force the installer to install one library "
-      "type or another.  Valid values for [TLS TYPE] are 'new' and "
+      "type or another.  Valid values for [FORCE-TLS] are 'new' and "
       "'classic'." },
 
 #if defined(NV_X86_64)
@@ -248,14 +251,14 @@ static const NVOption __options[] = {
 
     { "kernel-name", 'k', NVOPT_HAS_ARGUMENT,
       "Build and install the NVIDIA kernel module for the "
-      "non-running kernel specified by [KERNELNAME] ([KERNELNAME] "
+      "non-running kernel specified by [KERNEL-NAME] ([KERNEL-NAME] "
       "should be the output of `uname -r` when the target kernel is "
       "actually running).  This option implies "
       "'--no-precompiled-interface'.  If the options "
       "'--kernel-install-path' and '--kernel-source-path' are not "
-      "given, then they will be inferred from [KERNELNAME]; eg: "
-      "'/lib/modules/[KERNELNAME]/kernel/drivers/video/' and "
-      "'/lib/modules/[KERNELNAME]/build/', respectively." },
+      "given, then they will be inferred from [KERNEL-NAME]; eg: "
+      "'/lib/modules/[KERNEL-NAME]/kernel/drivers/video/' and "
+      "'/lib/modules/[KERNEL-NAME]/build/', respectively." },
 
     { "no-precompiled-interface", 'n', 0,
       "Disable use of precompiled kernel interfaces." },
@@ -298,7 +301,7 @@ static const NVOption __options[] = {
       "the installer will only search in the top-level directories." },
 
     { "kernel-module-only", 'K', 0,
-      "Install a kernel module only, and don't uninstall the "
+      "Install a kernel module only, and do not uninstall the "
       "existing driver.  This is intended to be used to install kernel "
       "modules for additional kernels (in cases where you might boot "
       "between several different kernels).  To use this option, you "
@@ -306,7 +309,15 @@ static const NVOption __options[] = {
       "installed driver must match the version of this kernel "
       "module." },
 
-    { "precompiled-kernel-interfaces-path", PRECOMPILED_KERNEL_INTERFACES_PATH, NVOPT_HAS_ARGUMENT,
+    { "no-kernel-module", NO_KERNEL_MODULE_OPTION, 0,
+      "Install everything but the kernel module, and do not remove any "
+      "existing, possibly conflicting kernel modules.  This can be "
+      "useful in some DEBUG environments.  If you use this option, you "
+      "must be careful to ensure that a NVIDIA kernel module matching "
+      "this driver version is installed seperately." },
+
+    { "precompiled-kernel-interfaces-path",
+      PRECOMPILED_KERNEL_INTERFACES_PATH_OPTION, NVOPT_HAS_ARGUMENT,
       "Before searching for a precompiled kernel interface in the "
       ".run file, search in the specified directory." },
 
@@ -320,18 +331,19 @@ static const NVOption __options[] = {
       "'yes'.  This is useful with the '--no-questions' or '--silent' "
       "options, which assume the default values for all questions." },
     
-    { "force-selinux", FORCE_SELINUX, NVOPT_HAS_ARGUMENT,
+    { "force-selinux", FORCE_SELINUX_OPTION, NVOPT_HAS_ARGUMENT,
       "Linux installations using SELinux (Security-Enhanced Linux) "
       "require that the security type of all shared libraries be set "
       "to 'shlib_t'. nvidia-installer will detect when to set "
       "the security type, and set it using chcon(1) on the shared "
       "libraries it installs.  Use this option to override "
-      "nvidia-installer's detection of when to set the security type. "
-      "Valid values are 'yes' (force setting of the security type), "
+      "nvidia-installer's detection of when to set the security type.  "
+      "Valid values for [FORCE-SELINUX] are 'yes' (force setting of the "
+      "security type), "
       "'no' (prevent setting of the security type), and 'default' "
       "(let nvidia-installer decide when to set the security type)." },
       
-    { "no-sigwinch-workaround", NO_SIGWINCH_WORKAROUND, 0,
+    { "no-sigwinch-workaround", NO_SIGWINCH_WORKAROUND_OPTION, 0,
       "Normally, nvidia-installer ignores the SIGWINCH signal before it "
       "forks to execute commands, e.g. to build the kernel module, and "
       "restores the SIGWINCH signal handler after the child process "

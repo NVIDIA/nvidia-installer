@@ -46,7 +46,6 @@
 #include "precompiled.h"
 #include "snarf.h"
 #include "crc.h"
-#include "nvLegacy.h"
 
 /* local prototypes */
 
@@ -703,6 +702,16 @@ int test_kernel_module(Options *op, Package *p)
         nvfree(cmd);
     }
 
+    /*
+     * Likewise, we need to preload the i2c-core.ko kernel module to
+     * satisfy another dependency not resolved by `insmod`.
+     */
+    if (strncmp(get_kernel_name(op), "2.4", 3) != 0) {
+        cmd = nvstrcat(op->utils[MODPROBE], " -q i2c-core", NULL);
+        run_command(op, cmd, NULL, FALSE, 0, TRUE);
+        nvfree(cmd);
+    }
+
     cmd = nvstrcat(op->utils[INSMOD], " ",
                    p->kernel_module_build_directory, "/",
                    p->kernel_module_filename, NULL);
@@ -712,10 +721,18 @@ int test_kernel_module(Options *op, Package *p)
     ret = run_command(op, cmd, &data, op->expert, 0, TRUE);
 
     if (ret != 0) {
-        ui_error(op, "Unable to load the kernel module '%s'.  This is "
-                 "most likely because the kernel module was built using "
-                 "the wrong kernel source files.  %s",
-                 p->kernel_module_filename, install_your_kernel_source);
+        ui_error(op, "Unable to load the kernel module '%s'.  This "
+                 "happens most frequently when this kernel module was "
+                 "built against the wrong or improperly configured "
+                 "kernel sources, with a version of gcc that differs "
+                 "from the one used to build the target kernel, or "
+                 "if a driver such as rivafb/nvidiafb is present and "
+                 "prevents the NVIDIA kernel module from obtaining "
+                 "ownership of the NVIDIA graphics device(s).\n\n"
+                 "Please see the log entries 'Kernel module load "
+                 "error' and 'Kernel messages' at the end of the file "
+                 "'%s' for more information.",
+                 p->kernel_module_filename, op->log_file_name);
 
         /*
          * if in expert mode, run_command() would have caused this to
@@ -800,8 +817,8 @@ int load_kernel_module(Options *op, Package *p)
         ret = TRUE;
     }
 
-    if (cmd) free(cmd);
-    if (data) free(data);
+    nvfree(cmd);
+    nvfree(data);
     
     return ret;
 
@@ -1308,6 +1325,7 @@ download_updated_kernel_interface(Options *op, Package *p,
 {
     int fd = -1;
     int dst_fd = -1;
+    int length;
     char *url = NULL;
     char *tmpfile = NULL;
     char *dstfile = NULL;
@@ -1343,10 +1361,12 @@ download_updated_kernel_interface(Options *op, Package *p,
     /* get the length of the file */
 
     if (fstat(fd, &stat_buf) == -1) goto done;
+
+    length = stat_buf.st_size;
     
     /* map the file into memory for easier reading */
     
-    str = mmap(0, stat_buf.st_size, PROT_READ, MAP_FILE | MAP_SHARED, fd, 0);
+    str = mmap(0, length, PROT_READ, MAP_FILE | MAP_SHARED, fd, 0);
     if (str == (void *) -1) goto done;
     
     /*
@@ -1357,7 +1377,7 @@ download_updated_kernel_interface(Options *op, Package *p,
     ptr = str;
 
     while (TRUE) {
-        buf = get_next_line(ptr, &ptr);
+        buf = get_next_line(ptr, &ptr, str, length);
         if ((!buf) || (buf[0] == '\0')) goto done;
 
         s = strstr(buf, ":::");
@@ -1511,88 +1531,6 @@ int check_cc_version(Options *op, Package *p)
     return !ret;
              
 } /* check_cc_version() */
-
-
-
-/*
- * check_for_legacy_gpu() - run 'lspci -n' and check if any of the returned pci_id 
- * corresponds to a legacy gpu. If so, print a warning message for each of them, 
- * and returns TRUE.
- * Does not print any warning message and returns FALSE if no legacy GPU has been
- * detected.
- */
-
-int check_for_legacy_gpu(Options *op, Package *p)
-{
-    char *cmd = NULL, *data, *tok, *file;
-    int ret;
-    unsigned int pci_id;
-    char hexdigits[] = "0123456789abcdef";
-    int hex[UCHAR_MAX];
-    int i;
-    int found=FALSE;
-  
-    // lspci not being in the path should not prevent the installation  
-    file=find_system_util("lspci");
-    if (file==NULL) 
-        return FALSE;
-    
-    cmd = nvstrcat(file, " -n | ",
-                       op->utils[CUT], " -d' ' -f4", NULL);
-    ret = run_command(op, cmd, &data, FALSE, 0, TRUE);
-    free(cmd);
-    free(file);
-    
-    if (ret != 0)
-        return FALSE;
-    
-    /* Convert to lower case then we can do insensitive string comparison */
-    nvstrtolower(data);
-    
-    /* Initialize tables for string->hex conversion */
-    for (i = 0; i < UCHAR_MAX; i++) 
-        hex[i] = 0;
-    for (i = 0; hexdigits[i] != '\0'; i++)
-        hex[(int)hexdigits[i]] = i;
-    
-    tok = strtok(data, "\n");
-    while(tok) {
-        if(strlen(tok)<9)
-            break;
-        
-        /* Check vendor id */ 
-        if(strncmp(tok, "10de", 4)) {
-            tok = strtok(NULL, "\n");
-            continue;
-        }
-        
-        /* Construct pci_id */
-        pci_id = (hex[(int)tok[5]] << 12) + 
-                 (hex[(int)tok[6]] << 8 ) +
-                 (hex[(int)tok[7]] << 4 ) + 
-                 (hex[(int)tok[8]]);
-        
-        for(i=0;i< sizeof(LegacyList) / sizeof(LEGACY_INFO); i++)
-        {
-            if(pci_id==LegacyList[i].uiDevId)
-            {
-                    ui_warn(op, "The NVIDIA %s GPU installed in this system is "
-                                "supported through the NVIDIA Legacy drivers. Please "
-                                "visit http://www.nvidia.com/object/unix.html for more "
-                                "information.  The %s NVIDIA driver will ignore "
-                                "this GPU. ",
-                                LegacyList[i].AdapterString, p->version_string);
-                    found = TRUE;
-            }
-        }
-        
-        tok = strtok(NULL, "\n");
-    }
-    
-    free(data);
-    return found;
-             
-} /* check_for_legacy_gpu() */
 
 
 /*

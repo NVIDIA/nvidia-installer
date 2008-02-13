@@ -87,8 +87,9 @@ typedef enum {
 } Distribution;
 
 
-typedef unsigned int uint32;
-typedef unsigned char uint8;
+typedef unsigned int   uint32;
+typedef unsigned short uint16;
+typedef unsigned char  uint8;
 
 
 
@@ -123,6 +124,7 @@ typedef struct __options {
     int no_backup;
     int no_network;
     int kernel_module_only;
+    int no_kernel_module;
     int no_abi_note;
     int no_rpms;
     int no_recursion;

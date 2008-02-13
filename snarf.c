@@ -231,7 +231,7 @@ int dump_data(UrlResource *rsrc, int sock)
         ui_status_begin(rsrc->op, msg, "Downloading");
     }
     
-    while ((bytes_read = read(sock, buf, SNARF_BUFSIZE))) {
+    while ((bytes_read = read(sock, buf, SNARF_BUFSIZE)) > 0) {
 
         if (rsrc->flags & SNARF_FLAGS_STATUS_BAR) {
             total_bytes_read += bytes_read;

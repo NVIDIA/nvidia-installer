@@ -224,6 +224,9 @@ static void free_http_header(HttpHeader *h)
         free(l);
         l = l1;
     }
+
+    free(h);
+
 } /* free_http_header() */
 
               
@@ -287,6 +290,7 @@ static char *get_request(UrlResource *rsrc)
 {
     char *request = NULL;
     char *auth = NULL;
+    char *tmp_auth = NULL;
     Url *u;
         
     u = rsrc->url;
@@ -295,34 +299,38 @@ static char *get_request(UrlResource *rsrc)
                        "Host: ", u->host, "\r\n", NULL);
 
     if (u->username && u->password) {
-        auth = nvstrcat(u->username, ":", u->password, NULL);
-        auth = base64(auth, strlen(auth));
-        request = nvstrcat(request, "Authorization: Basic ",
-                           auth, "\r\n", NULL);
+        tmp_auth = nvstrcat(u->username, ":", u->password, NULL);
+        auth = base64(tmp_auth, strlen(tmp_auth));
+        nvfree(tmp_auth);
+        NV_STRCAT(request, "Authorization: Basic ",
+                  auth, "\r\n", NULL);
+        nvfree(auth);
     }
 
     if (rsrc->proxy_username && rsrc->proxy_password) {
-        auth = nvstrcat(rsrc->proxy_username, ":", 
-                        rsrc->proxy_password, NULL);
-        auth = base64(auth, strlen(auth));
-        request = nvstrcat(request, "Proxy-Authorization: Basic ",
-                           auth, "\r\n", NULL);
+        tmp_auth = nvstrcat(rsrc->proxy_username, ":", 
+                            rsrc->proxy_password, NULL);
+        auth = base64(tmp_auth, strlen(tmp_auth));
+        nvfree(tmp_auth);
+        NV_STRCAT(request, "Proxy-Authorization: Basic ",
+                  auth, "\r\n", NULL);
+        nvfree(auth);
     }
 
-    request = nvstrcat(request, "User-Agent: ", PROGRAM_NAME, "/",
-                       NVIDIA_INSTALLER_VERSION, NULL);
+    NV_STRCAT(request, "User-Agent: ", PROGRAM_NAME, "/",
+              NVIDIA_INSTALLER_VERSION, NULL);
 
     /* This CRLF pair closes the User-Agent key-value set. */
-    request = nvstrcat(request, "\r\n", NULL);
+    NV_STRCAT(request, "\r\n", NULL);
 
     /* If SNARF_HTTP_REFERER is set, spoof it. */
     if (getenv("SNARF_HTTP_REFERER")) {
-        request = nvstrcat(request, "Referer: ",
-                           getenv("SNARF_HTTP_REFERER"),
-                           "\r\n", NULL);
+        NV_STRCAT(request, "Referer: ",
+                  getenv("SNARF_HTTP_REFERER"),
+                  "\r\n", NULL);
     }
         
-    request = nvstrcat(request, "\r\n", NULL);
+    NV_STRCAT(request, "\r\n", NULL);
 
     return request;
 
@@ -336,6 +344,7 @@ int http_transfer(UrlResource *rsrc)
     Url *redir_u = NULL;
     char *request = NULL;
     char *raw_header = NULL;
+    char *tmp_header = NULL;
     HttpHeader *header = NULL;
     char *len_string = NULL;
     char *new_location = NULL;
@@ -422,7 +431,7 @@ int http_transfer(UrlResource *rsrc)
 
     bytes_read = read(sock, buf, 8);
 
-    if (bytes_read == 0) {
+    if (bytes_read <= 0) {
         close(sock);
         return FALSE;
     }
@@ -433,8 +442,9 @@ int http_transfer(UrlResource *rsrc)
     } else {
         /* skip the header */
         buf[bytes_read] = '\0';
-        raw_header = get_raw_header(sock);
-        raw_header = nvstrcat(buf, raw_header, NULL);
+        tmp_header = get_raw_header(sock);
+        raw_header = nvstrcat(buf, tmp_header, NULL);
+        free(tmp_header);
         header = make_http_header(raw_header);
                 
         /* if in expert mode, write the raw_header to the log */
