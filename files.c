@@ -512,6 +512,18 @@ int set_destinations(Options *op, Package *p)
             }
             path = "";
             break;
+
+        case FILE_TYPE_CUDA_LIB:
+        case FILE_TYPE_CUDA_SYMLINK:
+            if (p->entries[i].flags & FILE_CLASS_COMPAT32) {
+                prefix = op->compat32_prefix;
+                dir = op->compat32_libdir;
+            } else {
+                prefix = op->opengl_prefix;
+                dir = op->opengl_libdir;
+            }
+            path = "";
+            break;
             
         case FILE_TYPE_XLIB_SHARED_LIB:
         case FILE_TYPE_XLIB_STATIC_LIB:
@@ -566,6 +578,7 @@ int set_destinations(Options *op, Package *p)
              */
 
         case FILE_TYPE_OPENGL_HEADER:
+        case FILE_TYPE_CUDA_HEADER:
             prefix = op->opengl_prefix;
             dir = op->opengl_incdir;
             path = p->entries[i].path;

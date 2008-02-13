@@ -288,7 +288,7 @@ typedef struct {
 
 /* file types */
 
-#define FILE_TYPE_MASK               0x00ffffff
+#define FILE_TYPE_MASK               0x01ffffff
 
 #define FILE_TYPE_KERNEL_MODULE_SRC  0x00000001
 #define FILE_TYPE_KERNEL_MODULE_CMD  0x00000002
@@ -313,15 +313,18 @@ typedef struct {
 /* Create a symlink only if the file doesn't exist */
 #define FILE_TYPE_XMODULE_NEWSYM     0x00100000
 #define FILE_TYPE_MANPAGE            0x00200000
+#define FILE_TYPE_CUDA_HEADER        0x00400000
+#define FILE_TYPE_CUDA_LIB           0x00800000
+#define FILE_TYPE_CUDA_SYMLINK       0x01000000
 
 /* file class: this is used to distinguish OpenGL libraries */
 
-#define FILE_CLASS_MASK              0xff000000
+#define FILE_CLASS_MASK              0xfe000000
 
-#define FILE_CLASS_NEW_TLS           0x01000000
-#define FILE_CLASS_CLASSIC_TLS       0x02000000
-#define FILE_CLASS_NATIVE            0x04000000
-#define FILE_CLASS_COMPAT32          0x08000000
+#define FILE_CLASS_NEW_TLS           0x02000000
+#define FILE_CLASS_CLASSIC_TLS       0x04000000
+#define FILE_CLASS_NATIVE            0x08000000
+#define FILE_CLASS_COMPAT32          0x10000000
 
 #define FILE_TYPE_XLIB_LIB         (FILE_TYPE_XLIB_STATIC_LIB | \
                                     FILE_TYPE_XLIB_SHARED_LIB)
@@ -329,12 +332,14 @@ typedef struct {
 #define FILE_TYPE_XMODULE_LIB      (FILE_TYPE_XMODULE_SHARED_LIB)
 
 #define FILE_TYPE_INSTALLABLE_FILE (FILE_TYPE_OPENGL_LIB         | \
+                                    FILE_TYPE_CUDA_LIB           | \
                                     FILE_TYPE_XLIB_LIB           | \
                                     FILE_TYPE_TLS_LIB            | \
                                     FILE_TYPE_UTILITY_LIB        | \
                                     FILE_TYPE_DOCUMENTATION      | \
                                     FILE_TYPE_MANPAGE            | \
                                     FILE_TYPE_OPENGL_HEADER      | \
+                                    FILE_TYPE_CUDA_HEADER        | \
                                     FILE_TYPE_KERNEL_MODULE      | \
                                     FILE_TYPE_INSTALLER_BINARY   | \
                                     FILE_TYPE_UTILITY_BINARY     | \
@@ -347,13 +352,16 @@ typedef struct {
                                     FILE_TYPE_XMODULE_NEWSYM     | \
                                     FILE_TYPE_MANPAGE            | \
                                     FILE_TYPE_OPENGL_HEADER      | \
+                                    FILE_TYPE_CUDA_HEADER        | \
                                     FILE_TYPE_TLS_LIB            | \
                                     FILE_TYPE_TLS_SYMLINK        | \
                                     FILE_TYPE_DOT_DESKTOP        | \
                                     FILE_TYPE_DOCUMENTATION)
 
 #define FILE_TYPE_HAVE_ARCH        (FILE_TYPE_OPENGL_LIB         | \
+                                    FILE_TYPE_CUDA_LIB           | \
                                     FILE_TYPE_OPENGL_SYMLINK     | \
+                                    FILE_TYPE_CUDA_SYMLINK       | \
                                     FILE_TYPE_LIBGL_LA           | \
                                     FILE_TYPE_TLS_LIB            | \
                                     FILE_TYPE_TLS_SYMLINK)
@@ -362,6 +370,7 @@ typedef struct {
                                     FILE_TYPE_TLS_SYMLINK)
 
 #define FILE_TYPE_SYMLINK          (FILE_TYPE_OPENGL_SYMLINK     | \
+                                    FILE_TYPE_CUDA_SYMLINK       | \
                                     FILE_TYPE_XLIB_SYMLINK       | \
                                     FILE_TYPE_TLS_SYMLINK        | \
                                     FILE_TYPE_XMODULE_SYMLINK    | \
@@ -376,6 +385,7 @@ typedef struct {
                                     FILE_TYPE_TLS_LIB)
 
 #define FILE_TYPE_SHARED_LIB       (FILE_TYPE_OPENGL_LIB         | \
+                                    FILE_TYPE_CUDA_LIB           | \
                                     FILE_TYPE_XLIB_SHARED_LIB    | \
                                     FILE_TYPE_TLS_LIB            | \
                                     FILE_TYPE_XMODULE_SHARED_LIB | \
@@ -405,6 +415,7 @@ typedef struct {
  * command line.
  */
 #define DEFAULT_OPENGL_PREFIX           "/usr"
+#define DEFAULT_CUDA_PREFEIX            "/usr"
 #define DEFAULT_X_PREFIX                "/usr/X11R6"
 #define DEFAULT_UTILITY_PREFIX          "/usr"
 #define DEFAULT_DOCUMENTATION_PREFIX    "/usr"

@@ -654,8 +654,12 @@ static Package *parse_manifest (Options *op)
                 p->entries[n].flags |= FILE_TYPE_KERNEL_MODULE_CMD;
             else if (strcmp(flag, "OPENGL_HEADER") == 0)
                 p->entries[n].flags |= FILE_TYPE_OPENGL_HEADER;
+            else if (strcmp(flag, "CUDA_HEADER") == 0)
+                p->entries[n].flags |= FILE_TYPE_CUDA_HEADER;
             else if (strcmp(flag, "OPENGL_LIB") == 0)
                 p->entries[n].flags |= FILE_TYPE_OPENGL_LIB;
+            else if (strcmp(flag, "CUDA_LIB") == 0)
+                p->entries[n].flags |= FILE_TYPE_CUDA_LIB;
             else if (strcmp(flag, "LIBGL_LA") == 0)
                 p->entries[n].flags |= FILE_TYPE_LIBGL_LA;
             else if (strcmp(flag, "XLIB_STATIC_LIB") == 0)
@@ -672,6 +676,8 @@ static Package *parse_manifest (Options *op)
                 p->entries[n].flags |= FILE_TYPE_MANPAGE;
             else if (strcmp(flag, "OPENGL_SYMLINK") == 0)
                 p->entries[n].flags |= FILE_TYPE_OPENGL_SYMLINK;
+            else if (strcmp(flag, "CUDA_SYMLINK") == 0)
+                p->entries[n].flags |= FILE_TYPE_CUDA_SYMLINK;
             else if (strcmp(flag, "XLIB_SYMLINK") == 0)
                 p->entries[n].flags |= FILE_TYPE_XLIB_SYMLINK;
             else if (strcmp(flag, "TLS_SYMLINK") == 0)

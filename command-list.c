@@ -214,6 +214,16 @@ CommandList *build_command_list(Options *op, Package *p)
     /* Add all the installable files to the list */
     
     for (i = 0; i < p->num_entries; i++) {
+        if (op->selinux_enabled &&
+            (op->utils[EXECSTACK] != NULL) &&
+            ((p->entries[i].flags & FILE_TYPE_SHARED_LIB) ||
+             (p->entries[i].flags & FILE_TYPE_XMODULE_SHARED_LIB))) {
+            tmp = nvstrcat(op->utils[EXECSTACK], " -c ",
+                           p->entries[i].file, NULL);
+            add_command(c, RUN_CMD, tmp);
+            nvfree(tmp);
+        }
+
         if (p->entries[i].flags & installable_files) {
             add_command(c, INSTALL_CMD,
                         p->entries[i].file,
@@ -231,20 +241,14 @@ CommandList *build_command_list(Options *op, Package *p)
             add_command(c, DELETE_CMD,
                         p->entries[i].file);
         }
-        
-        if (op->selinux_enabled && 
+
+        if (op->selinux_enabled &&
             ((p->entries[i].flags & FILE_TYPE_SHARED_LIB) ||
              (p->entries[i].flags & FILE_TYPE_XMODULE_SHARED_LIB))) {
             tmp = nvstrcat(op->utils[CHCON], " -t ", op->selinux_chcon_type,
                            " ", p->entries[i].dst, NULL);
             add_command(c, RUN_CMD, tmp);
             nvfree(tmp);
-            if (op->utils[EXECSTACK] != NULL) {
-                tmp = nvstrcat(op->utils[EXECSTACK], " -c ", p->entries[i].dst,
-                               NULL);
-                add_command(c, RUN_CMD, tmp);
-                nvfree(tmp);
-            }
         }
     }
 
@@ -521,6 +525,7 @@ static ConflictingFileInfo __xfree86_libs[] = {
     { "libXvMCNVIDIA",  13 /* strlen("libXvMCNVIDIA") */ },
     { "libnvidia-cfg.", 14 /* strlen("libnvidia-cfg.") */ },
     { "nvidia_drv.",    11 /* strlen("nvidia_drv.") */   },
+    { "libcuda.",       8  /* strlen("libcuda.") */      },
     { NULL, 0 }
 };
 
@@ -564,6 +569,7 @@ static ConflictingFileInfo __opengl_libs[] = {
     { "libnvidia-tls.", 14 /* strlen("libnvidia-tls.") */ },
     { "libGLwrapper.",  13 /* strlen("libGLwrapper.") */  },
     { "libnvidia-cfg.", 14 /* strlen("libnvidia-cfg.") */ },
+    { "libcuda.",       8  /* strlen("libcuda.") */       },
     { NULL, 0 }
 };
 
