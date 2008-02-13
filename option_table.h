@@ -49,7 +49,8 @@ enum {
     X_MODULE_PATH_OPTION,
     DOCUMENTATION_PREFIX_OPTION,
     X_LIBRARY_PATH_OPTION,
-    NO_KERNEL_MODULE_OPTION
+    NO_KERNEL_MODULE_OPTION,
+    NO_X_CHECK_OPTION
 };
 
 static const NVOption __options[] = {
@@ -116,7 +117,7 @@ static const NVOption __options[] = {
     { "x-prefix", X_PREFIX_OPTION, NVOPT_HAS_ARGUMENT,
       "The prefix under which the X components of the "
       "NVIDIA driver will be installed; the default is '" DEFAULT_X_PREFIX
-      "' unless nvidia-installer detects that Xorg >= 7.0 is installed, "
+      "' unless nvidia-installer detects that X.Org >= 7.0 is installed, "
       "in which case the default is '" XORG7_DEFAULT_X_PREFIX "'.  Only "
       "under rare circumstances should this option be used." },
 
@@ -129,7 +130,7 @@ static const NVOption __options[] = {
       "returns a directory that exists, then that is the default; otherwise, "
       "this value defaults to the X library path (see the '--x-library-path' "
       "option) plus '" DEFAULT_X_MODULEDIR "' or '" XORG7_DEFAULT_X_MODULEDIR
-      "' if nvidia-installer detects that Xorg >= 7.0 is installed." },
+      "' if nvidia-installer detects that X.Org >= 7.0 is installed." },
 
     { "x-library-path", X_LIBRARY_PATH_OPTION, NVOPT_HAS_ARGUMENT,
       "The path under which the NVIDIA X libraries will be installed.  "
@@ -364,6 +365,11 @@ static const NVOption __options[] = {
       "useful in some DEBUG environments.  If you use this option, you "
       "must be careful to ensure that a NVIDIA kernel module matching "
       "this driver version is installed seperately." },
+
+    { "no-x-check", NO_X_CHECK_OPTION, 0,
+      "Do not abort the installation if nvidia-installer detects that "
+      "an X server is running.  Only under very rare circumstances should "
+      "this option be used." },
 
     { "precompiled-kernel-interfaces-path",
       PRECOMPILED_KERNEL_INTERFACES_PATH_OPTION, NVOPT_HAS_ARGUMENT,

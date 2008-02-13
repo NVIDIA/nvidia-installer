@@ -421,6 +421,9 @@ Options *parse_commandline(int argc, char *argv[])
             op->no_kernel_module = TRUE;
             op->kernel_module_only = FALSE; /* conflicts */
             break;
+        case NO_X_CHECK_OPTION:
+            op->no_x_check = TRUE;
+            break;
 
         default:
             fmterr("");

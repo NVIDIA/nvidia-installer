@@ -1985,15 +1985,17 @@ done:
  * non-NVIDIA driver) can cause stability problems, so check that
  * there is no X server running.  To do this, scan for any
  * /tmp/.X[n]-lock files, where [n] is the number of the X Display
- * (we'll just check for 0-7).  If any X server is running, print an
- * error message and return FALSE.  If no X server is running, return
- * TRUE.
+ * (we'll just check for 0-7). Get the pid contained in this X lock file,
+ * this is the pid of the running X server. If any X server is running, 
+ * print an error message and return FALSE.  If no X server is running, 
+ * return TRUE.
  */
 
 int check_for_running_x(Options *op)
 {
-    char path[14];
-    int i;
+    char path[14], *buf;
+    char procpath[17]; /* contains /proc/%d, accounts for 32-bit values of pid */
+    int i, pid;
 
     /*
      * If we are installing for a non-running kernel *and* we are only
@@ -2008,15 +2010,24 @@ int check_for_running_x(Options *op)
     
     for (i = 0; i < 8; i++) {
         snprintf(path, 14, "/tmp/.X%1d-lock", i);
-        if (access(path, R_OK) == 0) {
-            ui_log(op, "The file '%s' exists... an X server appears to be "
-                   "running", path);
-            ui_error(op, "You appear to be running an X server; please exit "
-                     "X before installing.  For further details, please see "
-                     "the section INSTALLING THE NVIDIA DRIVER in the README "
-                     "available on the Linux driver download page at "
-                     "www.nvidia.com.");
-            return FALSE;
+        if (read_text_file(path, &buf) == TRUE) {
+            sscanf(buf, "%d", &pid);
+            nvfree(buf);
+            snprintf(procpath, 17, "/proc/%d", pid);
+            if (access(procpath, F_OK) == 0) {
+                ui_log(op, "The file '%s' exists and appears to contain the "
+                           "process ID '%d' of a runnning X server.", path, pid);
+                if (op->no_x_check) {
+                    ui_log(op, "Continuing per the '--no-x-check' option.");
+                } else {
+                    ui_error(op, "You appear to be running an X server; please "
+                                 "exit X before installing.  For further details, "
+                                 "please see the section INSTALLING THE NVIDIA "
+                                 "DRIVER in the README available on the Linux driver "
+                                 "download page at www.nvidia.com.");
+                    return FALSE;
+                }
+            }
         }
     }
     

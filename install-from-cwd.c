@@ -106,14 +106,14 @@ int install_from_cwd(Options *op)
 
     check_for_nvidia_graphics_devices(op, p);
 
-    /* make sure the kernel module is unloaded */
-    
-    if (!check_for_unloaded_kernel_module(op, p)) goto failed;
-    
     /* check that we are not running any X server */
 
     if (!check_for_running_x(op)) goto failed;
 
+    /* make sure the kernel module is unloaded */
+    
+    if (!check_for_unloaded_kernel_module(op, p)) goto failed;
+    
     /* ask the user to accept the license */
     
     if (!get_license_acceptance(op)) return FALSE;
@@ -651,8 +651,6 @@ static Package *parse_manifest (Options *op)
                 p->entries[n].flags |= FILE_TYPE_UTILITY_BINARY;
             else if (strcmp(flag, "DOT_DESKTOP") == 0)
                 p->entries[n].flags |= FILE_TYPE_DOT_DESKTOP;
-            else if (strcmp(flag, "XMODULE_STATIC_LIB") == 0)
-                p->entries[n].flags |= FILE_TYPE_XMODULE_STATIC_LIB;
             else if (strcmp(flag, "XMODULE_SHARED_LIB") == 0)
                 p->entries[n].flags |= FILE_TYPE_XMODULE_SHARED_LIB;
             else if (strcmp(flag, "XMODULE_SYMLINK") == 0)

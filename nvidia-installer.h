@@ -134,6 +134,7 @@ typedef struct __options {
     int selinux_option;
     int selinux_enabled;
     int sigwinch_workaround;
+    int no_x_check;
 
     char *opengl_prefix;
     char *opengl_libdir;
@@ -298,10 +299,9 @@ typedef struct {
 #define FILE_TYPE_UTILITY_LIB        0x00008000
 #define FILE_TYPE_DOT_DESKTOP        0x00010000
 #define FILE_TYPE_UTILITY_SYMLINK    0x00020000
-#define FILE_TYPE_XMODULE_STATIC_LIB 0x00040000
-#define FILE_TYPE_XMODULE_SHARED_LIB 0x00080000
-#define FILE_TYPE_XMODULE_SYMLINK    0x00100000
-#define FILE_TYPE_MANPAGE            0x00200000
+#define FILE_TYPE_XMODULE_SHARED_LIB 0x00040000
+#define FILE_TYPE_XMODULE_SYMLINK    0x00080000
+#define FILE_TYPE_MANPAGE            0x00100000
 
 /* file class: this is used to distinguish OpenGL libraries */
 
@@ -315,8 +315,7 @@ typedef struct {
 #define FILE_TYPE_XLIB_LIB         (FILE_TYPE_XLIB_STATIC_LIB | \
                                     FILE_TYPE_XLIB_SHARED_LIB)
 
-#define FILE_TYPE_XMODULE_LIB      (FILE_TYPE_XMODULE_STATIC_LIB | \
-                                    FILE_TYPE_XMODULE_SHARED_LIB)
+#define FILE_TYPE_XMODULE_LIB      (FILE_TYPE_XMODULE_SHARED_LIB)
 
 #define FILE_TYPE_INSTALLABLE_FILE (FILE_TYPE_OPENGL_LIB         | \
                                     FILE_TYPE_XLIB_LIB           | \

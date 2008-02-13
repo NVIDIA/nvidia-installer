@@ -522,7 +522,6 @@ int set_destinations(Options *op, Package *p)
             break;
 
         case FILE_TYPE_XMODULE_SHARED_LIB:
-        case FILE_TYPE_XMODULE_STATIC_LIB:
         case FILE_TYPE_XMODULE_SYMLINK:
             prefix = op->x_module_path;
             dir = "";
@@ -1879,7 +1878,7 @@ int set_security_context(Options *op, const char *filename)
 
 /*
  * get_default_prefixes_and_paths() - assign the default prefixes and
- * paths depending on the architecture, distribution and the Xorg
+ * paths depending on the architecture, distribution and the X.Org
  * version installed on the system.
  */
 
@@ -1999,11 +1998,11 @@ static int get_x_library_path(Options *op)
 
     if (!op->utils[PKG_CONFIG]) {
         if (op->modular_xorg) {
-            ui_warn(op, "You appear to be using a modular Xorg "
+            ui_warn(op, "You appear to be using a modular X.Org "
                     "release, but nvidia-installer could not find the "
                     "`pkg-config` utility required to determine the "
                     "correct X library installation path.  Please "
-                    "install the `pkg-config` utility and the Xorg "
+                    "install the `pkg-config` utility and the X.Org "
                     "SDK/development package for your distribution.");
         }
     } else {
@@ -2017,21 +2016,21 @@ static int get_x_library_path(Options *op)
 
         if ((ret != 0) || (dir == NULL)) {
             if (op->modular_xorg) {
-                ui_warn(op, "You appear to be using a modular Xorg "
+                ui_warn(op, "You appear to be using a modular X.Org "
                         "release, but nvidia-installer was unable to "
                         "determine the correct X library "
                         "installation path with the `pkg-config` "
-                        "utility.  Please install the Xorg SDK/"
+                        "utility.  Please install the X.Org SDK/"
                         "development package for your distribution.");
             }
         } else {
             if (!directory_exists(op, dir) &&
                 op->modular_xorg) {
-                ui_warn(op, "You appear to be using a modular Xorg "
+                ui_warn(op, "You appear to be using a modular X.Org "
                         "release, but the X library installation "
                         "path reported by `pkg-config "
                         "--variable=libdir xorg-server` does "
-                        "not exist.  Please check your Xorg installation.");
+                        "not exist.  Please check your X.Org installation.");
             } else {
                 op->x_library_path = dir;
                 return TRUE;
@@ -2081,11 +2080,11 @@ static int get_x_module_path(Options *op)
 
     if (!op->utils[PKG_CONFIG]) {
         if (op->modular_xorg) {
-            ui_warn(op, "You appear to be using a modular Xorg "
+            ui_warn(op, "You appear to be using a modular X.Org "
                     "release, but nvidia-installer could not find the "
                     "`pkg-config` utility required to determine the "
                     "correct X module installation path.  Please "
-                    "install the `pkg-config` utility and the Xorg "
+                    "install the `pkg-config` utility and the X.Org "
                     "SDK/development package for your distribution.");
         }
     } else {
@@ -2100,21 +2099,21 @@ static int get_x_module_path(Options *op)
 
         if ((ret != 0) || (dir == NULL)) {
             if (op->modular_xorg) {
-                ui_warn(op, "You appear to be using a modular Xorg "
+                ui_warn(op, "You appear to be using a modular X.Org "
                         "release, but nvidia-installer was unable to "
                         "determine the correct X module "
                         "installation path with the `pkg-config` "
-                        "utility.  Please install the Xorg SDK/"
+                        "utility.  Please install the X.Org SDK/"
                         "development package for your distribution.");
             }
         } else {
             if (!directory_exists(op, dir) &&
                 op->modular_xorg) {
-                ui_warn(op, "You appear to be using a modular Xorg "
+                ui_warn(op, "You appear to be using a modular X.Org "
                         "release, but the X module installation "
                         "path reported by `pkg-config "
                         "--variable=moduledir xorg-server` does "
-                        "not exist.  Please check your Xorg installation.");
+                        "not exist.  Please check your X.Org installation.");
             } else {
                 op->x_module_path = dir;
                 return TRUE;
