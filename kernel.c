@@ -1451,9 +1451,11 @@ int check_cc_version(Options *op, Package *p)
      * If we're building/installing for a different kernel, then we
      * can't do the gcc version check (we don't have a /proc/version
      * string from which to get the kernel's gcc version).
+     * If the user passes the option no-cc-version-check, then we also
+     * shouldn't perform the cc version check.
      */
 
-    if (op->kernel_name) {
+    if (op->ignore_cc_version_check) {
         setenv("IGNORE_CC_MISMATCH", "1", 1);
         return TRUE;
     }

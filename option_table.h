@@ -51,7 +51,8 @@ enum {
     DOCUMENTATION_PREFIX_OPTION,
     X_LIBRARY_PATH_OPTION,
     NO_KERNEL_MODULE_OPTION,
-    NO_X_CHECK_OPTION
+    NO_X_CHECK_OPTION,
+    NO_CC_VERSION_CHECK_OPTION
 };
 
 static const NVOption __options[] = {
@@ -416,6 +417,17 @@ static const NVOption __options[] = {
       "forks to execute commands, e.g. to build the kernel module, and "
       "restores the SIGWINCH signal handler after the child process "
       "has terminated.  This option disables this behavior." },
+
+    { "no-cc-version-check", NO_CC_VERSION_CHECK_OPTION, 0,
+      "The NVIDIA kernel module should be compiled with the same compiler that "
+      "was used to compile the currently running kernel. The layout of some "
+      "Linux kernel data structures may be dependent on the version of gcc "
+      "used to compile it. The Linux 2.6 kernel modules are tagged with "
+      "information about the compiler and the Linux kernel's module loader "
+      "performs a strict version match check. nvidia-installer checks for "
+      "mismatches prior to building the NVIDIA kernel module and aborts the "
+      "installation in case of failures. Use this option to override this "
+      "check." },
 
     /* Orphaned options: These options were in the long_options table in
      * nvidia-installer.c but not in the help. */

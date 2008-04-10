@@ -149,6 +149,8 @@ void log_init(Options *op)
                SELINUXSTR(op->selinux_option));
     log_printf(op, TRUE, NULL, "  no X server check       : %s",
                BOOLSTR(op->no_x_check));
+    log_printf(op, TRUE, NULL, "  no cc version check     : %s",
+               BOOLSTR(op->ignore_cc_version_check));
     log_printf(op, TRUE, NULL, "  force tls               : %s",
                TLSSTR(op->which_tls));
 #if defined(NV_X86_64)
