@@ -495,6 +495,9 @@ int main(int argc, char *argv[])
 {
     Options *op;
     int ret = FALSE;
+
+    /* Ensure created files get the permissions we expect */
+    umask(022);
     
     /* parse the commandline options */
     
