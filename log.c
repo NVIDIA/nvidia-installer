@@ -97,7 +97,8 @@ void log_init(Options *op)
 
     now = time(NULL);
     log_printf(op, TRUE, NULL, "creation time: %s", ctime(&now));
-    
+    log_printf(op, TRUE, NULL, "installer version: %s",
+               NVIDIA_INSTALLER_VERSION);
     log_printf(op, TRUE, NULL, "");
     
     log_printf(op, TRUE, NULL, "option status:");
