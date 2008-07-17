@@ -141,6 +141,7 @@ static char *create_backwards_compatible_version_string(const char *str);
 
 int init_backup(Options *op, Package *p)
 {
+    mode_t orig_mode;
     char *version;
     FILE *log;
     
@@ -158,9 +159,22 @@ int init_backup(Options *op, Package *p)
         return FALSE;
     }
 
+    /*
+     * fopen below creates the file with mode 0666 & ~umask.
+     * In order to ensure the result of that calculation is BACKUP_LOG_PERMS,
+     * we temporarily set umask to ~BACKUP_LOG_PERMS to leave just the bits
+     * we want.
+     *
+     * This assumes that BACKUP_LOG does not already exist (if it does, the
+     * file permissions will not be modified.) This is assured by the
+     * directory removal and re-creation code above.
+     */
+    orig_mode = umask(~BACKUP_LOG_PERMS);
+ 
     /* create the log file */
     
     log = fopen(BACKUP_LOG, "a");
+    umask(orig_mode);
     if (!log) {
         ui_error(op, "Unable to create backup log file '%s' (%s).",
                  BACKUP_LOG, strerror(errno));
@@ -181,14 +195,6 @@ int init_backup(Options *op, Package *p)
     if (fclose(log) != 0) {
         ui_error(op, "Error while closing backup log file '%s' (%s).",
                  BACKUP_LOG, strerror(errno));
-        return FALSE;
-    }
-
-    /* set the log file permissions */
-    
-    if (chmod(BACKUP_LOG, BACKUP_LOG_PERMS) == -1) {
-        ui_error(op, "Unable to set file permissions %04o for %s (%s).",
-                 BACKUP_LOG_PERMS, BACKUP_LOG, strerror(errno));
         return FALSE;
     }
 
