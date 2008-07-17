@@ -109,6 +109,8 @@ int install_from_cwd(Options *op)
     
     if (!get_license_acceptance(op)) return FALSE;
     
+    ui_log(op, "Installing NVIDIA driver version %s.", p->version);
+
     /*
      * determine the current NVIDIA version (if any); ask the user if
      * they really want to overwrite the existing installation

@@ -185,6 +185,8 @@ typedef struct __options {
 
     void *ui_priv; /* for use by the ui's */
 
+    int ignore_cc_version_check;
+
 } Options;
 
 

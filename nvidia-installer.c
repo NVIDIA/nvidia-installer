@@ -288,6 +288,7 @@ Options *parse_commandline(int argc, char *argv[])
         case 'k':
             op->kernel_name = optarg;
             op->no_precompiled_interface = TRUE;
+            op->ignore_cc_version_check = TRUE;
             break;
             
         case XFREE86_PREFIX_OPTION:
@@ -424,6 +425,9 @@ Options *parse_commandline(int argc, char *argv[])
         case NO_X_CHECK_OPTION:
             op->no_x_check = TRUE;
             break;
+        case NO_CC_VERSION_CHECK_OPTION:
+            op->ignore_cc_version_check = TRUE;
+            break;
 
         default:
             fmterr("");
@@ -489,6 +493,9 @@ int main(int argc, char *argv[])
 {
     Options *op;
     int ret = FALSE;
+
+    /* Ensure created files get the permissions we expect */
+    umask(022);
     
     /* parse the commandline options */
     
