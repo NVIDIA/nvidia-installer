@@ -284,6 +284,15 @@ static int get_latest_driver_version_and_filename(Options *op,
     url = nvstrcat(op->ftp_site, "/XFree86/", INSTALLER_OS, "-",
                    INSTALLER_ARCH, "/latest.txt", NULL);
     
+    /* check for no_network option */
+
+    if (op->no_network) {
+        ui_error(op, "Unable to determine most recent NVIDIA %s-%s driver "
+                   "version: cannot access '%s', because the '--no-network' "
+                   "commandline option was specified.", INSTALLER_OS, INSTALLER_ARCH, url);
+        goto done;
+    }
+    
     if ((fd = mkstemp(tmpfile)) == -1) {
         ui_error(op, "Unable to create temporary file (%s)", strerror(errno));
         goto done;
