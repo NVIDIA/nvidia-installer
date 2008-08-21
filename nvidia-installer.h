@@ -46,6 +46,8 @@ typedef enum {
     DMESG,
     TAIL,
     CUT,
+    TR,
+    SED,
     MAX_SYSTEM_UTILS
 } SystemUtils;
 

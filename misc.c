@@ -700,7 +700,9 @@ int find_system_utils(Options *op)
         { "grep",     "grep" },
         { "dmesg",    "util-linux" },
         { "tail",     "coreutils" },
-        { "cut",      "coreutils" }
+        { "cut",      "coreutils" },
+        { "tr",       "coreutils" },
+        { "sed",      "sed" }
     };
     
     /* keep in sync with the SystemOptionalUtils enum type */
