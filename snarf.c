@@ -68,6 +68,12 @@ int snarf(Options *op, const char *url, int out_fd, uint32 flags)
     UrlResource *rsrc = NULL;
     int ret;
     
+    if (op->no_network) {
+        ui_error(op, "Unable to access file '%s', because the '--no-network' "
+                 "commandline option was specified.", url);
+        return FALSE;
+    }
+
     rsrc = url_resource_new();
     rsrc->url = url_new();
     rsrc->op = op;
