@@ -65,7 +65,7 @@ static void find_conflicting_kernel_modules(Options *op,
                                             Package *p,
                                             FileList *l);
 
-static void find_existing_files(Package *p, FileList *l, unsigned int);
+static void find_existing_files(Package *p, FileList *l, uint64_t);
 
 static void condense_file_list(Package *p, FileList *l);
 
@@ -95,7 +95,7 @@ CommandList *build_command_list(Options *op, Package *p)
     FileList *l;
     CommandList *c;
     int i, cmd;
-    unsigned int installable_files;
+    uint64_t installable_files;
     char *tmp;
 
     installable_files = get_installable_file_mask(op);
@@ -216,8 +216,7 @@ CommandList *build_command_list(Options *op, Package *p)
     for (i = 0; i < p->num_entries; i++) {
         if (op->selinux_enabled &&
             (op->utils[EXECSTACK] != NULL) &&
-            ((p->entries[i].flags & FILE_TYPE_SHARED_LIB) ||
-             (p->entries[i].flags & FILE_TYPE_XMODULE_SHARED_LIB))) {
+            (p->entries[i].flags & FILE_TYPE_SHARED_LIB)) {
             tmp = nvstrcat(op->utils[EXECSTACK], " -c ",
                            p->entries[i].file, NULL);
             add_command(c, RUN_CMD, tmp);
@@ -243,8 +242,7 @@ CommandList *build_command_list(Options *op, Package *p)
         }
 
         if (op->selinux_enabled &&
-            ((p->entries[i].flags & FILE_TYPE_SHARED_LIB) ||
-             (p->entries[i].flags & FILE_TYPE_XMODULE_SHARED_LIB))) {
+            (p->entries[i].flags & FILE_TYPE_SHARED_LIB)) {
             tmp = nvstrcat(op->utils[CHCON], " -t ", op->selinux_chcon_type,
                            " ", p->entries[i].dst, NULL);
             add_command(c, RUN_CMD, tmp);
@@ -642,7 +640,7 @@ static void find_conflicting_kernel_modules(Options *op,
  * FileList.
  */
 
-static void find_existing_files(Package *p, FileList *l, unsigned int flag)
+static void find_existing_files(Package *p, FileList *l, uint64_t flag)
 {
     int i;
     struct stat stat_buf;

@@ -109,7 +109,7 @@ int do_install(Options *op, Package *p, CommandList *c);
 void should_install_opengl_headers(Options *op, Package *p);
 void should_install_compat32_files(Options *op, Package *p);
 void check_installed_files_from_package(Options *op, Package *p);
-unsigned int get_installable_file_mask(Options *op);
+uint64_t get_installable_file_mask(Options *op);
 int tls_test(Options *op, int compat_32_libs);
 int check_runtime_configuration(Options *op, Package *p);
 void collapse_multiple_slashes(char *s);

@@ -503,6 +503,8 @@ int set_destinations(Options *op, Package *p)
             
         case FILE_TYPE_OPENGL_LIB:
         case FILE_TYPE_OPENGL_SYMLINK:
+        case FILE_TYPE_VDPAU_LIB:
+        case FILE_TYPE_VDPAU_SYMLINK:
             if (p->entries[i].flags & FILE_CLASS_COMPAT32) {
                 prefix = op->compat32_prefix;
                 dir = op->compat32_libdir;
@@ -553,7 +555,7 @@ int set_destinations(Options *op, Package *p)
             break;
 
         case FILE_TYPE_UTILITY_LIB:
-        case FILE_TYPE_UTILITY_SYMLINK:
+        case FILE_TYPE_UTILITY_LIB_SYMLINK:
             prefix = op->utility_prefix;
             dir = op->utility_libdir;
             path = "";
@@ -579,6 +581,7 @@ int set_destinations(Options *op, Package *p)
 
         case FILE_TYPE_OPENGL_HEADER:
         case FILE_TYPE_CUDA_HEADER:
+        case FILE_TYPE_VDPAU_HEADER:
             prefix = op->opengl_prefix;
             dir = op->opengl_incdir;
             path = p->entries[i].path;
@@ -603,6 +606,7 @@ int set_destinations(Options *op, Package *p)
             break;
 
         case FILE_TYPE_UTILITY_BINARY:
+        case FILE_TYPE_UTILITY_BIN_SYMLINK:
             prefix = op->utility_prefix;
             dir = op->utility_bindir;
             path = "";
@@ -922,10 +926,9 @@ int add_kernel_module_to_package(Options *op, Package *p)
 void remove_non_kernel_module_files_from_package(Options *op, Package *p)
 {
     int i;
-    unsigned int flags;
 
     for (i = 0; i < p->num_entries; i++) {
-        flags = p->entries[i].flags & FILE_TYPE_MASK;
+        uint64_t flags = p->entries[i].flags & FILE_TYPE_MASK;
         if ((flags != FILE_TYPE_KERNEL_MODULE) &&
             (flags != FILE_TYPE_KERNEL_MODULE_CMD))
             p->entries[i].flags &= ~FILE_TYPE_MASK;

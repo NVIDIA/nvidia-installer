@@ -684,12 +684,14 @@ static Package *parse_manifest (Options *op)
                 p->entries[n].flags |= FILE_TYPE_XLIB_SYMLINK;
             else if (strcmp(flag, "TLS_SYMLINK") == 0)
                 p->entries[n].flags |= FILE_TYPE_TLS_SYMLINK;
-            else if (strcmp(flag, "UTILITY_SYMLINK") == 0)
-                p->entries[n].flags |= FILE_TYPE_UTILITY_SYMLINK;
+            else if (strcmp(flag, "UTILITY_LIB_SYMLINK") == 0)
+                p->entries[n].flags |= FILE_TYPE_UTILITY_LIB_SYMLINK;
             else if (strcmp(flag, "INSTALLER_BINARY") == 0)
                 p->entries[n].flags |= FILE_TYPE_INSTALLER_BINARY;
             else if (strcmp(flag, "UTILITY_BINARY") == 0)
                 p->entries[n].flags |= FILE_TYPE_UTILITY_BINARY;
+            else if (strcmp(flag, "UTILITY_BIN_SYMLINK") == 0)
+                p->entries[n].flags |= FILE_TYPE_UTILITY_BIN_SYMLINK;
             else if (strcmp(flag, "DOT_DESKTOP") == 0)
                 p->entries[n].flags |= FILE_TYPE_DOT_DESKTOP;
             else if (strcmp(flag, "XMODULE_SHARED_LIB") == 0)
@@ -698,6 +700,12 @@ static Package *parse_manifest (Options *op)
                 p->entries[n].flags |= FILE_TYPE_XMODULE_SYMLINK;
             else if (strcmp(flag, "XMODULE_NEWSYM") == 0)
                 p->entries[n].flags |= FILE_TYPE_XMODULE_NEWSYM;
+            else if (strcmp(flag, "VDPAU_HEADER") == 0)
+                p->entries[n].flags |= FILE_TYPE_VDPAU_HEADER;
+            else if (strcmp(flag, "VDPAU_LIB") == 0)
+                p->entries[n].flags |= FILE_TYPE_VDPAU_LIB;
+            else if (strcmp(flag, "VDPAU_SYMLINK") == 0)
+                p->entries[n].flags |= FILE_TYPE_VDPAU_SYMLINK;
             else {
                 nvfree(flag);
                 goto invalid_manifest_file;
@@ -829,7 +837,7 @@ void add_package_entry(Package *p,
                        char *name,
                        char *target,
                        char *dst,
-                       unsigned int flags,
+                       uint64_t flags,
                        mode_t mode)
 {
     int n;

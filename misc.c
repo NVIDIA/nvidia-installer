@@ -1356,8 +1356,8 @@ void check_installed_files_from_package(Options *op, Package *p)
 {
     int i, ret = TRUE;
     float percent;
-    unsigned int installable_files;
-    
+    uint64_t installable_files;
+
     ui_status_begin(op, "Running post-install sanity check:", "Checking");
 
     installable_files = get_installable_file_mask(op);
@@ -1499,9 +1499,9 @@ static int check_file(Options *op, const char *filename,
  * should be considered installable.
  */
 
-unsigned int get_installable_file_mask(Options *op)
+uint64_t get_installable_file_mask(Options *op)
 {
-    unsigned int installable_files = FILE_TYPE_INSTALLABLE_FILE;
+    uint64_t installable_files = FILE_TYPE_INSTALLABLE_FILE;
     if (!op->opengl_headers) installable_files &= ~FILE_TYPE_OPENGL_HEADER;
 
     return installable_files;

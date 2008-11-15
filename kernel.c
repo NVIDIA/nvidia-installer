@@ -738,7 +738,9 @@ int test_kernel_module(Options *op, Package *p)
                  "from the one used to build the target kernel, or "
                  "if a driver such as rivafb/nvidiafb is present and "
                  "prevents the NVIDIA kernel module from obtaining "
-                 "ownership of the NVIDIA graphics device(s).\n\n"
+                 "ownership of the NVIDIA graphics device(s), or "
+                 "NVIDIA GPU installed in this system is not supported "  
+                 "by this NVIDIA Linux graphics driver release.\n\n" 
                  "Please see the log entries 'Kernel module load "
                  "error' and 'Kernel messages' at the end of the file "
                  "'%s' for more information.",
