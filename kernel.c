@@ -670,8 +670,8 @@ void check_for_warning_messages(Options *op)
 int test_kernel_module(Options *op, Package *p)
 {
     char *cmd = NULL, *data;
-    int old_loglevel, new_loglevel = 0;
-    int ret, name[] = { CTL_KERN, KERN_PRINTK };
+    int old_loglevel = 0, new_loglevel = 0;
+    int fd, ret, name[] = { CTL_KERN, KERN_PRINTK };
     size_t len = sizeof(int);
 
     /* 
@@ -687,9 +687,17 @@ int test_kernel_module(Options *op, Package *p)
      * Save the original console loglevel to allow restoring it once
      * we're done.
      */
-    if (!sysctl(name, 2, &old_loglevel, &len, NULL, 0)) {
-        new_loglevel = 2; /* KERN_CRIT */
-        sysctl(name, 2, NULL, 0, &new_loglevel, len);
+    fd = open("/proc/sys/kernel/printk", O_RDWR);
+    if (fd >= 0) {
+        if (read(fd, &old_loglevel, 1) == 1) {
+            new_loglevel = '2'; /* KERN_CRIT */
+            write(fd, &new_loglevel, 1);
+        }
+    } else {
+        if (!sysctl(name, 2, &old_loglevel, &len, NULL, 0)) {
+            new_loglevel = 2; /* KERN_CRIT */
+            sysctl(name, 2, NULL, 0, &new_loglevel, len);
+        }
     }
 
     /*
@@ -782,9 +790,16 @@ int test_kernel_module(Options *op, Package *p)
 
     nvfree(cmd);
     nvfree(data);
-    
-    if (new_loglevel != 0) sysctl(name, 2, NULL, 0, &old_loglevel, len);
-    
+
+    if (fd >= 0) {
+        if (new_loglevel != 0)
+            write(fd, &old_loglevel, 1);
+        close(fd);
+    } else {
+        if (new_loglevel != 0)
+            sysctl(name, 2, NULL, 0, &old_loglevel, len);
+    }
+
     return ret;
     
 } /* test_kernel_module() */
