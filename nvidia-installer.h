@@ -29,6 +29,7 @@
 #define __NVIDIA_INSTALLER_H__
 
 #include <sys/types.h>
+#include <stdint.h>
 
 
 /*
@@ -92,9 +93,9 @@ typedef enum {
 } Distribution;
 
 
-typedef unsigned int   uint32;
-typedef unsigned short uint16;
-typedef unsigned char  uint8;
+typedef uint32_t uint32;
+typedef uint16_t uint16;
+typedef uint8_t uint8;
 
 
 
@@ -139,6 +140,7 @@ typedef struct __options {
     int sigwinch_workaround;
     int no_x_check;
     int no_nvidia_xconfig_question;
+    int run_distro_scripts;
 
     char *opengl_prefix;
     char *opengl_libdir;
@@ -226,8 +228,8 @@ typedef struct __package_entry {
                      * field is assigned by the set_destinations()
                      * function.
                      */
-    
-    unsigned int flags;
+
+    uint64_t flags;
     mode_t mode;
 
     ino_t inode;
@@ -292,43 +294,44 @@ typedef struct {
 
 /* file types */
 
-#define FILE_TYPE_MASK               0x01ffffff
+#define FILE_TYPE_MASK                          0x00000000ffffffffULL
 
-#define FILE_TYPE_KERNEL_MODULE_SRC  0x00000001
-#define FILE_TYPE_KERNEL_MODULE_CMD  0x00000002
-#define FILE_TYPE_OPENGL_HEADER      0x00000004
-#define FILE_TYPE_OPENGL_LIB         0x00000008
-#define FILE_TYPE_XLIB_STATIC_LIB    0x00000010
-#define FILE_TYPE_XLIB_SHARED_LIB    0x00000020
-#define FILE_TYPE_DOCUMENTATION      0x00000040
-#define FILE_TYPE_OPENGL_SYMLINK     0x00000080
-#define FILE_TYPE_XLIB_SYMLINK       0x00000100
-#define FILE_TYPE_KERNEL_MODULE      0x00000200
-#define FILE_TYPE_INSTALLER_BINARY   0x00000400
-#define FILE_TYPE_UTILITY_BINARY     0x00000800
-#define FILE_TYPE_LIBGL_LA           0x00001000
-#define FILE_TYPE_TLS_LIB            0x00002000
-#define FILE_TYPE_TLS_SYMLINK        0x00004000
-#define FILE_TYPE_UTILITY_LIB        0x00008000
-#define FILE_TYPE_DOT_DESKTOP        0x00010000
-#define FILE_TYPE_UTILITY_SYMLINK    0x00020000
-#define FILE_TYPE_XMODULE_SHARED_LIB 0x00040000
-#define FILE_TYPE_XMODULE_SYMLINK    0x00080000
+#define FILE_TYPE_KERNEL_MODULE_SRC             0x0000000000000001ULL
+#define FILE_TYPE_KERNEL_MODULE_CMD             0x0000000000000002ULL
+#define FILE_TYPE_OPENGL_HEADER                 0x0000000000000004ULL
+#define FILE_TYPE_OPENGL_LIB                    0x0000000000000008ULL
+#define FILE_TYPE_XLIB_STATIC_LIB               0x0000000000000010ULL
+#define FILE_TYPE_XLIB_SHARED_LIB               0x0000000000000020ULL
+#define FILE_TYPE_DOCUMENTATION                 0x0000000000000040ULL
+#define FILE_TYPE_OPENGL_SYMLINK                0x0000000000000080ULL
+#define FILE_TYPE_XLIB_SYMLINK                  0x0000000000000100ULL
+#define FILE_TYPE_KERNEL_MODULE                 0x0000000000000200ULL
+#define FILE_TYPE_INSTALLER_BINARY              0x0000000000000400ULL
+#define FILE_TYPE_UTILITY_BINARY                0x0000000000000800ULL
+#define FILE_TYPE_LIBGL_LA                      0x0000000000001000ULL
+#define FILE_TYPE_TLS_LIB                       0x0000000000002000ULL
+#define FILE_TYPE_TLS_SYMLINK                   0x0000000000004000ULL
+#define FILE_TYPE_UTILITY_LIB                   0x0000000000008000ULL
+#define FILE_TYPE_DOT_DESKTOP                   0x0000000000010000ULL
+#define FILE_TYPE_UTILITY_LIB_SYMLINK           0x0000000000020000ULL
+#define FILE_TYPE_XMODULE_SHARED_LIB            0x0000000000040000ULL
+#define FILE_TYPE_XMODULE_SYMLINK               0x0000000000080000ULL
 /* Create a symlink only if the file doesn't exist */
-#define FILE_TYPE_XMODULE_NEWSYM     0x00100000
-#define FILE_TYPE_MANPAGE            0x00200000
-#define FILE_TYPE_CUDA_HEADER        0x00400000
-#define FILE_TYPE_CUDA_LIB           0x00800000
-#define FILE_TYPE_CUDA_SYMLINK       0x01000000
+#define FILE_TYPE_XMODULE_NEWSYM                0x0000000000100000ULL
+#define FILE_TYPE_MANPAGE                       0x0000000000200000ULL
+#define FILE_TYPE_CUDA_HEADER                   0x0000000000400000ULL
+#define FILE_TYPE_CUDA_LIB                      0x0000000000800000ULL
+#define FILE_TYPE_CUDA_SYMLINK                  0x0000000001000000ULL
+#define FILE_TYPE_UTILITY_BIN_SYMLINK           0x0000000010000000ULL
 
 /* file class: this is used to distinguish OpenGL libraries */
 
-#define FILE_CLASS_MASK              0xfe000000
+#define FILE_CLASS_MASK                         0xf000000000000000ULL
 
-#define FILE_CLASS_NEW_TLS           0x02000000
-#define FILE_CLASS_CLASSIC_TLS       0x04000000
-#define FILE_CLASS_NATIVE            0x08000000
-#define FILE_CLASS_COMPAT32          0x10000000
+#define FILE_CLASS_NEW_TLS                      0x1000000000000000ULL
+#define FILE_CLASS_CLASSIC_TLS                  0x2000000000000000ULL
+#define FILE_CLASS_NATIVE                       0x4000000000000000ULL
+#define FILE_CLASS_COMPAT32                     0x8000000000000000ULL
 
 #define FILE_TYPE_XLIB_LIB         (FILE_TYPE_XLIB_STATIC_LIB | \
                                     FILE_TYPE_XLIB_SHARED_LIB)
@@ -378,7 +381,8 @@ typedef struct {
                                     FILE_TYPE_XLIB_SYMLINK       | \
                                     FILE_TYPE_TLS_SYMLINK        | \
                                     FILE_TYPE_XMODULE_SYMLINK    | \
-                                    FILE_TYPE_UTILITY_SYMLINK)
+                                    FILE_TYPE_UTILITY_LIB_SYMLINK| \
+                                    FILE_TYPE_UTILITY_BIN_SYMLINK)
 
 #define FILE_TYPE_NEWSYM           (FILE_TYPE_XMODULE_NEWSYM)
 
@@ -503,7 +507,7 @@ void add_package_entry(Package *p,
                        char *name,
                        char *target,
                        char *dst,
-                       unsigned int flags,
+                       uint64_t flags,
                        mode_t mode);
 /* XXX */
 

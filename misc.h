@@ -109,7 +109,7 @@ int do_install(Options *op, Package *p, CommandList *c);
 void should_install_opengl_headers(Options *op, Package *p);
 void should_install_compat32_files(Options *op, Package *p);
 void check_installed_files_from_package(Options *op, Package *p);
-unsigned int get_installable_file_mask(Options *op);
+uint64_t get_installable_file_mask(Options *op);
 int tls_test(Options *op, int compat_32_libs);
 int check_runtime_configuration(Options *op, Package *p);
 void collapse_multiple_slashes(char *s);
@@ -119,6 +119,7 @@ int check_for_running_x(Options *op);
 int check_for_modular_xorg(Options *op);
 int check_for_nvidia_graphics_devices(Options *op, Package *p);
 int run_nvidia_xconfig(Options *op);
+int run_distro_hook(Options *op, const char *hook);
 
 TextRows *nv_format_text_rows(const char *prefix, const char *buf,
                               int width, int word_boundary);
