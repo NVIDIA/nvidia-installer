@@ -80,6 +80,7 @@ int install_from_cwd(Options *op)
     CommandList *c;
     const char *msg;
     int ret;
+    int ran_pre_install_hook = FALSE;
 
     static const char edit_your_xf86config[] =
         "Please update your XF86Config or xorg.conf file as "
@@ -126,6 +127,17 @@ int install_from_cwd(Options *op)
      */
 
     if (!check_for_existing_driver(op, p)) goto exit_install;
+
+    /* run the distro preinstall hook */
+
+    if (!run_distro_hook(op, "pre-install")) {
+        if (!ui_yes_no(op, TRUE,
+                       "The distribution-provided pre-install script failed!  "
+                       "Continue installation anyway?")) {
+            goto failed;
+        }
+    }
+    ran_pre_install_hook = TRUE;
 
     /* attempt to build a kernel module for the target kernel */
 
@@ -226,7 +238,11 @@ int install_from_cwd(Options *op)
     /* execute the command list */
 
     if (!do_install(op, p, c)) goto failed;
-  
+
+    /* run the distro postinstall script */
+
+    run_distro_hook(op, "post-install");
+
     /*
      * check that everything is installed properly (post-install
      * sanity check)
@@ -299,7 +315,10 @@ int install_from_cwd(Options *op)
                  "on fixing installation problems in the README available "
                  "on the Linux driver download page at www.nvidia.com.");
     }
-    
+
+    if (ran_pre_install_hook)
+        run_distro_hook(op, "failed-install");
+
     /* fall through into exit_install... */
 
  exit_install:

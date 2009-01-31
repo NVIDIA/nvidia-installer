@@ -250,6 +250,7 @@ Options *parse_commandline(int argc, char *argv[])
     op->selinux_option = SELINUX_DEFAULT;
 
     op->sigwinch_workaround = TRUE;
+    op->run_distro_scripts = TRUE;
 
     while (1) {
         
@@ -431,6 +432,9 @@ Options *parse_commandline(int argc, char *argv[])
             break;
         case NO_CC_VERSION_CHECK_OPTION:
             op->ignore_cc_version_check = TRUE;
+            break;
+        case NO_DISTRO_SCRIPTS_OPTION:
+            op->run_distro_scripts = FALSE;
             break;
 
         default:

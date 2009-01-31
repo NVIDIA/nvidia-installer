@@ -534,7 +534,9 @@ static int do_uninstall(Options *op)
     
     tmpstr = nvstrcat("Uninstalling ", b->description, " (",
                       b->version, "):", NULL);
-   
+
+    run_distro_hook(op, "pre-uninstall");
+
     ui_status_begin(op, tmpstr, "Uninstalling");
 
     free(tmpstr);
@@ -655,6 +657,8 @@ static int do_uninstall(Options *op)
     if (!remove_directory(op, BACKUP_DIRECTORY)) {
         /* XXX what to do if this fails?... nothing */
     }
+
+    run_distro_hook(op, "post-uninstall");
 
     free_backup_info(b);
 

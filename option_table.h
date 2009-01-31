@@ -52,7 +52,8 @@ enum {
     X_LIBRARY_PATH_OPTION,
     NO_KERNEL_MODULE_OPTION,
     NO_X_CHECK_OPTION,
-    NO_CC_VERSION_CHECK_OPTION
+    NO_CC_VERSION_CHECK_OPTION,
+    NO_DISTRO_SCRIPTS_OPTION
 };
 
 static const NVOption __options[] = {
@@ -428,6 +429,11 @@ static const NVOption __options[] = {
       "mismatches prior to building the NVIDIA kernel module and aborts the "
       "installation in case of failures. Use this option to override this "
       "check." },
+
+    { "no-distro-scripts", NO_DISTRO_SCRIPTS_OPTION, 0,
+      "Normally, nvidia-installer will run scripts from /usr/lib/nvidia before "
+      "and after installing or uninstalling the driver.  Use this option to "
+      "disable execution of these scripts." },
 
     /* Orphaned options: These options were in the long_options table in
      * nvidia-installer.c but not in the help. */
