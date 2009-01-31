@@ -1356,8 +1356,8 @@ void check_installed_files_from_package(Options *op, Package *p)
 {
     int i, ret = TRUE;
     float percent;
-    unsigned int installable_files;
-    
+    uint64_t installable_files;
+
     ui_status_begin(op, "Running post-install sanity check:", "Checking");
 
     installable_files = get_installable_file_mask(op);
@@ -1497,9 +1497,9 @@ static int check_file(Options *op, const char *filename,
  * should be considered installable.
  */
 
-unsigned int get_installable_file_mask(Options *op)
+uint64_t get_installable_file_mask(Options *op)
 {
-    unsigned int installable_files = FILE_TYPE_INSTALLABLE_FILE;
+    uint64_t installable_files = FILE_TYPE_INSTALLABLE_FILE;
     if (!op->opengl_headers) installable_files &= ~FILE_TYPE_OPENGL_HEADER;
 
     return installable_files;
@@ -2391,6 +2391,57 @@ int run_nvidia_xconfig(Options *op)
     
 } /* run_nvidia_xconfig() */
 
+
+/*
+ * run_distro_hook() - run a distribution-provided hook script
+ */
+
+int run_distro_hook(Options *op, const char *hook)
+{
+    int ret, status, shouldrun = op->run_distro_scripts;
+    char *cmd = nvstrcat("/usr/lib/nvidia/", hook, NULL);
+
+    if (op->kernel_module_only) {
+        ui_expert(op,
+                  "Not running distribution-provided %s script %s because "
+                  "--kernel-module-only was specified.",
+                  hook, cmd);
+        ret = TRUE;
+        goto done;
+    }
+
+    if (access(cmd, X_OK) < 0) {
+        /* it's okay if the script doesn't exist or isn't executable */
+        ui_expert(op, "No distribution %s script found.", hook);
+        ret = TRUE;
+        goto done;
+    }
+
+    /* in expert mode, ask before running distro hooks */
+    if (op->expert) {
+        shouldrun = ui_yes_no(op, shouldrun,
+                              "Run distribution-provided %s script %s?",
+                              hook, cmd);
+    }
+
+    if (!shouldrun) {
+        ui_expert(op,
+                  "Not running distribution-provided %s script %s",
+                  hook, cmd);
+        ret = TRUE;
+        goto done;
+    }
+
+    ui_status_begin(op, "Running distribution scripts", "Executing %s", cmd);
+    status = run_command(op, cmd, NULL, TRUE, 0, TRUE);
+    ui_status_end(op, "done.");
+
+    ret = (status == 0);
+
+done:
+    nvfree(cmd);
+    return ret;
+}
 
 
 /*
