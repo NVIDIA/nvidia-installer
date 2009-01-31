@@ -32,6 +32,7 @@
 #include <limits.h>
 #include <string.h>
 #include <ctype.h>
+#include <libgen.h>
 
 #include <sys/types.h>
 #include <sys/stat.h>
@@ -201,6 +202,7 @@ Options *parse_commandline(int argc, char *argv[])
 {
     Options *op;
     int c, option_index = 0;
+    char *program_name;
 
     const int num_opts = sizeof(__options) / sizeof(__options[0]) - 1;
     /* Allocate space for the long options. */
@@ -247,6 +249,7 @@ Options *parse_commandline(int argc, char *argv[])
     op->selinux_option = SELINUX_DEFAULT;
 
     op->sigwinch_workaround = TRUE;
+    op->run_distro_scripts = TRUE;
 
     while (1) {
         
@@ -428,6 +431,9 @@ Options *parse_commandline(int argc, char *argv[])
         case NO_CC_VERSION_CHECK_OPTION:
             op->ignore_cc_version_check = TRUE;
             break;
+        case NO_DISTRO_SCRIPTS_OPTION:
+            op->run_distro_scripts = FALSE;
+            break;
 
         default:
             fmterr("");
@@ -478,6 +484,15 @@ Options *parse_commandline(int argc, char *argv[])
     if (!op->installer_prefix) {
         op->installer_prefix = op->utility_prefix;
     }
+
+    /*
+     * if the installer was invoked as "nvidia-uninstall", perform an
+     * uninstallation.
+     */
+    program_name = strdup(argv[0]);
+    if (strcmp(basename(program_name), "nvidia-uninstall") == 0)
+        op->uninstall = TRUE;
+    free(program_name);
 
     return (op);
     

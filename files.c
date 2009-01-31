@@ -582,6 +582,7 @@ int set_destinations(Options *op, Package *p)
             break;
 
         case FILE_TYPE_UTILITY_BINARY:
+        case FILE_TYPE_UTILITY_BIN_SYMLINK:
             prefix = op->utility_prefix;
             dir = op->utility_bindir;
             path = "";
@@ -901,10 +902,9 @@ int add_kernel_module_to_package(Options *op, Package *p)
 void remove_non_kernel_module_files_from_package(Options *op, Package *p)
 {
     int i;
-    unsigned int flags;
 
     for (i = 0; i < p->num_entries; i++) {
-        flags = p->entries[i].flags & FILE_TYPE_MASK;
+        uint64_t flags = p->entries[i].flags & FILE_TYPE_MASK;
         if ((flags != FILE_TYPE_KERNEL_MODULE) &&
             (flags != FILE_TYPE_KERNEL_MODULE_CMD))
             p->entries[i].flags &= ~FILE_TYPE_MASK;

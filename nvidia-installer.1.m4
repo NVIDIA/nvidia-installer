@@ -1,7 +1,7 @@
 dnl This file is to be preprocessed by m4.
 changequote([[[, ]]])
 define(__OPTIONS__, [[[include([[[options.1.inc]]])dnl]]])dnl
-.\" Copyright (C) 2005 NVIDIA Corporation.
+.\" Copyright (C) 2005-2009 NVIDIA Corporation.
 .\"
 __HEADER__
 .\" Define the URL macro and then load the URL package if it exists.
@@ -9,7 +9,7 @@ __HEADER__
 \\$2 \(laURL: \\$1 \(ra\\$3
 ..
 .if \n[.g] .mso www.tmac
-.TH nvidia\-installer 1 2005-09-01 "nvidia\-installer __VERSION__"
+.TH nvidia\-installer 1 2009-01-09 "nvidia\-installer __VERSION__"
 .SH NAME
 nvidia\-installer \- install, upgrade, or uninstall the NVIDIA Accelerated Graphics Driver Set
 .SH SYNOPSIS
@@ -85,6 +85,43 @@ is released under the GPL and available here:
 Patches are welcome.
 dnl Call gen-manpage-opts to generate this section.
 __OPTIONS__
+.SH "DISTRIBUTION HOOK SCRIPTS"
+.PP
+Because the NVIDIA installer may interact badly with distribution packages that contain the NVIDIA driver,
+.B nvidia\-installer
+provides a mechanism for the distribution to handle manual installation of the driver.
+If they exist,
+.B nvidia\-installer
+will run the following scripts:
+.RS
+\(bu /usr/lib/nvidia/pre\-install
+.br
+\(bu /usr/lib/nvidia/pre\-uninstall
+.br
+\(bu /usr/lib/nvidia/post\-uninstall
+.br
+\(bu /usr/lib/nvidia/post\-install
+.br
+\(bu /usr/lib/nvidia/failed\-install
+.RE
+Note that if installation of a new driver requires uninstallation of a previously installed driver, the
+.B pre\-
+and
+.B post\-uninstall
+scripts will be called
+.I after
+the
+.B pre\-install
+script.
+If the install fails, the installer will execute
+.B /usr/lib/nvidia/failed\-install
+instead of
+.BR /usr/lib/nvidia/post\-install .
+These scripts should not require user interaction.
+.PP
+Use the
+.B \-\-no\-distro\-scripts
+option to disable execution of these scripts.
 .SH EXAMPLES
 .TP
 .B nvidia\-installer \-\-latest
@@ -112,4 +149,4 @@ NVIDIA Corporation
 .BR nvidia-settings (1),
 .I /usr/share/doc/NVIDIA_GLX-1.0/README.txt
 .SH COPYRIGHT
-Copyright \(co 2005 NVIDIA Corporation.
+Copyright \(co 2005-2009 NVIDIA Corporation.

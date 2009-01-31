@@ -29,6 +29,8 @@
 
 #include <sys/types.h>
 #include <sys/stat.h>
+#include <fcntl.h>
+#include <sys/mman.h>
 #include <fts.h>
 #include <unistd.h>
 #include <dirent.h>
@@ -63,7 +65,7 @@ static void find_conflicting_kernel_modules(Options *op,
                                             Package *p,
                                             FileList *l);
 
-static void find_existing_files(Package *p, FileList *l, unsigned int);
+static void find_existing_files(Package *p, FileList *l, uint64_t);
 
 static void condense_file_list(Package *p, FileList *l);
 
@@ -93,7 +95,7 @@ CommandList *build_command_list(Options *op, Package *p)
     FileList *l;
     CommandList *c;
     int i, cmd;
-    unsigned int installable_files;
+    uint64_t installable_files;
     char *tmp;
 
     installable_files = get_installable_file_mask(op);
@@ -465,6 +467,15 @@ int execute_command_list(Options *op, CommandList *c,
 typedef struct {
     const char *name;
     int len;
+
+    /*
+     * if requiredString is non-NULL, then a file must have this
+     * string in order to be considered a conflicting file; we use
+     * this to only consider "libglx.*" files conflicts if they have
+     * the string "glxModuleData".
+     */
+
+    const char *requiredString;
 } ConflictingFileInfo;
 
 static void find_conflicting_files(Options *op,
@@ -478,15 +489,15 @@ static void find_conflicting_libraries(Options *op,
                                        FileList *l);
 
 static ConflictingFileInfo __xfree86_libs[] = {
-    { "libGLcore.",     10 /* strlen("libGLcore.") */    },
-    { "libGL.",         6  /* strlen("libGL.") */        },
-    { "libGLwrapper.",  13 /* strlen("libGLwrapper.") */ },
-    { "libglx.",        7  /* strlen("libglx.") */       },
-    { "libXvMCNVIDIA",  13 /* strlen("libXvMCNVIDIA") */ },
-    { "libnvidia-cfg.", 14 /* strlen("libnvidia-cfg.") */ },
-    { "nvidia_drv.",    11 /* strlen("nvidia_drv.") */   },
-    { "libcuda.",       8  /* strlen("libcuda.") */      },
-    { NULL, 0 }
+    { "libGLcore.",     10, /* strlen("libGLcore.") */     NULL            },
+    { "libGL.",         6,  /* strlen("libGL.") */         NULL            },
+    { "libGLwrapper.",  13, /* strlen("libGLwrapper.") */  NULL            },
+    { "libglx.",        7,  /* strlen("libglx.") */        "glxModuleData" },
+    { "libXvMCNVIDIA",  13, /* strlen("libXvMCNVIDIA") */  NULL            },
+    { "libnvidia-cfg.", 14, /* strlen("libnvidia-cfg.") */ NULL            },
+    { "nvidia_drv.",    11, /* strlen("nvidia_drv.") */    NULL            },
+    { "libcuda.",       8,  /* strlen("libcuda.") */       NULL            },
+    { NULL,             0,                                 NULL            }
 };
 
 /*
@@ -524,11 +535,11 @@ static void find_conflicting_xfree86_libraries_fullpath(Options *op,
 
 
 static ConflictingFileInfo __opengl_libs[] = {
-    { "libGLcore.",     10 /* strlen("libGLcore.") */     },
-    { "libGL.",         6  /* strlen("libGL.") */         },
-    { "libnvidia-tls.", 14 /* strlen("libnvidia-tls.") */ },
-    { "libGLwrapper.",  13 /* strlen("libGLwrapper.") */  },
-    { "libcuda.",       8  /* strlen("libcuda.") */       },
+    { "libGLcore.",     10, /* strlen("libGLcore.") */     NULL },
+    { "libGL.",         6,  /* strlen("libGL.") */         NULL },
+    { "libnvidia-tls.", 14, /* strlen("libnvidia-tls.") */ NULL },
+    { "libGLwrapper.",  13, /* strlen("libGLwrapper.") */  NULL },
+    { "libcuda.",       8,  /* strlen("libcuda.") */       NULL },
     { NULL, 0 }
 };
 
@@ -601,7 +612,7 @@ static void find_conflicting_kernel_modules(Options *op,
  * FileList.
  */
 
-static void find_existing_files(Package *p, FileList *l, unsigned int flag)
+static void find_existing_files(Package *p, FileList *l, uint64_t flag)
 {
     int i;
     struct stat stat_buf;
@@ -614,6 +625,82 @@ static void find_existing_files(Package *p, FileList *l, unsigned int flag)
         }
     }
 } /* find_existing_files() */
+
+
+
+/*
+ * ignore_conflicting_file() - ignore (i.e., do not put it on the list
+ * of files to backup) the conflicting file 'filename' if requiredString
+ * is non-NULL and we cannot find the string in 'filename'.
+ */
+
+static int ignore_conflicting_file(Options *op,
+                                   const char *filename,
+                                   const char *requiredString)
+{
+    int fd = -1;
+    struct stat stat_buf;
+    char *file = MAP_FAILED;
+    int ret = FALSE;
+    int i, len;
+
+    /* if no requiredString, do not ignore this conflicting file */
+
+    if (!requiredString) return FALSE;
+
+    if ((fd = open(filename, O_RDONLY)) == -1) {
+        ui_error(op, "Unable to open '%s' for reading (%s)",
+                 filename, strerror(errno));
+        goto cleanup;
+    }
+
+    if (fstat(fd, &stat_buf) == -1) {
+        ui_error(op, "Unable to determine size of '%s' (%s)",
+                 filename, strerror(errno));
+        goto cleanup;
+    }
+
+    if ((file = mmap(0, stat_buf.st_size, PROT_READ,
+                     MAP_FILE | MAP_SHARED, fd, 0)) == MAP_FAILED) {
+        ui_error(op, "Unable to map file '%s' for reading (%s)",
+                 filename, strerror(errno));
+        goto cleanup;
+    }
+
+    /*
+     * if the requiredString is not found within the mapping of file,
+     * ignore the conflicting file; when scanning for the string,
+     * ensure that the string is either at the end of the file, or
+     * followed by '\0'.
+     */
+
+    ret = TRUE;
+
+    len = strlen(requiredString);
+
+    for (i = 0; (i + len) <= stat_buf.st_size; i++) {
+        if ((strncmp(&file[i], requiredString, len) == 0) &&
+            (((i + len) == stat_buf.st_size) || (file[i+len] == '\0'))) {
+            ret = FALSE;
+            break;
+        }
+    }
+
+    /* fall through to cleanup */
+
+ cleanup:
+
+    if (file != MAP_FAILED) {
+        munmap(file, stat_buf.st_size);
+    }
+
+    if (fd != -1) {
+        close(fd);
+    }
+
+    return ret;
+
+} /* ignore_conflicting_file() */
 
 
 
@@ -645,8 +732,11 @@ static void find_conflicting_files(Options *op,
         case FTS_F:
         case FTS_SLNONE:
             for (i = 0; files[i].name; i++) {
-                if (!strncmp(ent->fts_name, files[i].name, files[i].len))
+                if (!strncmp(ent->fts_name, files[i].name, files[i].len) &&
+                    !ignore_conflicting_file(op, ent->fts_path,
+                                             files[i].requiredString)) {
                     add_file_to_list(NULL, ent->fts_path, l);
+                }
             }
             break;
 
