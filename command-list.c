@@ -216,20 +216,31 @@ CommandList *build_command_list(Options *op, Package *p)
     /* Add all the installable files to the list */
     
     for (i = 0; i < p->num_entries; i++) {
-        if (op->selinux_enabled &&
-            (op->utils[EXECSTACK] != NULL) &&
-            (p->entries[i].flags & FILE_TYPE_SHARED_LIB)) {
-            tmp = nvstrcat(op->utils[EXECSTACK], " -c ",
-                           p->entries[i].file, NULL);
-            add_command(c, RUN_CMD, tmp);
-            nvfree(tmp);
-        }
-
+        /*
+         * Install first, then run execstack. This sets the selinux context on
+         * the installed file in the target filesystem, which is essentially
+         * guaranteed to support selinux attributes if selinux is enabled.
+         * However, the temporary filesystem containing the uninstalled file
+         * may be on a filesystem that doesn't support selinux attributes,
+         * such as NFS.
+         *
+         * See bug 530083 - "nvidia-installer: ERROR: Failed to execute
+         * execstack: Operation not supported".
+         */
         if (p->entries[i].flags & installable_files) {
             add_command(c, INSTALL_CMD,
                         p->entries[i].file,
                         p->entries[i].dst,
                         p->entries[i].mode);
+        }
+
+        if (op->selinux_enabled &&
+            (op->utils[EXECSTACK] != NULL) &&
+            (p->entries[i].flags & FILE_TYPE_SHARED_LIB)) {
+            tmp = nvstrcat(op->utils[EXECSTACK], " -c ",
+                           p->entries[i].dst, NULL);
+            add_command(c, RUN_CMD, tmp);
+            nvfree(tmp);
         }
 
         /*
@@ -696,6 +707,10 @@ static int ignore_conflicting_file(Options *op,
     if (fstat(fd, &stat_buf) == -1) {
         ui_error(op, "Unable to determine size of '%s' (%s)",
                  filename, strerror(errno));
+        goto cleanup;
+    }
+
+    if (!stat_buf.st_size) {
         goto cleanup;
     }
 
