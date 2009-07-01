@@ -2040,11 +2040,112 @@ Distribution get_distribution(Options *op)
 } /* get_distribution() */
 
 
+
+/*
+ * get_xserver_information() - parse the versionString (from `X
+ * -version`) and assign relevant information that we infer from the X
+ * server version.
+ *
+ * Note: this implementation should be shared with nvidia-xconfig
+ */
+
+static int get_xserver_information(const char *versionString,
+                                   int *isXorg,
+                                   int *isModular,
+                                   int *autoloadsGLX,
+                                   int *supportsExtensionSection)
+{
+#define XSERVER_VERSION_FORMAT_1 "X Window System Version"
+#define XSERVER_VERSION_FORMAT_2 "X.Org X Server"
+
+    int major, minor, found;
+    const char *ptr;
+
+    /* check if this is an XFree86 X server */
+
+    if (strstr(versionString, "XFree86 Version")) {
+        *isXorg = FALSE;
+        *isModular = FALSE;
+        *autoloadsGLX = FALSE;
+        *supportsExtensionSection = FALSE;
+        return TRUE;
+    }
+
+    /* this must be an X.Org X server */
+
+    *isXorg = TRUE;
+
+    /* attempt to parse the major.minor version out of the string */
+
+    found = FALSE;
+
+    if (((ptr = strstr(versionString, XSERVER_VERSION_FORMAT_1)) != NULL) &&
+        (sscanf(ptr, XSERVER_VERSION_FORMAT_1 " %d.%d", &major, &minor) == 2)) {
+        found = TRUE;
+    }
+
+    if (!found &&
+        ((ptr = strstr(versionString, XSERVER_VERSION_FORMAT_2)) != NULL) &&
+        (sscanf(ptr, XSERVER_VERSION_FORMAT_2 " %d.%d", &major, &minor) == 2)) {
+        found = TRUE;
+    }
+
+    /* if we can't parse the version, give up */
+
+    if (!found) return FALSE;
+
+    /*
+     * isModular: X.Org X11R6.x X servers are monolithic, all others
+     * are modular
+     */
+
+    if (major == 6) {
+        *isModular = FALSE;
+    } else {
+        *isModular = TRUE;
+    }
+
+    /*
+     * supportsExtensionSection: support for the "Extension" xorg.conf
+     * section was added between X.Org 6.7 and 6.8.  To account for
+     * the X server version wrap, it is easier to check for X servers
+     * that do not support the Extension section: 6.x (x < 8) X
+     * servers.
+     */
+
+    if ((major == 6) && (minor < 8)) {
+        *supportsExtensionSection = FALSE;
+    } else {
+        *supportsExtensionSection = TRUE;
+    }
+
+    /*
+     * support for autoloading GLX was added in X.Org 1.5.  To account
+     * for the X server version wrap, it is easier to check for X
+     * servers that do not support GLX autoloading: 6.x, 7.x, or < 1.5
+     * X servers.
+     */
+
+    if ((major == 6) || (major == 7) || ((major == 1) && (minor < 5))) {
+        *autoloadsGLX = FALSE;
+    } else {
+        *autoloadsGLX = TRUE;
+    }
+
+    return TRUE;
+
+} /* get_xserver_information() */
+
+
+
 /*
  * check_for_modular_xorg() - run the X binary with the '-version'
  * command line option and extract the version in an attempt to
  * determine if it's part of a modular Xorg release. If the version
  * can't be determined, we assume it's not.
+ *
+ * This should eventually get collapsed with xconfigGetXServerInUse()
+ * in nvidia-xconfig.
  */
 
 #define OLD_VERSION_FORMAT "(protocol Version %d, revision %d, vendor release %d)"
@@ -2052,9 +2153,9 @@ Distribution get_distribution(Options *op)
 
 int check_for_modular_xorg(Options *op)
 {
-    char *cmd = NULL, *ptr, *data = NULL;
+    char *cmd = NULL, *data = NULL;
     int modular_xorg = FALSE;
-    int dummy, release;
+    int dummy, ret;
 
     if (!op->utils[XSERVER])
         goto done;
@@ -2067,40 +2168,26 @@ int check_for_modular_xorg(Options *op)
     }
 
     /*
-     * Check if this is an XFree86 release that identifies
-     * itself as such in the version string.
+     * process the `X -version` output to infer if this X server is
+     * modular
      */
-    if (strstr(data, "XFree86 Version"))
-        goto done;
+
+    ret = get_xserver_information(data,
+                                  &dummy,        /* isXorg */
+                                  &modular_xorg, /* isModular */
+                                  &dummy,        /* autoloadsGLX */
+                                  &dummy);       /* supportsExtensionSection */
 
     /*
-     * Check if this looks like an XFree86 release older
-     * than XFree86 4.3.0.
-     */
-    if ((ptr = strstr(data, "(protocol Version")) != NULL &&
-        sscanf(ptr, OLD_VERSION_FORMAT, &dummy, &dummy, &release) == 3) {
-        goto done;
-    }
-
-    /*
-     * Check if this looks like an XFree86 release between
-     * XFree86 4.2 and 4.5, or an Xorg release.
+     * if get_xserver_information() failed, assume the X server is not
+     * modular
      */
 
-    if ((ptr = strstr(data, "X Protocol Version")) != NULL &&
-        sscanf(ptr, NEW_VERSION_FORMAT, &dummy, &dummy, &release) == 3) {
-        modular_xorg = (release >= 7);
-        goto done;
+    if (!ret) {
+        modular_xorg = FALSE;
     }
 
-    /*
-     * If all else fails, check if this is an Xorg release
-     * that identifies itself as such.
-     */
-    if ((ptr = strstr(data, "X Window System Version")) &&
-        sscanf(ptr, "X Window System Version %d.", &release) == 1) {
-        modular_xorg = (release >= 7);
-    }
+    /* fall through */
 
 done:
     nvfree(data);
