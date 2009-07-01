@@ -211,21 +211,32 @@ CommandList *build_command_list(Options *op, Package *p)
     /* Add all the installable files to the list */
     
     for (i = 0; i < p->num_entries; i++) {
-        if (op->selinux_enabled &&
-            (op->utils[EXECSTACK] != NULL) &&
-            ((p->entries[i].flags & FILE_TYPE_SHARED_LIB) ||
-             (p->entries[i].flags & FILE_TYPE_XMODULE_SHARED_LIB))) {
-            tmp = nvstrcat(op->utils[EXECSTACK], " -c ",
-                           p->entries[i].file, NULL);
-            add_command(c, RUN_CMD, tmp);
-            nvfree(tmp);
-        }
-
+        /*
+         * Install first, then run execstack. This sets the selinux context on
+         * the installed file in the target filesystem, which is essentially
+         * guaranteed to support selinux attributes if selinux is enabled.
+         * However, the temporary filesystem containing the uninstalled file
+         * may be on a filesystem that doesn't support selinux attributes,
+         * such as NFS.
+         *
+         * See bug 530083 - "nvidia-installer: ERROR: Failed to execute
+         * execstack: Operation not supported".
+         */
         if (p->entries[i].flags & installable_files) {
             add_command(c, INSTALL_CMD,
                         p->entries[i].file,
                         p->entries[i].dst,
                         p->entries[i].mode);
+        }
+
+        if (op->selinux_enabled &&
+            (op->utils[EXECSTACK] != NULL) &&
+            ((p->entries[i].flags & FILE_TYPE_SHARED_LIB) ||
+             (p->entries[i].flags & FILE_TYPE_XMODULE_SHARED_LIB))) {
+            tmp = nvstrcat(op->utils[EXECSTACK], " -c ",
+                           p->entries[i].dst, NULL);
+            add_command(c, RUN_CMD, tmp);
+            nvfree(tmp);
         }
 
         /*
@@ -489,15 +500,18 @@ static void find_conflicting_libraries(Options *op,
                                        FileList *l);
 
 static ConflictingFileInfo __xfree86_libs[] = {
-    { "libGLcore.",     10, /* strlen("libGLcore.") */     NULL            },
-    { "libGL.",         6,  /* strlen("libGL.") */         NULL            },
-    { "libGLwrapper.",  13, /* strlen("libGLwrapper.") */  NULL            },
-    { "libglx.",        7,  /* strlen("libglx.") */        "glxModuleData" },
-    { "libXvMCNVIDIA",  13, /* strlen("libXvMCNVIDIA") */  NULL            },
-    { "libnvidia-cfg.", 14, /* strlen("libnvidia-cfg.") */ NULL            },
-    { "nvidia_drv.",    11, /* strlen("nvidia_drv.") */    NULL            },
-    { "libcuda.",       8,  /* strlen("libcuda.") */       NULL            },
-    { NULL,             0,                                 NULL            }
+    { "libGLcore.",       10, /* strlen("libGLcore.") */       NULL            },
+    { "libGL.",           6,  /* strlen("libGL.") */           NULL            },
+    { "libGLwrapper.",    13, /* strlen("libGLwrapper.") */    NULL            },
+    { "libglx.",          7,  /* strlen("libglx.") */          "glxModuleData" },
+    { "libXvMCNVIDIA",    13, /* strlen("libXvMCNVIDIA") */    NULL            },
+    { "libnvidia-cfg.",   14, /* strlen("libnvidia-cfg.") */   NULL            },
+    { "nvidia_drv.",      11, /* strlen("nvidia_drv.") */      NULL            },
+    { "libcuda.",         8,  /* strlen("libcuda.") */         NULL            },
+    { "libvdpau.",        9,  /* strlen("libvdpau.") */        NULL            },
+    { "libvdpau_trace.",  15, /* strlen("libvdpau_trace.") */  NULL            },
+    { "libvdpau_nvidia.", 16, /* strlen("libvdpau_nvidia.") */ NULL            },
+    { NULL,               0,                                   NULL            }
 };
 
 /*
@@ -657,6 +671,10 @@ static int ignore_conflicting_file(Options *op,
     if (fstat(fd, &stat_buf) == -1) {
         ui_error(op, "Unable to determine size of '%s' (%s)",
                  filename, strerror(errno));
+        goto cleanup;
+    }
+
+    if (!stat_buf.st_size) {
         goto cleanup;
     }
 
