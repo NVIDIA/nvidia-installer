@@ -2,7 +2,7 @@
  * nvidia-installer: A tool for installing NVIDIA software packages on
  * Unix and Linux systems.
  *
- * Copyright (C) 2003 NVIDIA Corporation
+ * Copyright (C) 2003-2009 NVIDIA Corporation
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License as
@@ -186,6 +186,7 @@ typedef struct __options {
     char *kernel_name;
     char *rpm_file_list;
     char *precompiled_kernel_interfaces_path;
+    char *precompiled_kernel_interfaces_url;
     const char *selinux_chcon_type;
 
     Distribution distro;

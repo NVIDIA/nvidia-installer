@@ -79,7 +79,7 @@ RTLD_TEST_32       = rtld_test_$(TARGET_OS)-x86
 GEN_UI_ARRAY       = $(OUTPUTDIR)/gen-ui-array
 CONFIG_H           = $(OUTPUTDIR)/config.h
 
-MANPAGE            = $(OUTPUTDIR)/nvidia-installer.1
+MANPAGE            = $(OUTPUTDIR)/nvidia-installer.1.gz
 GEN_MANPAGE_OPTS   = $(OUTPUTDIR)/gen-manpage-opts
 OPTIONS_1_INC      = $(OUTPUTDIR)/options.1.inc
 
@@ -142,7 +142,6 @@ MKPRECOMPILED_install: $(MKPRECOMPILED)
 MANPAGE_install: $(MANPAGE)
 	$(MKDIR) $(mandir)
 	$(INSTALL) $(INSTALL_DOC_ARGS) $< $(mandir)/$(notdir $<)
-	gzip -9f $(mandir)/$(notdir $(MANPAGE))
 
 $(MKPRECOMPILED): $(MKPRECOMPILED_OBJS)
 	$(call quiet_cmd,LINK) -o $@ \
@@ -198,8 +197,9 @@ $(foreach src,$(ALL_SRC),$(eval $(call DEFINE_OBJECT_RULE,CC,$(src))))
 # define the rule to generate $(STAMP_C)
 $(eval $(call DEFINE_STAMP_C_RULE, $(INSTALLER_OBJS), $(NVIDIA_INSTALLER_PROGRAM_NAME)))
 
-$(CONFIG_H): $(bootstrap)
+$(CONFIG_H):
 	@ $(RM) -f $@
+	@ $(MKDIR) $(OUTPUTDIR)
 	@ $(ECHO)    "#define INSTALLER_OS \"$(TARGET_OS)\"" >> $@
 	@ $(ECHO)    "#define INSTALLER_ARCH \"$(TARGET_ARCH)\"" >> $@
 	@ $(ECHO) -n "#define NVIDIA_INSTALLER_VERSION " >> $@
@@ -207,7 +207,7 @@ $(CONFIG_H): $(bootstrap)
 	@ $(ECHO) -n "#define PROGRAM_NAME " >> $@
 	@ $(ECHO)    "\"$(NVIDIA_INSTALLER_PROGRAM_NAME)\"" >> $@
 
-$(INSTALLER_OBJS): $(CONFIG_H)
+$(call BUILD_OBJECT_LIST,$(ALL_SRC)): $(CONFIG_H)
 
 clean clobber:
 	rm -rf $(OUTPUTDIR)
@@ -259,6 +259,8 @@ doc: $(MANPAGE)
 
 $(eval $(call DEFINE_OBJECT_RULE,HOST_CC,gen-manpage-opts.c))
 
+$(call BUILD_OBJECT_LIST,gen-manpage-opts.c): $(CONFIG_H)
+
 $(GEN_MANPAGE_OPTS): $(call BUILD_OBJECT_LIST,gen-manpage-opts.c)
 	$(call quiet_cmd,HOST_LINK) $< -o $@ \
 		$(HOST_CFLAGS) $(HOST_LDFLAGS) $(HOST_BIN_LDFLAGS)
@@ -275,4 +277,4 @@ $(MANPAGE): nvidia-installer.1.m4 $(OPTIONS_1_INC)
 	   -D__DRIVER_VERSION__="$(NVIDIA_VERSION)" \
 	   -D__OUTPUTDIR__=$(OUTPUTDIR) \
 	   -I $(OUTPUTDIR) \
-	   $< > $@
+	   $< | $(GZIP_CMD) -9f > $@
