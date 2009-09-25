@@ -1925,9 +1925,6 @@ void get_default_prefixes_and_paths(Options *op)
     }
 
 #if defined(NV_X86_64)
-    if (op->distro == DEBIAN && !op->compat32_chroot)
-        op->compat32_chroot = DEBIAN_DEFAULT_COMPAT32_CHROOT;
-
     if (!op->compat32_prefix)
         op->compat32_prefix = DEFAULT_OPENGL_PREFIX;
 
@@ -1939,6 +1936,28 @@ void get_default_prefixes_and_paths(Options *op)
             op->compat32_libdir = DEFAULT_LIBDIR;
         }
     }
+
+    if (op->distro == DEBIAN && !op->compat32_chroot) {
+        /*
+         * Newer versions of Debian have moved to the Ubuntu style of compat32
+         * path, so use that if it exists.
+         */
+        char *default_path = nvstrcat(op->compat32_prefix, "/"
+                                      UBUNTU_DEFAULT_COMPAT32_LIBDIR, NULL);
+        struct stat buf;
+        if (lstat(default_path, &buf) < 0 || S_ISLNK(buf.st_mode)) {
+            /*
+             * Path doesn't exist or is a symbolic link.  Use the compat32
+             * chroot path instead.
+             */
+            op->compat32_chroot = DEBIAN_DEFAULT_COMPAT32_CHROOT;
+        } else {
+            /* <prefix>/lib32 exists, so use that */
+            op->compat32_libdir = UBUNTU_DEFAULT_COMPAT32_LIBDIR;
+        }
+        nvfree(default_path);
+    }
+
 #endif
 
     if (!op->utility_prefix)
