@@ -2,7 +2,7 @@
  * nvidia-installer: A tool for installing NVIDIA software packages on
  * Unix and Linux systems.
  *
- * Copyright (C) 2003 NVIDIA Corporation
+ * Copyright (C) 2003-2009 NVIDIA Corporation
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License as
@@ -78,7 +78,7 @@ static void print_version(void)
                 "The NVIDIA Accelerated Graphics Driver Set for %s-%s.",
                 INSTALLER_OS, INSTALLER_ARCH);
     fmtout("");
-    fmtoutp(TAB, "Copyright (C) 2003 NVIDIA Corporation.");
+    fmtoutp(TAB, "Copyright (C) 2003 - 2009 NVIDIA Corporation.");
     fmtout("");
 }
 
@@ -394,6 +394,9 @@ Options *parse_commandline(int argc, char *argv[])
             break;
         case PRECOMPILED_KERNEL_INTERFACES_PATH_OPTION:
             op->precompiled_kernel_interfaces_path = optarg;
+            break;
+        case PRECOMPILED_KERNEL_INTERFACES_URL_OPTION:
+            op->precompiled_kernel_interfaces_url = optarg;
             break;
         case NO_ABI_NOTE_OPTION:
             op->no_abi_note = TRUE;
