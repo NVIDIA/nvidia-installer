@@ -587,6 +587,7 @@ static void find_conflicting_kernel_modules(Options *op,
     char *paths[3];
     char *tmp = get_kernel_name(op);
 
+    memset(files, 0, sizeof(files));
     files[1].name = NULL;
     files[1].len = 0;
     paths[0] = op->kernel_module_installation_path;
