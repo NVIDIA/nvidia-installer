@@ -51,6 +51,7 @@ PCI_LDFLAGS           ?=
 
 NVIDIA_INSTALLER = $(OUTPUTDIR)/nvidia-installer
 MKPRECOMPILED = $(OUTPUTDIR)/mkprecompiled
+MAKESELF_HELP_SCRIPT = $(OUTPUTDIR)/makeself-help-script
 
 NVIDIA_INSTALLER_PROGRAM_NAME = "nvidia-installer"
 
@@ -114,6 +115,18 @@ LDFLAGS += -L. -ldl
 MKPRECOMPILED_SRC = crc.c mkprecompiled.c
 MKPRECOMPILED_OBJS = $(call BUILD_OBJECT_LIST,$(MKPRECOMPILED_SRC))
 
+MAKESELF_HELP_SCRIPT_SRC = makeself-help-script.c \
+                           help-args.c \
+                           format.c \
+                           string-utils.c \
+                           alloc-utils.c
+
+BUILD_MAKESELF_OBJECT_LIST = \
+  $(patsubst %.o,%.makeself.o,$(call BUILD_OBJECT_LIST,$(1)))
+
+MAKESELF_HELP_SCRIPT_OBJS = \
+  $(call BUILD_MAKESELF_OBJECT_LIST,$(MAKESELF_HELP_SCRIPT_SRC))
+
 ALL_SRC = $(sort $(INSTALLER_SRC) $(NCURSES_UI_C) $(MKPRECOMPILED_SRC))
 
 # define a quiet rule for GEN-UI-ARRAY
@@ -125,11 +138,12 @@ quiet_GEN_UI_ARRAY = GEN-UI-ARRAY $@
 ##############################################################################
 
 .PNONY: all install NVIDIA_INSTALLER_install MKPRECOMPILED_install \
-  MANPAGE_install clean clobber
+  MANPAGE_install MAKESELF_HELP_SCRIPT_install clean clobber
 
-all: $(NVIDIA_INSTALLER) $(MKPRECOMPILED) $(MANPAGE)
+all: $(NVIDIA_INSTALLER) $(MKPRECOMPILED) $(MAKESELF_HELP_SCRIPT) $(MANPAGE)
 
-install: NVIDIA_INSTALLER_install MKPRECOMPILED_install MANPAGE_install
+install: NVIDIA_INSTALLER_install MKPRECOMPILED_install MANPAGE_install \
+  MAKESELF_HELP_SCRIPT_install
 
 NVIDIA_INSTALLER_install: $(NVIDIA_INSTALLER)
 	$(MKDIR) $(bindir)
@@ -139,19 +153,29 @@ MKPRECOMPILED_install: $(MKPRECOMPILED)
 	$(MKDIR) $(bindir)
 	$(INSTALL) $(INSTALL_BIN_ARGS) $< $(bindir)/$(notdir $<)
 
+MAKESELF_HELP_SCRIPT_install: $(MAKESELF_HELP_SCRIPT)
+	$(MKDIR) $(bindir)
+	$(INSTALL) $(INSTALL_BIN_ARGS) $< $(bindir)/$(notdir $<)
+
 MANPAGE_install: $(MANPAGE)
 	$(MKDIR) $(mandir)
 	$(INSTALL) $(INSTALL_DOC_ARGS) $< $(mandir)/$(notdir $<)
 
 $(MKPRECOMPILED): $(MKPRECOMPILED_OBJS)
 	$(call quiet_cmd,LINK) -o $@ \
-	  $(MKPRECOMPILED_OBJS) $(CFLAGS) $(LDFLAGS) $(BIN_LDFLAGS) && \
-	$(STRIP) $@
+	  $(MKPRECOMPILED_OBJS) $(CFLAGS) $(LDFLAGS) $(BIN_LDFLAGS)
+	$(STRIP_CMD) $@
+
+$(MAKESELF_HELP_SCRIPT): $(MAKESELF_HELP_SCRIPT_OBJS)
+	$(call quiet_cmd,HOST_LINK) -o $@ \
+	  $(MAKESELF_HELP_SCRIPT_OBJS) $(HOST_CFLAGS) $(HOST_LDFLAGS) \
+	  $(HOST_BIN_LDFLAGS)
+	$(STRIP_CMD) $@
 
 $(NVIDIA_INSTALLER): $(INSTALLER_OBJS)
 	$(call quiet_cmd,LINK) -o $@ $(INSTALLER_OBJS) $(CFLAGS) $(LDFLAGS) \
-	  -Bstatic $(PCI_LDFLAGS) -lpci -Bdynamic $(BIN_LDFLAGS) && \
-	$(STRIP) $@
+	  -Bstatic $(PCI_LDFLAGS) -lpci -Bdynamic $(BIN_LDFLAGS)
+	$(STRIP_CMD) $@
 
 $(GEN_UI_ARRAY): gen-ui-array.c $(CONFIG_H)
 	$(call quiet_cmd,HOST_CC) -o $@ $< $(HOST_CFLAGS) $(HOST_LDFLAGS) \
@@ -194,6 +218,11 @@ $(call BUILD_OBJECT_LIST,ncurses-ui.c): CFLAGS += $(NCURSES_CFLAGS) -fPIC
 # define the rule to build each object file
 $(foreach src,$(ALL_SRC),$(eval $(call DEFINE_OBJECT_RULE,CC,$(src))))
 
+# define a rule to build each makeself-help-script object file
+$(foreach src,$(MAKESELF_HELP_SCRIPT_SRC),\
+  $(eval $(call DEFINE_OBJECT_RULE_WITH_OBJECT_NAME,HOST_CC,$(src),\
+    $(call BUILD_MAKESELF_OBJECT_LIST,$(src)))))
+
 # define the rule to generate $(STAMP_C)
 $(eval $(call DEFINE_STAMP_C_RULE, $(INSTALLER_OBJS), $(NVIDIA_INSTALLER_PROGRAM_NAME)))
 
@@ -208,6 +237,7 @@ $(CONFIG_H):
 	@ $(ECHO)    "\"$(NVIDIA_INSTALLER_PROGRAM_NAME)\"" >> $@
 
 $(call BUILD_OBJECT_LIST,$(ALL_SRC)): $(CONFIG_H)
+$(call BUILD_MAKESELF_OBJECT_LIST,$(MAKESELF_HELP_SCRIPT_SRC)): $(CONFIG_H)
 
 clean clobber:
 	rm -rf $(OUTPUTDIR)

@@ -22,7 +22,7 @@
  *      Boston, MA 02111-1307, USA
  *
  *
- * nv_installer.c
+ * nvidia-installer.c
  */
 
 
@@ -47,18 +47,15 @@
 #include "user-interface.h"
 #include "backup.h"
 #include "files.h"
+#include "help-args.h"
 #include "misc.h"
 #include "update.h"
 #include "format.h"
 #include "sanity.h"
 #include "option_table.h"
 
-#define TAB "  "
-#define BIGTAB "      "
-
 static void print_version(void);
 static void print_help(int advanced);
-static void print_help_args_only(int args_only, int advanced);
 
 
 
@@ -84,35 +81,6 @@ static void print_version(void)
 
 
 /*
- * cook_description() - the description string may contain text within
- * brackets, which is used by the manpage generator to denote text to
- * be italicized.  We want to omit the bracket characters here.
- */
-
-static char *cook_description(const char *description)
-{
-    int len;
-    char *s, *dst;
-    const char *src;
-    
-    len = strlen(description);
-    s = nvalloc(len + 1);
-    
-    for (src = description, dst = s; *src; src++) {
-        if (*src != '[' && (*src != ']')) {
-            *dst = *src;
-            dst++;
-        }
-    }
-
-    *dst = '\0';
-
-    return s;
-    
-} /* cook_description() */
-
-
-/*
  * print_help() - print usage information
  */
 
@@ -127,61 +95,6 @@ static void print_help(int advanced)
     print_help_args_only(FALSE, advanced);
 
 } /* print_help() */
-
-
-static void print_help_args_only(int args_only, int advanced)
-{
-    int i, j, len;
-    char *msg, *tmp, scratch[64];
-    const NVOption *o;
-    /*
-     * the args_only parameter is used by makeself.sh to get our
-     * argument list and description; in this case we don't want to
-     * format to the width of the terminal, so hardcode the width to
-     * 65.
-     */
-
-    if (args_only) reset_current_terminal_width(65);
-
-    for (i = 0; __options[i].name; i++) {
-        o = &__options[i];
-
-        /*
-         * if non-advanced help is requested, and the ALWAYS flag is
-         * not set, then skip this option
-         */
-
-        if (!advanced && !(o->flags & OPTION_HELP_ALWAYS)) continue;
-
-        /* Skip options with no help text */
-        if (!o->description) continue;
-
-        if (o->flags & NVOPT_IS_BOOLEAN) {
-            msg = nvstrcat("--", o->name, "/--no-", o->name, NULL);
-        } else if (isalnum(o->val)) {
-            sprintf(scratch, "%c", o->val);
-            msg = nvstrcat("-", scratch, ", --", o->name, NULL);
-        } else {
-            msg = nvstrcat("--", o->name, NULL);
-        }
-        if (o->flags & NVOPT_HAS_ARGUMENT) {
-            len = strlen(o->name);
-            for (j = 0; j < len; j++) scratch[j] = toupper(o->name[j]);
-            scratch[len] = '\0';
-            tmp = nvstrcat(msg, "=", scratch, NULL);
-            nvfree(msg);
-            msg = tmp;
-        }
-        fmtoutp(TAB, msg);
-        if (o->description) {
-            tmp = cook_description(o->description);
-            fmtoutp(BIGTAB, tmp);
-            free(tmp);
-        }
-        fmtout("");
-        nvfree(msg);
-    }
-} /* print_help_args_only() */
 
 
 /*

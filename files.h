@@ -48,6 +48,7 @@ int mkdir_recursive(Options *op, const char *path, const mode_t mode);
 char *get_symlink_target(Options *op, const char *filename);
 int install_file(Options *op, const char *srcfile,
                  const char *dstfile, mode_t mode);
+int install_symlink(Options *op, const char *linkname, const char *dstfile);
 size_t get_file_size(Options *op, const char *filename);
 size_t fget_file_size(Options *op, const int fd);
 char *get_tmpdir(Options *op);

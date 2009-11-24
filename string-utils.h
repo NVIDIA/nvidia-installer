@@ -2,7 +2,7 @@
  * nvidia-installer: A tool for installing NVIDIA software packages on
  * Unix and Linux systems.
  *
- * Copyright (C) 2003 NVIDIA Corporation
+ * Copyright (C) 2003-2009 NVIDIA Corporation
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License as
@@ -21,25 +21,28 @@
  *      59 Temple Place - Suite 330
  *      Boston, MA 02111-1307, USA
  *
- * format.h
+ *
+ * string-utils.h
  */
 
-#ifndef __NVIDIA_INSTALLER_FORMAT_H__
-#define __NVIDIA_INSTALLER_FORMAT_H__
+#ifndef __STRING_UTILS_H__
+#define __STRING_UTILS_H__
 
-#include <stdio.h>
-#include <stdarg.h>
+/*
+ * NV_STRCAT() - takes a dynamically allocated string followed by a
+ * NULL-terminated list of arbitrary strings and concatenates the
+ * strings with nvstrcat(); the newly allocated string replaces the
+ * original one, which is freed.
+ */
+#define NV_STRCAT(str, args...)              \
+do {                                         \
+    char *__tmp_str = (str);                 \
+    (str) = nvstrcat(__tmp_str, ##args);     \
+    nvfree(__tmp_str);                       \
+} while (0)
 
-void reset_current_terminal_width(unsigned short new_val);
+char *nvstrdup(const char *s);
+char *nvstrtolower(char *s);
+char *nvstrcat(const char *str, ...);
 
-void fmtout(const char *fmt, ...);
-void fmtoutp(const char *prefix, const char *fmt, ...);
-void fmterr(const char *fmt, ...);
-void fmterrp(const char *prefix, const char *fmt, ...);
-void format(FILE *stream, const char *prefix, const char *fmt, ...);
-
-TextRows *nv_format_text_rows(const char *prefix, const char *buf,
-                              int width, int word_boundary);
-void nv_free_text_rows(TextRows *t);
-
-#endif /* __NVIDIA_INSTALLER_FORMAT_H__ */
+#endif /* __STRING_UTILS_H__ */

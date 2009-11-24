@@ -503,6 +503,16 @@ int set_destinations(Options *op, Package *p)
             
         case FILE_TYPE_OPENGL_LIB:
         case FILE_TYPE_OPENGL_SYMLINK:
+            if (p->entries[i].flags & FILE_CLASS_COMPAT32) {
+                prefix = op->compat32_prefix;
+                dir = op->compat32_libdir;
+            } else {
+                prefix = op->opengl_prefix;
+                dir = op->opengl_libdir;
+            }
+            path = "";
+            break;
+
         case FILE_TYPE_VDPAU_LIB:
         case FILE_TYPE_VDPAU_SYMLINK:
             if (p->entries[i].flags & FILE_CLASS_COMPAT32) {
@@ -512,7 +522,7 @@ int set_destinations(Options *op, Package *p)
                 prefix = op->opengl_prefix;
                 dir = op->opengl_libdir;
             }
-            path = "";
+            path = p->entries[i].path;
             break;
 
         case FILE_TYPE_CUDA_LIB:
@@ -524,7 +534,7 @@ int set_destinations(Options *op, Package *p)
                 prefix = op->opengl_prefix;
                 dir = op->opengl_libdir;
             }
-            path = "";
+            path = p->entries[i].path;
             break;
             
         case FILE_TYPE_XLIB_SHARED_LIB:
@@ -1177,6 +1187,36 @@ int install_file(Options *op, const char *srcfile,
     return retval;
 
 } /* install_file() */
+
+
+/*
+ * install_symlink() - install dstfile as a symlink to linkname; this
+ * is done by extracting the directory portion of dstfile, creating
+ * that directory if it does not exist, and then calling symlink().
+ */ 
+
+int install_symlink(Options *op, const char *linkname, const char *dstfile)
+{   
+    int retval; 
+    char *dirc, *dname;
+
+    dirc = nvstrdup(dstfile);
+    dname = dirname(dirc);
+    
+    if (!mkdir_recursive(op, dname, 0755)) {
+        free(dirc);
+        return FALSE;
+    }
+
+    if (symlink(linkname, dstfile)) {
+        free(dirc);
+        return FALSE;
+    }
+
+    free(dirc);
+    return TRUE;
+
+} /* install_symlink() */
 
 
 

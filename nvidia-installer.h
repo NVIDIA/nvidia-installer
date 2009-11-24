@@ -22,7 +22,7 @@
  *      Boston, MA 02111-1307, USA
  *
  *
- * nv_installer.h
+ * nvidia-installer.h
  */
 
 #ifndef __NVIDIA_INSTALLER_H__
@@ -365,11 +365,15 @@ typedef struct {
                                     FILE_TYPE_XMODULE_NEWSYM     | \
                                     FILE_TYPE_MANPAGE            | \
                                     FILE_TYPE_OPENGL_HEADER      | \
+                                    FILE_TYPE_CUDA_LIB           | \
+                                    FILE_TYPE_CUDA_SYMLINK       | \
                                     FILE_TYPE_CUDA_HEADER        | \
                                     FILE_TYPE_TLS_LIB            | \
                                     FILE_TYPE_TLS_SYMLINK        | \
                                     FILE_TYPE_DOT_DESKTOP        | \
                                     FILE_TYPE_DOCUMENTATION      | \
+                                    FILE_TYPE_VDPAU_SYMLINK      | \
+                                    FILE_TYPE_VDPAU_LIB          | \
                                     FILE_TYPE_VDPAU_HEADER)
 
 #define FILE_TYPE_HAVE_ARCH        (FILE_TYPE_OPENGL_LIB         | \
@@ -501,6 +505,8 @@ typedef struct {
 #define NV_MIN(x,y) ((x) < (y) ? (x) : (y))
 #define NV_MAX(x,y) ((x) > (y) ? (x) : (y))
 
+#define TAB "  "
+#define BIGTAB "      "
 
 /* prototypes of functions used throughout the installer */
 

@@ -35,6 +35,9 @@
 #include "nvidia-installer.h"
 #include "command-list.h"
 
+#include "alloc-utils.h"
+#include "string-utils.h"
+
 /*
  * NV_VSNPRINTF() - takes a fmt string, and uses vsnprintf to build
  * the resulting string whic it assigns to buf.  The caller of this
@@ -68,25 +71,6 @@ do {                                                            \
     }                                                           \
 } while (0)
 
-/*
- * NV_STRCAT() - takes a dynamically allocated string followed by a
- * NULL-terminated list of arbitrary strings and concatenates the
- * strings with nvstrcat(); the newly allocated string replaces the
- * original one, which is freed.
- */
-#define NV_STRCAT(str, args...)              \
-do {                                         \
-    char *__tmp_str = (str);                 \
-    (str) = nvstrcat(__tmp_str, ##args);     \
-    nvfree(__tmp_str);                       \
-} while (0)
-
-void *nvalloc(size_t size);
-void *nvrealloc(void *ptr, size_t size);
-char *nvstrdup(const char *s);
-void nvfree(char *s);
-char *nvstrtolower(char *s);
-char *nvstrcat(const char *str, ...);
 char *read_next_word (char *buf, char **e);
 
 int check_euid(Options *op);
@@ -120,9 +104,5 @@ int check_for_modular_xorg(Options *op);
 int check_for_nvidia_graphics_devices(Options *op, Package *p);
 int run_nvidia_xconfig(Options *op);
 int run_distro_hook(Options *op, const char *hook);
-
-TextRows *nv_format_text_rows(const char *prefix, const char *buf,
-                              int width, int word_boundary);
-void nv_free_text_rows(TextRows *t);
 
 #endif /* __NVIDIA_INSTALLER_MISC_H__ */

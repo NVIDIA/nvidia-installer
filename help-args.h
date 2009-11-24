@@ -2,7 +2,7 @@
  * nvidia-installer: A tool for installing NVIDIA software packages on
  * Unix and Linux systems.
  *
- * Copyright (C) 2003 NVIDIA Corporation
+ * Copyright (C) 2003-2009 NVIDIA Corporation
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License as
@@ -21,25 +21,13 @@
  *      59 Temple Place - Suite 330
  *      Boston, MA 02111-1307, USA
  *
- * format.h
+ *
+ * nvidia-installer.h
  */
 
-#ifndef __NVIDIA_INSTALLER_FORMAT_H__
-#define __NVIDIA_INSTALLER_FORMAT_H__
+#ifndef __HELP_ARGS_H__
+#define __HELP_ARGS_H__
 
-#include <stdio.h>
-#include <stdarg.h>
+void print_help_args_only(int args_only, int advanced);
 
-void reset_current_terminal_width(unsigned short new_val);
-
-void fmtout(const char *fmt, ...);
-void fmtoutp(const char *prefix, const char *fmt, ...);
-void fmterr(const char *fmt, ...);
-void fmterrp(const char *prefix, const char *fmt, ...);
-void format(FILE *stream, const char *prefix, const char *fmt, ...);
-
-TextRows *nv_format_text_rows(const char *prefix, const char *buf,
-                              int width, int word_boundary);
-void nv_free_text_rows(TextRows *t);
-
-#endif /* __NVIDIA_INSTALLER_FORMAT_H__ */
+#endif /* __HELP_ARGS_H__ */

@@ -89,6 +89,7 @@ INSTALLER_ARCH := $(subst i686,x86,$(INSTALLER_ARCH))
 
 NVIDIA_INSTALLER = nvidia-installer
 MKPRECOMPILED = mkprecompiled
+MAKESELF_HELP_SCRIPT = makeself-help-script
 
 NVIDIA_INSTALLER_PROGRAM_NAME = "nvidia-installer"
 NVIDIA_INSTALLER_VERSION = "1.0.7"
@@ -153,6 +154,9 @@ SRC =	backup.c           \
 	stream-ui.c        \
 	update.c           \
 	user-interface.c   \
+	help-args.c        \
+	string-utils.c     \
+	alloc-utils.c      \
 	sanity.c
 
 ALL_SRC = $(SRC) $(NCURSES_UI_C) $(TLS_TEST_C) $(TLS_TEST_DSO_C) \
@@ -166,19 +170,30 @@ ALL_LDFLAGS = -L. -ldl $(LDFLAGS)
 MKPRECOMPILED_SRC = crc.c mkprecompiled.c
 MKPRECOMPILED_OBJS = $(MKPRECOMPILED_SRC:.c=.o)
 
+MAKESELF_HELP_SCRIPT_SRC =	makeself-help-script.c \
+				help-args.c \
+				format.c \
+				string-utils.c \
+				alloc-utils.c
+MAKESELF_HELP_SCRIPT_OBJS = $(MAKESELF_HELP_SCRIPT_SRC:.c=.o)
+
 # and now, the build rules:
 
 default: all
 
-all: $(NVIDIA_INSTALLER) $(MKPRECOMPILED) $(MANPAGE)
+all: $(NVIDIA_INSTALLER) $(MKPRECOMPILED) $(MAKESELF_HELP_SCRIPT) $(MANPAGE)
 
-install: NVIDIA_INSTALLER_install MKPRECOMPILED_install MANPAGE_install
+install: NVIDIA_INSTALLER_install MKPRECOMPILED_install MANPAGE_install \
+  MAKESELF_HELP_SCRIPT_install
 
 NVIDIA_INSTALLER_install: $(NVIDIA_INSTALLER)
 	$(STRIP) $<
 	$(INSTALL) $< $(bindir)/$<
 
 MKPRECOMPILED_install: $(MKPRECOMPILED)
+	$(INSTALL) $< $(bindir)/$<
+
+MAKESELF_HELP_SCRIPT_install: $(MAKESELF_HELP_SCRIPT)
 	$(INSTALL) $< $(bindir)/$<
 
 MANPAGE_install: $(MANPAGE)
@@ -188,6 +203,9 @@ MANPAGE_install: $(MANPAGE)
 
 $(MKPRECOMPILED): $(CONFIG_H) $(MKPRECOMPILED_OBJS)
 	$(CC) $(ALL_CFLAGS) $(ALL_LDFLAGS) $(MKPRECOMPILED_OBJS) -o $@
+
+$(MAKESELF_HELP_SCRIPT): $(CONFIG_H) $(MAKESELF_HELP_SCRIPT_OBJS)
+	$(CC) $(ALL_CFLAGS) $(ALL_LDFLAGS) $(MAKESELF_HELP_SCRIPT_OBJS) -o $@
 
 $(NVIDIA_INSTALLER): $(CONFIG_H) $(OBJS)
 	$(CC) $(ALL_CFLAGS) $(ALL_LDFLAGS) $(OBJS) -Wl,-Bstatic -lpci -Wl,-Bdynamic -o $@
@@ -249,7 +267,7 @@ $(STAMP_C): $(filter-out $(STAMP_C:.c=.o), $(OBJS))
 	@ echo    "const char *pNV_ID = NV_ID + 11;" >> $@
 
 clean clobber:
-	rm -rf $(NVIDIA_INSTALLER) $(MKPRECOMPILED) \
+	rm -rf $(NVIDIA_INSTALLER) $(MKPRECOMPILED) $(MAKESELF_HELP_SCRIPT) \
 		$(NCURSES_UI) $(NCURSES_UI_C) \
 		$(TLS_TEST_C) $(TLS_TEST_DSO_C) $(RTLD_TEST_C) $(COMPAT_32_SRC) \
 		$(GEN_UI_ARRAY) $(CONFIG_H) $(STAMP_C) *.o *~ *.d \

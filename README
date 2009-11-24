@@ -6,7 +6,7 @@ __________________________________________________________________________
 
 Information on how to use the nvidia-installer is in:
 
-    (sec-02) INSTALLING THE NVIDIA DRIVER
+    Chapter 4. Installing the NVIDIA Driver
 
 of the NVIDIA driver README (available from the NVIDIA Linux driver
 download page, and installed in /usr/share/doc/NVIDIA_GLX-1.0/).
@@ -18,7 +18,7 @@ well commented.
 
 
 One interesting thing to note is that user interface shared libraries
-are "built into" nvidia-installer to avoid potential problems with
+are built into nvidia-installer to avoid potential problems with
 the installer not being able to find the user interface libraries (or
 finding the wrong ones, etc): after the shared lib is built, the utility
 `gen-ui-array` is run on it to create a source file storing a byte
@@ -89,8 +89,6 @@ is now:
 
 TODO:
 
-- Edit/generate an XF86Config file
-
 - Add new user interfaces (gtk+/qt/your toolkit of choice).
 
 - Add additional tests to be run for the '--sanity' option.
@@ -102,5 +100,3 @@ TODO:
 - Internationalization.
 
 Patches are very welcome, and may be submitted to linux-bugs@nvidia.com
-
-

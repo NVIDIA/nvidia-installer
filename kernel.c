@@ -67,6 +67,7 @@ static PrecompiledInfo *scan_dir(Options *op, Package *p,
 static char *build_distro_precompiled_kernel_interface_dir(Options *op);
 static char *convert_include_path_to_source_path(const char *inc);
 static char *guess_kernel_module_filename(Options *op);
+static char *get_machine_arch(Options *op);
 
 /*
  * Message text that is used by several error messages.
@@ -160,6 +161,7 @@ int determine_kernel_source_path(Options *op, Package *p)
 {
     char *CC, *cmd, *result;
     char *source_file, *source_path;
+    char *arch;
     int ret, count = 0;
     
     /* determine the kernel source path */
@@ -245,13 +247,16 @@ int determine_kernel_source_path(Options *op, Package *p)
     }
     free(result);
 
+    arch = get_machine_arch(op);
+    if (!arch)
+        return FALSE;
     if (!determine_kernel_output_path(op)) return FALSE;
 
     CC = getenv("CC");
     if (!CC) CC = "cc";
     
     cmd = nvstrcat("sh ", p->kernel_module_build_directory,
-                   "/conftest.sh ", CC, " ", CC, " ",
+                   "/conftest.sh ", CC, " ", CC, " ", arch, " ",
                    op->kernel_source_path, " ",
                    op->kernel_output_path, " ",
                    "get_uname", NULL);
@@ -416,8 +421,13 @@ int link_kernel_module(Options *op, Package *p)
 int build_kernel_module(Options *op, Package *p)
 {
     char *CC, *result, *cmd, *tmp;
+    char *arch;
     int len, ret;
     
+    arch = get_machine_arch(op);
+    if (!arch)
+        return FALSE;
+
     /*
      * touch all the files in the build directory to avoid make time
      * skew messages
@@ -433,7 +443,7 @@ int build_kernel_module(Options *op, Package *p)
      * no hope for the make rules if this fails.
      */
     cmd = nvstrcat("sh ", p->kernel_module_build_directory,
-                   "/conftest.sh ", CC, " ", CC, " ",
+                   "/conftest.sh ", CC, " ", CC, " ", arch, " ",
                    op->kernel_source_path, " ",
                    op->kernel_output_path, " ",
                    "select_makefile just_msg", NULL);
@@ -1457,6 +1467,7 @@ download_updated_kernel_interface(Options *op, Package *p,
 int check_cc_version(Options *op, Package *p)
 {
     char *cmd, *CC, *result;
+    char *arch;
     int ret;
 
     /* 
@@ -1472,13 +1483,17 @@ int check_cc_version(Options *op, Package *p)
         return TRUE;
     }
 
+    arch = get_machine_arch(op);
+    if (!arch)
+        return FALSE;
+
     CC = getenv("CC");
     if (!CC) CC = "cc";
     
     ui_log(op, "Performing CC version check with CC=\"%s\".", CC);
 
     cmd = nvstrcat("sh ", p->kernel_module_build_directory,
-                   "/conftest.sh ", CC, " ", CC, " ",
+                   "/conftest.sh ", CC, " ", CC, " ", arch, " ",
                    "DUMMY_SOURCE DUMMY_OUTPUT ",
                    "cc_version_check just_msg", NULL);
 
@@ -1514,15 +1529,20 @@ int check_cc_version(Options *op, Package *p)
 static int fbdev_check(Options *op, Package *p)
 {
     char *CC, *cmd, *result;
+    char *arch;
     int ret;
     
+    arch = get_machine_arch(op);
+    if (!arch)
+        return FALSE;
+
     CC = getenv("CC");
     if (!CC) CC = "cc";
     
     ui_log(op, "Performing rivafb check.");
     
     cmd = nvstrcat("sh ", p->kernel_module_build_directory,
-                   "/conftest.sh ", CC, " ", CC, " ",
+                   "/conftest.sh ", CC, " ", CC, " ", arch, " ",
                    op->kernel_source_path, " ",
                    op->kernel_output_path, " ",
                    "rivafb_sanity_check just_msg", NULL);
@@ -1541,7 +1561,7 @@ static int fbdev_check(Options *op, Package *p)
     ui_log(op, "Performing nvidiafb check.");
     
     cmd = nvstrcat("sh ", p->kernel_module_build_directory,
-                   "/conftest.sh ", CC, " ", CC, " ",
+                   "/conftest.sh ", CC, " ", CC, " ", arch, " ",
                    op->kernel_source_path, " ",
                    op->kernel_output_path, " ",
                    "nvidiafb_sanity_check just_msg", NULL);
@@ -1571,15 +1591,20 @@ static int fbdev_check(Options *op, Package *p)
 static int xen_check(Options *op, Package *p)
 {
     char *CC, *cmd, *result;
+    char *arch;
     int ret;
     
+    arch = get_machine_arch(op);
+    if (!arch)
+        return FALSE;
+
     CC = getenv("CC");
     if (!CC) CC = "cc";
     
     ui_log(op, "Performing Xen check.");
     
     cmd = nvstrcat("sh ", p->kernel_module_build_directory,
-                   "/conftest.sh ", CC, " ", CC, " ",
+                   "/conftest.sh ", CC, " ", CC, " ", arch, " ",
                    op->kernel_source_path, " ",
                    op->kernel_output_path, " ",
                    "xen_sanity_check just_msg", NULL);
@@ -1770,3 +1795,33 @@ static char *guess_kernel_module_filename(Options *op)
     return nvstrdup("nvidia.o");
     
 } /* guess_kernel_module_filename() */
+
+
+
+/*
+ * get_machine_arch() - get the machine architecture, substituting
+ * i386 for i586 and i686.
+ */
+
+static char __machine_arch[16];
+
+char *get_machine_arch(Options *op)
+{
+    struct utsname uname_buf;
+
+    if (uname(&uname_buf) == -1) {
+        ui_warn(op, "Unable to determine machine architecture (%s).",
+                strerror(errno));
+        return NULL;
+    } else {
+        if ((strncmp(uname_buf.machine, "i586", 3) == 0) ||
+            (strncmp(uname_buf.machine, "i686", 3) == 0)) {
+            strcpy(__machine_arch, "i386");
+        } else {
+            strncpy(__machine_arch, uname_buf.machine,
+                    sizeof(__machine_arch));
+        }
+        return __machine_arch;
+    }
+
+} /* get_machine_arch() */

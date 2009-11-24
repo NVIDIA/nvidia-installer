@@ -461,8 +461,9 @@ int execute_command_list(Options *op, CommandList *c,
             ui_status_update(op, percent, "Creating symlink: %s",
                              c->cmds[i].s1);
 
-            ret = symlink(c->cmds[i].s1, c->cmds[i].s0);
-            if (ret == -1) {
+            ret = install_symlink(op, c->cmds[i].s1, c->cmds[i].s0);
+
+            if (!ret) {
                 ret = continue_after_error(op, "Cannot create symlink %s (%s)",
                                            c->cmds[i].s0, strerror(errno));
                 if (!ret) return FALSE;
