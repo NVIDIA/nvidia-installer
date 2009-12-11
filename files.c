@@ -503,6 +503,16 @@ int set_destinations(Options *op, Package *p)
             
         case FILE_TYPE_OPENGL_LIB:
         case FILE_TYPE_OPENGL_SYMLINK:
+            if (p->entries[i].flags & FILE_CLASS_COMPAT32) {
+                prefix = op->compat32_prefix;
+                dir = op->compat32_libdir;
+            } else {
+                prefix = op->opengl_prefix;
+                dir = op->opengl_libdir;
+            }
+            path = "";
+            break;
+
         case FILE_TYPE_VDPAU_LIB:
         case FILE_TYPE_VDPAU_SYMLINK:
             if (p->entries[i].flags & FILE_CLASS_COMPAT32) {
@@ -512,7 +522,7 @@ int set_destinations(Options *op, Package *p)
                 prefix = op->opengl_prefix;
                 dir = op->opengl_libdir;
             }
-            path = "";
+            path = p->entries[i].path;
             break;
 
         case FILE_TYPE_CUDA_LIB:

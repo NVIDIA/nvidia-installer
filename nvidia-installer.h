@@ -370,6 +370,8 @@ typedef struct {
                                     FILE_TYPE_TLS_SYMLINK        | \
                                     FILE_TYPE_DOT_DESKTOP        | \
                                     FILE_TYPE_DOCUMENTATION      | \
+                                    FILE_TYPE_VDPAU_SYMLINK      | \
+                                    FILE_TYPE_VDPAU_LIB          | \
                                     FILE_TYPE_VDPAU_HEADER)
 
 #define FILE_TYPE_HAVE_ARCH        (FILE_TYPE_OPENGL_LIB         | \
