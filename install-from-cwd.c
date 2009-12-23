@@ -677,6 +677,8 @@ static Package *parse_manifest (Options *op)
                 p->entries[n].flags |= FILE_TYPE_OPENGL_HEADER;
             else if (strcmp(flag, "CUDA_HEADER") == 0)
                 p->entries[n].flags |= FILE_TYPE_CUDA_HEADER;
+            else if (strcmp(flag, "CUDA_ICD") == 0)
+                p->entries[n].flags |= FILE_TYPE_CUDA_ICD;
             else if (strcmp(flag, "OPENGL_LIB") == 0)
                 p->entries[n].flags |= FILE_TYPE_OPENGL_LIB;
             else if (strcmp(flag, "CUDA_LIB") == 0)

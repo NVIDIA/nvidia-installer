@@ -327,6 +327,8 @@ typedef struct {
 #define FILE_TYPE_VDPAU_SYMLINK                 0x0000000004000000ULL
 #define FILE_TYPE_VDPAU_HEADER                  0x0000000008000000ULL
 #define FILE_TYPE_UTILITY_BIN_SYMLINK           0x0000000010000000ULL
+#define FILE_TYPE_CUDA_ICD                      0x0000000020000000ULL
+
 
 /* file class: this is used to distinguish OpenGL libraries */
 
@@ -351,6 +353,7 @@ typedef struct {
                                     FILE_TYPE_MANPAGE            | \
                                     FILE_TYPE_OPENGL_HEADER      | \
                                     FILE_TYPE_CUDA_HEADER        | \
+                                    FILE_TYPE_CUDA_ICD           | \
                                     FILE_TYPE_KERNEL_MODULE      | \
                                     FILE_TYPE_INSTALLER_BINARY   | \
                                     FILE_TYPE_UTILITY_BINARY     | \
@@ -499,6 +502,13 @@ typedef struct {
 
 #define NV_BULLET_STR "-> "
 #define NV_CMD_OUT_PREFIX "   "
+
+/*
+ * The OpenCL ICD Loader will look for the NVIDIA ICD
+ * in /etc/OpenCL/vendors
+ */
+#define DEFAULT_CUDA_ICD_PREFIX          "/etc"
+#define DEFAULT_CUDA_ICD_DIR             "OpenCL/vendors"
 
 /* useful macros */
 

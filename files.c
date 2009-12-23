@@ -536,6 +536,12 @@ int set_destinations(Options *op, Package *p)
             }
             path = p->entries[i].path;
             break;
+
+        case FILE_TYPE_CUDA_ICD:
+            prefix = DEFAULT_CUDA_ICD_PREFIX;
+            dir = DEFAULT_CUDA_ICD_DIR;
+            path = "";
+            break;            
             
         case FILE_TYPE_XLIB_SHARED_LIB:
         case FILE_TYPE_XLIB_STATIC_LIB:
