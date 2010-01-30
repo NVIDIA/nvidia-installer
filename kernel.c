@@ -2,7 +2,7 @@
  * nvidia-installer: A tool for installing NVIDIA software packages on
  * Unix and Linux systems.
  *
- * Copyright (C) 2003 NVIDIA Corporation
+ * Copyright (C) 2003-2009 NVIDIA Corporation
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License as
@@ -982,22 +982,15 @@ int find_precompiled_kernel_interface(Options *op, Package *p)
      * if we should try to download one.
      */
 
-    if (!info && !op->no_network) {
-        if (ui_yes_no(op, TRUE, "No precompiled kernel interface was "
-                      "found to match "
-                      "your kernel; would you like the installer to attempt "
-                      "to download a kernel interface for your kernel from "
-                      "the NVIDIA ftp site (%s)?", op->ftp_site)) {
-            
-            info = download_updated_kernel_interface(op, p,
-                                                     proc_version_string);
-            if (!info) {
-                ui_message(op, "No matching precompiled kernel interface was "
-                           "found on the NVIDIA ftp site; this means that the "
-                           "installer will need to compile a kernel interface "
-                           "for your kernel.");
-                return FALSE;
-            }
+    if (!info && !op->no_network && op->precompiled_kernel_interfaces_url) {
+        info = download_updated_kernel_interface(op, p,
+                                                 proc_version_string);
+        if (!info) {
+            ui_message(op, "No matching precompiled kernel interface was "
+                       "found at '%s'; this means that the installer will need "
+                       "to compile a kernel interface for your kernel.",
+                       op->precompiled_kernel_interfaces_url);
+            return FALSE;
         }
     }
 
@@ -1021,10 +1014,12 @@ int find_precompiled_kernel_interface(Options *op, Package *p)
 
  failed:
 
-    ui_message(op, "No precompiled kernel interface was found to match "
-               "your kernel; this means that the installer will need to "
-               "compile a new kernel interface.");
-        
+    if (op->expert) {
+        ui_message(op, "No precompiled kernel interface was found to match "
+                   "your kernel; this means that the installer will need to "
+                   "compile a new kernel interface.");
+    }
+
     return FALSE;
     
 } /* find_precompiled_kernel_interface() */
@@ -1301,10 +1296,10 @@ download_updated_kernel_interface(Options *op, Package *p,
     /* initialize the tmpfile and url strings */
     
     tmpfile = nvstrcat(op->tmpdir, "/nv-updates-XXXXXX", NULL);
-    url = nvstrcat(op->ftp_site, "/XFree86/", INSTALLER_OS, "-",
-                   INSTALLER_ARCH, "/", p->version,
-                   "/updates/updates.txt", NULL);
-    
+    url = nvstrcat(op->precompiled_kernel_interfaces_url, "/", INSTALLER_OS,
+                   "-", INSTALLER_ARCH, "/", p->version, "/updates/updates.txt",
+                   NULL);
+
     /*
      * create a temporary file in which to write the list of available
      * updates
@@ -1364,10 +1359,10 @@ download_updated_kernel_interface(Options *op, Package *p,
             /* build the new url and dstfile strings */
 
             nvfree(url);
-            url = nvstrcat(op->ftp_site, "/XFree86/",
-                           INSTALLER_OS, "-", INSTALLER_ARCH, "/",
-                           p->version, "/updates/", buf, NULL);
-                
+            url = nvstrcat(op->precompiled_kernel_interfaces_url, "/",
+                           INSTALLER_OS, "-", INSTALLER_ARCH, "/", p->version,
+                           "/updates/", buf, NULL);
+
             dstfile = nvstrcat(p->precompiled_kernel_interface_directory,
                                "/", buf, NULL);
             

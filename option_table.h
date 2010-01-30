@@ -33,6 +33,7 @@ enum {
     RPM_FILE_LIST_OPTION,
     NO_RUNLEVEL_CHECK_OPTION,
     PRECOMPILED_KERNEL_INTERFACES_PATH_OPTION,
+    PRECOMPILED_KERNEL_INTERFACES_URL_OPTION,
     NO_ABI_NOTE_OPTION,
     KERNEL_SOURCE_PATH_OPTION,
     NO_RPMS_OPTION,
@@ -381,6 +382,15 @@ static const NVOption __options[] = {
       PRECOMPILED_KERNEL_INTERFACES_PATH_OPTION, NVOPT_HAS_ARGUMENT,
       "Before searching for a precompiled kernel interface in the "
       ".run file, search in the specified directory." },
+
+    { "precompiled-kernel-interfaces-url",
+      PRECOMPILED_KERNEL_INTERFACES_URL_OPTION, NVOPT_HAS_ARGUMENT,
+      "If no precompiled kernel interfaces are found within the driver package "
+      "or provided on the file system by the Linux distribution, check the "
+      "specified URL for updates.  NVIDIA does not intend to provide updated "
+      "precompiled kernel interfaces, but system administrators might use this "
+      "for distributing precompiled kernel interfaces in a local area "
+      "network." },
 
     { "force-selinux", FORCE_SELINUX_OPTION, NVOPT_HAS_ARGUMENT,
       "Linux installations using SELinux (Security-Enhanced Linux) "
