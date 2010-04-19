@@ -37,6 +37,7 @@ typedef struct {
     int cmd;
     char *s0;
     char *s1;
+    char *s2;
     mode_t mode;
 } Command;
 
@@ -61,7 +62,8 @@ typedef struct {
  * commands:
  *
  * INSTALL - install the file named is s0, giving it the name in s1;
- * assign s1 the permissions specified by mode
+ * assign s1 the permissions specified by mode; execute the string in s2 as a
+ * post-install step
  *
  * BACKUP - move the file named in s0, storing it in the backup
  * directory and recording the data as appropriate.

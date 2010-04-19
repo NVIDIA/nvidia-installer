@@ -27,14 +27,12 @@
 #ifndef __NVIDIA_INSTALLER_UPDATE_H__
 #define __NVIDIA_INSTALLER_UPDATE_H__
 
+#include "nvgetopt.h"
 #include "nvidia-installer.h"
-
-#define _GNU_SOURCE /* XXX not portable */
-#include <getopt.h>
 
 int update(Options *);
 int report_latest_driver_version(Options *);
 char *append_update_arguments(char *s, int c, const char *arg,
-                              struct option l[]);
+                              const NVGetoptOption *options);
 
 #endif /* __NVIDIA_INSTALLER_UPDATE_H__ */
