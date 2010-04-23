@@ -565,18 +565,19 @@ static void find_conflicting_libraries(Options *op,
                                        FileList *l);
 
 static ConflictingFileInfo __xfree86_libs[] = {
-    { "libGLcore.",       10, /* strlen("libGLcore.") */       NULL            },
-    { "libGL.",           6,  /* strlen("libGL.") */           NULL            },
-    { "libGLwrapper.",    13, /* strlen("libGLwrapper.") */    NULL            },
-    { "libglx.",          7,  /* strlen("libglx.") */          "glxModuleData" },
-    { "libXvMCNVIDIA",    13, /* strlen("libXvMCNVIDIA") */    NULL            },
-    { "libnvidia-cfg.",   14, /* strlen("libnvidia-cfg.") */   NULL            },
-    { "nvidia_drv.",      11, /* strlen("nvidia_drv.") */      NULL            },
-    { "libcuda.",         8,  /* strlen("libcuda.") */         NULL            },
-    { "libvdpau.",        9,  /* strlen("libvdpau.") */        NULL            },
-    { "libvdpau_trace.",  15, /* strlen("libvdpau_trace.") */  NULL            },
-    { "libvdpau_nvidia.", 16, /* strlen("libvdpau_nvidia.") */ NULL            },
-    { NULL,               0,                                   NULL            }
+    { "libGLcore.",          10, /* strlen("libGLcore.") */          NULL            },
+    { "libGL.",              6,  /* strlen("libGL.") */              NULL            },
+    { "libGLwrapper.",       13, /* strlen("libGLwrapper.") */       NULL            },
+    { "libglx.",             7,  /* strlen("libglx.") */             "glxModuleData" },
+    { "libXvMCNVIDIA",       13, /* strlen("libXvMCNVIDIA") */       NULL            },
+    { "libnvidia-cfg.",      14, /* strlen("libnvidia-cfg.") */      NULL            },
+    { "nvidia_drv.",         11, /* strlen("nvidia_drv.") */         NULL            },
+    { "libcuda.",            8,  /* strlen("libcuda.") */            NULL            },
+    { "libvdpau.",           9,  /* strlen("libvdpau.") */           NULL            },
+    { "libvdpau_trace.",     15, /* strlen("libvdpau_trace.") */     NULL            },
+    { "libvdpau_nvidia.",    16, /* strlen("libvdpau_nvidia.") */    NULL            },
+    { "libnvidia-compiler.", 19, /* strlen("libnvidia-compiler.") */ NULL            },
+    { NULL,                  0,                                      NULL            }
 };
 
 /*
@@ -614,13 +615,14 @@ static void find_conflicting_xfree86_libraries_fullpath(Options *op,
 
 
 static ConflictingFileInfo __opengl_libs[] = {
-    { "libGLcore.",     10, /* strlen("libGLcore.") */     NULL },
-    { "libGL.",         6,  /* strlen("libGL.") */         NULL },
-    { "libnvidia-tls.", 14, /* strlen("libnvidia-tls.") */ NULL },
-    { "libGLwrapper.",  13, /* strlen("libGLwrapper.") */  NULL },
-    { "libnvidia-cfg.", 14, /* strlen("libnvidia-cfg.") */ NULL },
-    { "libcuda.",       8,  /* strlen("libcuda.") */       NULL },
-    { NULL,             0,                                 NULL }
+    { "libGLcore.",          10, /* strlen("libGLcore.") */          NULL },
+    { "libGL.",              6,  /* strlen("libGL.") */              NULL },
+    { "libnvidia-tls.",      14, /* strlen("libnvidia-tls.") */      NULL },
+    { "libGLwrapper.",       13, /* strlen("libGLwrapper.") */       NULL },
+    { "libnvidia-cfg.",      14, /* strlen("libnvidia-cfg.") */      NULL },
+    { "libcuda.",            8,  /* strlen("libcuda.") */            NULL },
+    { "libnvidia-compiler.", 19, /* strlen("libnvidia-compiler.") */ NULL },
+    { NULL,                  0,                                      NULL }
 };
 
 /*
