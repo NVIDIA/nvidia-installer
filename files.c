@@ -1492,7 +1492,7 @@ int pack_precompiled_kernel_interface(Options *op, Package *p)
     
     /* build the mkprecompiled command */
 
-    cmd = nvstrcat("./usr/bin/mkprecompiled --interface=",
+    cmd = nvstrcat("./mkprecompiled --interface=",
                    p->kernel_module_build_directory, "/",
                    PRECOMPILED_KERNEL_INTERFACE_FILENAME,
                    " --output=", p->precompiled_kernel_interface_directory,

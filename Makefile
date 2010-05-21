@@ -2,18 +2,18 @@
 # nvidia-installer: A tool for installing NVIDIA software packages on
 # Unix and Linux systems.
 #
-# Copyright (C) 2003 NVIDIA Corporation
+# Copyright (C) 2008 NVIDIA Corporation
 #
 # This program is free software; you can redistribute it and/or
 # modify it under the terms of the GNU General Public License as
 # published by the Free Software Foundation; either version 2 of the
 # License, or (at your option) any later version.
-# 
+#
 # This program is distributed in the hope that it will be useful, but
 # WITHOUT ANY WARRANTY; without even the implied warranty of
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
 # General Public License for more details.
-# 
+#
 # You should have received a copy of the GNU General Public License
 # along with this program; if not, write to the:
 #
@@ -25,161 +25,120 @@
 # Makefile
 #
 
-# default definitions; can be overwridden by users
-ifndef CC
-  CC = gcc
-endif
 
-ifndef LD
-  LD = ld
-endif
+##############################################################################
+# include common variables and functions
+##############################################################################
 
-ifndef HOST_CC
-  HOST_CC = $(CC)
-endif
-
-ifndef HOST_LD
-  HOST_LD = $(LD)
-endif
+include utils.mk
 
 
-ifndef CFLAGS
-  CFLAGS = -g -O -Wall
-endif
-
-SHELL = /bin/sh
-INSTALL = install -m 755
-
-ifeq ($(NVDEBUG),1)
-  STRIP = true
-else
-  ifndef STRIP
-    STRIP = strip
-  endif
-endif
+##############################################################################
+# The calling Makefile may export any of the following variables; we
+# assign default values if they are not exported by the caller
+##############################################################################
 
 
-# default prefix
-ifdef ROOT
-  prefix = $(ROOT)/usr
-else
-  prefix = /usr/local
-endif
-
-exec_prefix = $(prefix)
-bindir = $(exec_prefix)/bin
-mandir = $(exec_prefix)/share/man/man1
-
-# Can be overwitten by users for cross-compiling
-# get the os and architecture
-ifndef INSTALLER_OS
-  INSTALLER_OS := $(shell uname)
-endif
-
-ifndef INSTALLER_ARCH
-  INSTALLER_ARCH := $(shell uname -m)
-endif
-
-# cook the architecture
-INSTALLER_ARCH := $(subst i386,x86,$(INSTALLER_ARCH))
-INSTALLER_ARCH := $(subst i486,x86,$(INSTALLER_ARCH))
-INSTALLER_ARCH := $(subst i586,x86,$(INSTALLER_ARCH))
-INSTALLER_ARCH := $(subst i686,x86,$(INSTALLER_ARCH))
+NCURSES_CFLAGS        ?=
+NCURSES_LDFLAGS       ?=
+PCI_CFLAGS            ?=
+PCI_LDFLAGS           ?=
 
 
-NVIDIA_INSTALLER = nvidia-installer
-MKPRECOMPILED = mkprecompiled
-MAKESELF_HELP_SCRIPT = makeself-help-script
+##############################################################################
+# assign variables
+##############################################################################
+
+NVIDIA_INSTALLER = $(OUTPUTDIR)/nvidia-installer
+MKPRECOMPILED = $(OUTPUTDIR)/mkprecompiled
+MAKESELF_HELP_SCRIPT = $(OUTPUTDIR)/makeself-help-script
 
 NVIDIA_INSTALLER_PROGRAM_NAME = "nvidia-installer"
-NVIDIA_INSTALLER_VERSION = "1.0.7"
 
-NCURSES_UI = nvidia-installer-ncurses-ui.so
-NCURSES_UI_C = g_$(NCURSES_UI:.so=.c)
+NVIDIA_INSTALLER_VERSION := $(NVIDIA_VERSION)
 
-TLS_TEST_C = g_tls_test.c
-TLS_TEST_DSO_C = g_tls_test_dso.c
-TLS_TEST = tls_test_$(INSTALLER_OS)-$(INSTALLER_ARCH)
-TLS_TEST_DSO_SO = tls_test_dso_$(INSTALLER_OS)-$(INSTALLER_ARCH).so
+NCURSES_UI_C       = ncurses-ui.c
+NCURSES_UI_SO      = $(OUTPUTDIR)/nvidia-installer-ncurses-ui.so
+NCURSES_UI_SO_C    = $(OUTPUTDIR)/g_$(notdir $(NCURSES_UI_SO:.so=.c))
 
-TLS_TEST_32_C = g_tls_test_32.c
-TLS_TEST_DSO_32_C = g_tls_test_dso_32.c
-TLS_TEST_32 = tls_test_$(INSTALLER_OS)-x86
-TLS_TEST_DSO_SO_32 = tls_test_dso_$(INSTALLER_OS)-x86.so
+TLS_TEST_C         = $(OUTPUTDIR)/g_tls_test.c
+TLS_TEST_DSO_C     = $(OUTPUTDIR)/g_tls_test_dso.c
+TLS_TEST           = tls_test_$(TARGET_OS)-$(TARGET_ARCH)
+TLS_TEST_DSO_SO    = tls_test_dso_$(TARGET_OS)-$(TARGET_ARCH).so
 
-RTLD_TEST_C = g_rtld_test.c
-RTLD_TEST = rtld_test_$(INSTALLER_OS)-$(INSTALLER_ARCH)
+TLS_TEST_32_C      = $(OUTPUTDIR)/g_tls_test_32.c
+TLS_TEST_DSO_32_C  = $(OUTPUTDIR)/g_tls_test_dso_32.c
+TLS_TEST_32        = tls_test_$(TARGET_OS)-x86
+TLS_TEST_DSO_SO_32 = tls_test_dso_$(TARGET_OS)-x86.so
 
-RTLD_TEST_32_C = g_rtld_test_32.c
-RTLD_TEST_32 = rtld_test_$(INSTALLER_OS)-x86
+RTLD_TEST_C        = $(OUTPUTDIR)/g_rtld_test.c
+RTLD_TEST          = rtld_test_$(TARGET_OS)-$(TARGET_ARCH)
 
-GEN_UI_ARRAY = ./gen-ui-array
-CONFIG_H = config.h
-STAMP_C = g_stamp.c
+RTLD_TEST_32_C     = $(OUTPUTDIR)/g_rtld_test_32.c
+RTLD_TEST_32       = rtld_test_$(TARGET_OS)-x86
 
-MANPAGE = nvidia-installer.1
+GEN_UI_ARRAY       = $(OUTPUTDIR)/gen-ui-array
+CONFIG_H           = $(OUTPUTDIR)/config.h
 
-DRIVER_VERSION=$(shell cat DRIVER_VERSION)
+MANPAGE            = $(OUTPUTDIR)/nvidia-installer.1.gz
+GEN_MANPAGE_OPTS   = $(OUTPUTDIR)/gen-manpage-opts
+OPTIONS_1_INC      = $(OUTPUTDIR)/options.1.inc
 
 # Setup some architecture specific build options
-ifeq ($(INSTALLER_OS)-$(INSTALLER_ARCH), Linux-x86_64)
-TLS_MODEL=initial-exec
-PIC=-fPIC
-CFLAGS += -DNV_X86_64
-# Only Linux-x86_64 needs the tls_test_32 files
-COMPAT_32_SRC = $(TLS_TEST_32_C) $(TLS_TEST_DSO_32_C) \
-	$(RTLD_TEST_32_C)
+ifeq ($(TARGET_OS)-$(TARGET_ARCH), Linux-x86_64)
+  TLS_MODEL = initial-exec
+  PIC = -fPIC
+  CFLAGS += -DNV_X86_64
+  # Only Linux-x86_64 needs the tls_test_32 files
+  COMPAT_32_SRC = $(TLS_TEST_32_C) $(TLS_TEST_DSO_32_C) \
+    $(RTLD_TEST_32_C)
 else
-# So far all other platforms use local-exec
-TLS_MODEL=local-exec
-PIC=
-# Non-Linux-x86_64 platforms do not include the tls_test_32 files
-COMPAT_32_SRC = 
+  # So far all other platforms use local-exec
+  TLS_MODEL = local-exec
+  PIC =
+  # Non-Linux-x86_64 platforms do not include the tls_test_32 files
+  COMPAT_32_SRC =
 endif
 
-SRC =	backup.c           \
-	command-list.c     \
-	crc.c              \
-	files.c            \
-	format.c           \
-	install-from-cwd.c \
-	kernel.c           \
-	log.c              \
-	misc.c             \
-	nvidia-installer.c \
-	precompiled.c      \
-	snarf-ftp.c        \
-	snarf-http.c       \
-	snarf.c            \
-	stream-ui.c        \
-	update.c           \
-	user-interface.c   \
-	help-args.c        \
-	string-utils.c     \
-	alloc-utils.c      \
-	sanity.c
+# include the list of source files; defines SRC
+include dist-files.mk
 
-ALL_SRC = $(SRC) $(NCURSES_UI_C) $(TLS_TEST_C) $(TLS_TEST_DSO_C) \
+INSTALLER_SRC = $(SRC) $(NCURSES_UI_SO_C) $(TLS_TEST_C) $(TLS_TEST_DSO_C) \
 	$(RTLD_TEST_C) $(COMPAT_32_SRC) $(STAMP_C)
 
-OBJS = $(ALL_SRC:.c=.o)
+INSTALLER_OBJS = $(call BUILD_OBJECT_LIST,$(INSTALLER_SRC))
 
-ALL_CFLAGS = -I. $(CFLAGS) -imacros $(CONFIG_H)
-ALL_LDFLAGS = -L. -ldl $(LDFLAGS)
+CFLAGS += -I. -imacros $(CONFIG_H) -I $(OUTPUTDIR)
+HOST_CFLAGS += -I. -imacros $(CONFIG_H) -I $(OUTPUTDIR)
+LDFLAGS += -L. -ldl
 
 MKPRECOMPILED_SRC = crc.c mkprecompiled.c
-MKPRECOMPILED_OBJS = $(MKPRECOMPILED_SRC:.c=.o)
+MKPRECOMPILED_OBJS = $(call BUILD_OBJECT_LIST,$(MKPRECOMPILED_SRC))
 
-MAKESELF_HELP_SCRIPT_SRC =	makeself-help-script.c \
-				help-args.c \
-				format.c \
-				string-utils.c \
-				alloc-utils.c
-MAKESELF_HELP_SCRIPT_OBJS = $(MAKESELF_HELP_SCRIPT_SRC:.c=.o)
+MAKESELF_HELP_SCRIPT_SRC = makeself-help-script.c \
+                           help-args.c \
+                           format.c \
+                           string-utils.c \
+                           alloc-utils.c
 
-# and now, the build rules:
+BUILD_MAKESELF_OBJECT_LIST = \
+  $(patsubst %.o,%.makeself.o,$(call BUILD_OBJECT_LIST,$(1)))
 
-default: all
+MAKESELF_HELP_SCRIPT_OBJS = \
+  $(call BUILD_MAKESELF_OBJECT_LIST,$(MAKESELF_HELP_SCRIPT_SRC))
+
+ALL_SRC = $(sort $(INSTALLER_SRC) $(NCURSES_UI_C) $(MKPRECOMPILED_SRC))
+
+# define a quiet rule for GEN-UI-ARRAY
+quiet_GEN_UI_ARRAY = GEN-UI-ARRAY $@
+
+
+##############################################################################
+# build rules
+##############################################################################
+
+.PNONY: all install NVIDIA_INSTALLER_install MKPRECOMPILED_install \
+  MANPAGE_install MAKESELF_HELP_SCRIPT_install clean clobber
 
 all: $(NVIDIA_INSTALLER) $(MKPRECOMPILED) $(MAKESELF_HELP_SCRIPT) $(MANPAGE)
 
@@ -187,102 +146,116 @@ install: NVIDIA_INSTALLER_install MKPRECOMPILED_install MANPAGE_install \
   MAKESELF_HELP_SCRIPT_install
 
 NVIDIA_INSTALLER_install: $(NVIDIA_INSTALLER)
-	$(STRIP) $<
-	$(INSTALL) $< $(bindir)/$<
+	$(MKDIR) $(bindir)
+	$(INSTALL) $(INSTALL_BIN_ARGS) $< $(bindir)/$(notdir $<)
 
 MKPRECOMPILED_install: $(MKPRECOMPILED)
-	$(INSTALL) $< $(bindir)/$<
+	$(MKDIR) $(bindir)
+	$(INSTALL) $(INSTALL_BIN_ARGS) $< $(bindir)/$(notdir $<)
 
 MAKESELF_HELP_SCRIPT_install: $(MAKESELF_HELP_SCRIPT)
-	$(INSTALL) $< $(bindir)/$<
+	$(MKDIR) $(bindir)
+	$(INSTALL) $(INSTALL_BIN_ARGS) $< $(bindir)/$(notdir $<)
 
 MANPAGE_install: $(MANPAGE)
-	mkdir -p $(mandir)
-	$(INSTALL) -m 644 $< $(mandir)/$<
-	gzip -9f $(mandir)/$(MANPAGE)
+	$(MKDIR) $(mandir)
+	$(INSTALL) $(INSTALL_DOC_ARGS) $< $(mandir)/$(notdir $<)
 
-$(MKPRECOMPILED): $(CONFIG_H) $(MKPRECOMPILED_OBJS)
-	$(CC) $(ALL_CFLAGS) $(ALL_LDFLAGS) $(MKPRECOMPILED_OBJS) -o $@
+$(MKPRECOMPILED): $(MKPRECOMPILED_OBJS)
+	$(call quiet_cmd,LINK) -o $@ \
+	  $(MKPRECOMPILED_OBJS) $(CFLAGS) $(LDFLAGS) $(BIN_LDFLAGS)
+	$(call quiet_cmd,STRIP_CMD) $@
 
-$(MAKESELF_HELP_SCRIPT): $(CONFIG_H) $(MAKESELF_HELP_SCRIPT_OBJS)
-	$(CC) $(ALL_CFLAGS) $(ALL_LDFLAGS) $(MAKESELF_HELP_SCRIPT_OBJS) -o $@
+$(MAKESELF_HELP_SCRIPT): $(MAKESELF_HELP_SCRIPT_OBJS)
+	$(call quiet_cmd,HOST_LINK) -o $@ \
+	  $(MAKESELF_HELP_SCRIPT_OBJS) $(HOST_CFLAGS) $(HOST_LDFLAGS) \
+	  $(HOST_BIN_LDFLAGS)
+	$(call quiet_cmd,STRIP_CMD) $@
 
-$(NVIDIA_INSTALLER): $(CONFIG_H) $(OBJS)
-	$(CC) $(ALL_CFLAGS) $(ALL_LDFLAGS) $(OBJS) -Wl,-Bstatic -lpci -Wl,-Bdynamic -o $@
-
-$(NCURSES_UI_C): $(GEN_UI_ARRAY) $(NCURSES_UI)
-	$(GEN_UI_ARRAY) $(NCURSES_UI) ncurses_ui_array > $@
+$(NVIDIA_INSTALLER): $(INSTALLER_OBJS)
+	$(call quiet_cmd,LINK) -o $@ $(INSTALLER_OBJS) $(CFLAGS) $(LDFLAGS) \
+	  -Bstatic $(PCI_LDFLAGS) -lpci -Bdynamic $(BIN_LDFLAGS)
+	$(call quiet_cmd,STRIP_CMD) $@
 
 $(GEN_UI_ARRAY): gen-ui-array.c $(CONFIG_H)
-	$(HOST_CC) $(ALL_CFLAGS) $< -o $@
+	$(call quiet_cmd,HOST_CC) -o $@ $< $(HOST_CFLAGS) $(HOST_LDFLAGS) \
+	  $(HOST_BIN_LDFLAGS)
 
-$(NCURSES_UI): ncurses-ui.o
-	$(CC) -o $@ -shared ncurses-ui.o -lncurses
+$(NCURSES_UI_SO): $(call BUILD_OBJECT_LIST,ncurses-ui.c)
+	$(call quiet_cmd,LINK) -o $@ -shared $< \
+	  $(NCURSES_LDFLAGS) -lncurses \
+	  $(CFLAGS) $(LDFLAGS) $(BIN_LDFLAGS)
+
+$(NCURSES_UI_SO_C): $(GEN_UI_ARRAY) $(NCURSES_UI_SO)
+	$(call quiet_cmd,GEN_UI_ARRAY) $(NCURSES_UI_SO) ncurses_ui_array > $@
 
 $(TLS_TEST_C): $(GEN_UI_ARRAY) $(TLS_TEST)
-	$(GEN_UI_ARRAY) $(TLS_TEST) tls_test_array > $@
+	$(call quiet_cmd,GEN_UI_ARRAY) $(TLS_TEST) tls_test_array > $@
 
 $(TLS_TEST_DSO_C): $(GEN_UI_ARRAY) $(TLS_TEST_DSO_SO)
-	$(GEN_UI_ARRAY) $(TLS_TEST_DSO_SO) tls_test_dso_array > $@
+	$(call quiet_cmd,GEN_UI_ARRAY) \
+	  $(TLS_TEST_DSO_SO) tls_test_dso_array > $@
 
 $(TLS_TEST_32_C): $(GEN_UI_ARRAY) $(TLS_TEST_32)
-	$(GEN_UI_ARRAY) $(TLS_TEST_32) tls_test_array_32 > $@
+	$(call quiet_cmd,GEN_UI_ARRAY) $(TLS_TEST_32) tls_test_array_32 > $@
 
 $(TLS_TEST_DSO_32_C): $(GEN_UI_ARRAY) $(TLS_TEST_DSO_SO_32)
-	$(GEN_UI_ARRAY) $(TLS_TEST_DSO_SO_32) tls_test_dso_array_32 > $@
+	$(call quiet_cmd,GEN_UI_ARRAY) \
+	  $(TLS_TEST_DSO_SO_32) tls_test_dso_array_32 > $@
 
 $(RTLD_TEST_C): $(GEN_UI_ARRAY) $(RTLD_TEST)
-	$(GEN_UI_ARRAY) $(RTLD_TEST) rtld_test_array > $@
+	$(call quiet_cmd,GEN_UI_ARRAY) $(RTLD_TEST) rtld_test_array > $@
 
 $(RTLD_TEST_32_C): $(GEN_UI_ARRAY) $(RTLD_TEST_32)
-	$(GEN_UI_ARRAY) $(RTLD_TEST_32) rtld_test_array_32 > $@
+	$(call quiet_cmd,GEN_UI_ARRAY) $(RTLD_TEST_32) rtld_test_array_32 > $@
 
-ncurses-ui.o: ncurses-ui.c $(CONFIG_H)
-	$(CC) -c $(ALL_CFLAGS) $< -fPIC -o $@
+# misc.c includes pci.h
+$(call BUILD_OBJECT_LIST,misc.c): CFLAGS += $(PCI_CFLAGS)
 
-%.o: %.c $(CONFIG_H)
-	$(CC) -c $(ALL_CFLAGS) $< -o $@
+# ncurses-ui.c includes ncurses.h
+$(call BUILD_OBJECT_LIST,ncurses-ui.c): CFLAGS += $(NCURSES_CFLAGS) -fPIC
 
-%.d: %.c
-	@set -e; $(CC) -MM $(CPPFLAGS) $< \
-		| sed 's/\($*\)\.o[ :]*/\1.o $@ : /g' > $@; \
-		[ -s $@ ] || rm -f $@
+# define the rule to build each object file
+$(foreach src,$(ALL_SRC),$(eval $(call DEFINE_OBJECT_RULE,CC,$(src))))
+
+# define a rule to build each makeself-help-script object file
+$(foreach src,$(MAKESELF_HELP_SCRIPT_SRC),\
+  $(eval $(call DEFINE_OBJECT_RULE_WITH_OBJECT_NAME,HOST_CC,$(src),\
+    $(call BUILD_MAKESELF_OBJECT_LIST,$(src)))))
+
+# define the rule to generate $(STAMP_C)
+$(eval $(call DEFINE_STAMP_C_RULE, $(INSTALLER_OBJS),$(NVIDIA_INSTALLER_PROGRAM_NAME)))
 
 $(CONFIG_H):
-	@ rm -f $@
-	@ echo    "#define INSTALLER_OS \"$(INSTALLER_OS)\"" >> $@
-	@ echo    "#define INSTALLER_ARCH \"$(INSTALLER_ARCH)\"" >> $@
-	@ echo -n "#define NVIDIA_INSTALLER_VERSION " >> $@
-	@ echo    "\"$(NVIDIA_INSTALLER_VERSION)\"" >> $@
-	@ echo -n "#define PROGRAM_NAME " >> $@
-	@ echo    "\"$(NVIDIA_INSTALLER_PROGRAM_NAME)\"" >> $@
+	@ $(RM) -f $@
+	@ $(MKDIR) $(OUTPUTDIR)
+	@ $(ECHO)    "#define INSTALLER_OS \"$(TARGET_OS)\"" >> $@
+	@ $(ECHO)    "#define INSTALLER_ARCH \"$(TARGET_ARCH)\"" >> $@
+	@ $(ECHO) -n "#define NVIDIA_INSTALLER_VERSION " >> $@
+	@ $(ECHO)    "\"$(NVIDIA_INSTALLER_VERSION)\"" >> $@
+	@ $(ECHO) -n "#define PROGRAM_NAME " >> $@
+	@ $(ECHO)    "\"$(NVIDIA_INSTALLER_PROGRAM_NAME)\"" >> $@
 
-$(STAMP_C): $(filter-out $(STAMP_C:.c=.o), $(OBJS))
-	@ rm -f $@
-	@ echo -n "const char NV_ID[] = \"nvidia id: " >> $@
-	@ echo -n "$(NVIDIA_INSTALLER_PROGRAM_NAME):  " >> $@
-	@ echo -n "version $(NVIDIA_INSTALLER_VERSION)  " >> $@
-	@ echo -n "($(shell whoami)@$(shell hostname))  " >> $@
-	@ echo    "$(shell date)\";" >> $@
-	@ echo    "const char *pNV_ID = NV_ID + 11;" >> $@
+$(call BUILD_OBJECT_LIST,$(ALL_SRC)): $(CONFIG_H)
+$(call BUILD_MAKESELF_OBJECT_LIST,$(MAKESELF_HELP_SCRIPT_SRC)): $(CONFIG_H)
 
 clean clobber:
-	rm -rf $(NVIDIA_INSTALLER) $(MKPRECOMPILED) $(MAKESELF_HELP_SCRIPT) \
-		$(NCURSES_UI) $(NCURSES_UI_C) \
-		$(TLS_TEST_C) $(TLS_TEST_DSO_C) $(RTLD_TEST_C) $(COMPAT_32_SRC) \
-		$(GEN_UI_ARRAY) $(CONFIG_H) $(STAMP_C) *.o *~ *.d \
-		$(MANPAGE) gen-manpage-opts options.1.inc
+	rm -rf $(OUTPUTDIR)
 
+
+##############################################################################
 # rule to rebuild tls_test and tls_test_dso; a precompiled tls_test
 # and tls_test_dso is distributed with nvidia_installer because they
 # require a recent toolchain to build.
+##############################################################################
 
 rebuild_tls_test: tls_test.c
 	gcc -Wall -O2 -fomit-frame-pointer -o $(TLS_TEST) -ldl $<
 	strip $(TLS_TEST)
 
 rebuild_tls_test_dso: tls_test_dso.c
-	gcc -Wall -O2 $(PIC) -fomit-frame-pointer -c $< -ftls-model=$(TLS_MODEL)
+	gcc -Wall -O2 $(PIC) -fomit-frame-pointer -c $< \
+		-ftls-model=$(TLS_MODEL)
 	gcc -o $(TLS_TEST_DSO_SO) -shared tls_test_dso.o
 	strip $(TLS_TEST_DSO_SO)
 
@@ -305,35 +278,34 @@ rebuild_rtld_test: rtld_test.c
 rtld_test: rtld_test.c
 	touch $@
 
-print_version:
-	@ echo $(NVIDIA_INSTALLER_VERSION)
 
-
-### Documentation
+##############################################################################
+# Documentation
+##############################################################################
 
 AUTO_TEXT = ".\\\" WARNING: THIS FILE IS AUTO-GENERATED!  Edit $< instead."
 
 doc: $(MANPAGE)
 
-gen-manpage-opts.o: gen-manpage-opts.c $(CONFIG_H)
-	$(HOST_CC) $(ALL_CFLAGS) -c $<
+$(eval $(call DEFINE_OBJECT_RULE,HOST_CC,gen-manpage-opts.c))
 
-gen-manpage-opts: gen-manpage-opts.o
-	$(HOST_CC) $(CFLAGS) $^ $(ALL_LDFLAGS) -o $@
+$(call BUILD_OBJECT_LIST,gen-manpage-opts.c): $(CONFIG_H)
 
--include gen-manpage-opts.d
+$(GEN_MANPAGE_OPTS): $(call BUILD_OBJECT_LIST,gen-manpage-opts.c)
+	$(call quiet_cmd,HOST_LINK) $< -o $@ \
+		$(HOST_CFLAGS) $(HOST_LDFLAGS) $(HOST_BIN_LDFLAGS)
 
-options.1.inc: gen-manpage-opts
-	./$< > $@
+$(OPTIONS_1_INC): $(GEN_MANPAGE_OPTS)
+	@./$< > $@
 
-nvidia-installer.1: nvidia-installer.1.m4 options.1.inc DRIVER_VERSION
-	m4 -D__HEADER__=$(AUTO_TEXT) \
+$(MANPAGE): nvidia-installer.1.m4 $(OPTIONS_1_INC)
+	$(call quiet_cmd,M4) \
+	   -D__HEADER__=$(AUTO_TEXT) \
 	   -D__VERSION__=$(NVIDIA_INSTALLER_VERSION) \
-	   -D__INSTALLER_OS__="$(INSTALLER_OS)" \
-	   -D__INSTALLER_ARCH__="$(INSTALLER_ARCH)" \
-	   -D__DRIVER_VERSION__="$(DRIVER_VERSION)" \
-	   $< > $@
-
-###
-
--include $(SRC:.c=.d)
+	   -D__DATE__="`$(DATE) +%F`" \
+	   -D__INSTALLER_OS__="$(TARGET_OS)" \
+	   -D__INSTALLER_ARCH__="$(TARGET_ARCH)" \
+	   -D__DRIVER_VERSION__="$(NVIDIA_VERSION)" \
+	   -D__OUTPUTDIR__=$(OUTPUTDIR) \
+	   -I $(OUTPUTDIR) \
+	   $< | $(GZIP_CMD) -9f > $@

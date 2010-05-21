@@ -56,7 +56,7 @@ static void find_conflicting_xfree86_libraries(Options *,
                                                FileList *);
 
 static void find_conflicting_xfree86_libraries_fullpath(Options *op,
-                                                        const char *,
+                                                        char *,
                                                         FileList *l);
 
 static void find_conflicting_opengl_libraries(Options *,
@@ -565,7 +565,7 @@ static void find_conflicting_libraries(Options *op,
                                        FileList *l);
 
 static ConflictingFileInfo __xfree86_libs[] = {
-    { "libGLcore.",          10, /* strlen("libGLcore.") */          NULL            },
+    { "libnvidia-glcore.",   17, /* strlen("libnvidia-glcore.") */   NULL            },
     { "libGL.",              6,  /* strlen("libGL.") */              NULL            },
     { "libGLwrapper.",       13, /* strlen("libGLwrapper.") */       NULL            },
     { "libglx.",             7,  /* strlen("libglx.") */             "glxModuleData" },
@@ -605,17 +605,17 @@ static void find_conflicting_xfree86_libraries(Options *op,
  */
 
 static void find_conflicting_xfree86_libraries_fullpath(Options *op,
-                                                        const char *path,
+                                                        char *path,
                                                         FileList *l)
 {
-    find_conflicting_files(op, (char *) path, __xfree86_libs, l);
+    find_conflicting_files(op, path, __xfree86_libs, l);
     
 } /* find_conflicting_xfree86_libraries_fullpath() */
 
 
 
 static ConflictingFileInfo __opengl_libs[] = {
-    { "libGLcore.",          10, /* strlen("libGLcore.") */          NULL },
+    { "libnvidia-glcore.",   17, /* strlen("libnvidia-glcore.") */   NULL },
     { "libGL.",              6,  /* strlen("libGL.") */              NULL },
     { "libnvidia-tls.",      14, /* strlen("libnvidia-tls.") */      NULL },
     { "libGLwrapper.",       13, /* strlen("libGLwrapper.") */       NULL },

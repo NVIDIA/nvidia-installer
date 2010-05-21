@@ -39,6 +39,7 @@ SRC += install-from-cwd.c
 SRC += kernel.c
 SRC += log.c
 SRC += misc.c
+SRC += nvgetopt.c
 SRC += nvidia-installer.c
 SRC += precompiled.c
 SRC += snarf-ftp.c
@@ -61,6 +62,7 @@ DIST_FILES += files.h
 DIST_FILES += format.h
 DIST_FILES += kernel.h
 DIST_FILES += misc.h
+DIST_FILES += nvgetopt.h
 DIST_FILES += nvidia-installer-ui.h
 DIST_FILES += nvidia-installer.h
 DIST_FILES += option_table.h
@@ -95,6 +97,7 @@ DIST_FILES += rtld_test.c
 
 DIST_FILES += nvidia-installer.1.m4
 DIST_FILES += gen-manpage-opts.c
+DIST_FILES += makeself-help-script.c
 
 DIST_FILES += gen-ui-array.c
 DIST_FILES += ncurses-ui.c

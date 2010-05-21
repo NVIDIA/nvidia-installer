@@ -72,7 +72,7 @@ void print_help_args_only(int args_only, int advanced)
 {
     int i, j, len;
     char *msg, *tmp, scratch[64];
-    const NVOption *o;
+    const NVGetoptOption *o;
 
     /*
      * the args_only parameter is used by makeself.sh to get our
@@ -90,12 +90,12 @@ void print_help_args_only(int args_only, int advanced)
          * not set, then skip this option
          */
 
-        if (!advanced && !(o->flags & OPTION_HELP_ALWAYS)) continue;
+        if (!advanced && !(o->flags & NVGETOPT_HELP_ALWAYS)) continue;
 
         /* Skip options with no help text */
         if (!o->description) continue;
 
-        if (o->flags & NVOPT_IS_BOOLEAN) {
+        if (o->flags & NVGETOPT_IS_BOOLEAN) {
             msg = nvstrcat("--", o->name, "/--no-", o->name, NULL);
         } else if (isalnum(o->val)) {
             sprintf(scratch, "%c", o->val);
@@ -103,7 +103,7 @@ void print_help_args_only(int args_only, int advanced)
         } else {
             msg = nvstrcat("--", o->name, NULL);
         }
-        if (o->flags & NVOPT_HAS_ARGUMENT) {
+        if (o->flags & NVGETOPT_HAS_ARGUMENT) {
             len = strlen(o->name);
             for (j = 0; j < len; j++) scratch[j] = toupper(o->name[j]);
             scratch[len] = '\0';

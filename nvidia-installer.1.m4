@@ -1,7 +1,7 @@
 dnl This file is to be preprocessed by m4.
 changequote([[[, ]]])dnl
 define(__OPTIONS__, [[[include([[[options.1.inc]]])dnl]]])dnl
-.\" Copyright (C) 2005-2009 NVIDIA Corporation.
+.\" Copyright (C) 2005-2010 NVIDIA Corporation.
 .\"
 __HEADER__
 .\" Define the URL macro and then load the URL package if it exists.
@@ -9,7 +9,7 @@ __HEADER__
 \\$2 \(laURL: \\$1 \(ra\\$3
 ..
 .if \n[.g] .mso www.tmac
-.TH nvidia\-installer 1 2009-01-09 "nvidia\-installer __VERSION__"
+.TH nvidia\-installer 1 "__DATE__" "nvidia\-installer __VERSION__"
 .SH NAME
 nvidia\-installer \- install, upgrade, or uninstall the NVIDIA Accelerated Graphics Driver Set
 .SH SYNOPSIS
@@ -24,7 +24,7 @@ is a tool for installing, updating, and uninstalling the NVIDIA __INSTALLER_OS__
 When the driver is installed by running, for example:
 .sp
 .ti +5
-sh NVIDIA\-__INSTALLER_OS__\-__INSTALLER_ARCH__\-__DRIVER_VERSION__\-pkg1.run
+sh NVIDIA\-__INSTALLER_OS__\-__INSTALLER_ARCH__\-__DRIVER_VERSION__\.run
 .sp
 The .run file unpacks itself and invokes the contained
 .B nvidia\-installer
@@ -149,4 +149,4 @@ NVIDIA Corporation
 .BR nvidia-settings (1),
 .I /usr/share/doc/NVIDIA_GLX-1.0/README.txt
 .SH COPYRIGHT
-Copyright \(co 2005-2009 NVIDIA Corporation.
+Copyright \(co 2005-2010 NVIDIA Corporation.

@@ -2,18 +2,18 @@
  * nvidia-installer: A tool for installing NVIDIA software packages on
  * Unix and Linux systems.
  *
- * Copyright (C) 2003-2009 NVIDIA Corporation
+ * Copyright (C) 2003-2010 NVIDIA Corporation
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License as
  * published by the Free Software Foundation; either version 2 of the
  * License, or (at your option) any later version.
- * 
+ *
  * This program is distributed in the hope that it will be useful, but
  * WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
  * General Public License for more details.
- * 
+ *
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, write to the:
  *
@@ -75,7 +75,7 @@ static void print_version(void)
                 "The NVIDIA Accelerated Graphics Driver Set for %s-%s.",
                 INSTALLER_OS, INSTALLER_ARCH);
     fmtout("");
-    fmtoutp(TAB, "Copyright (C) 2003 - 2009 NVIDIA Corporation.");
+    fmtoutp(TAB, "Copyright (C) 2003 - 2010 NVIDIA Corporation.");
     fmtout("");
 }
 
@@ -98,58 +98,21 @@ static void print_help(int advanced)
 
 
 /*
- * parse_commandline() - malloc an Options structure, initialize it,
- * and fill in any pertinent data from the commandline arguments; it
- * is intended that this function do only minimal sanity checking --
- * just enough error trapping to ensure correct syntax of the
- * commandline options.  Validation of the actual data specified
- * through the options is left for the functions that use this data.
+ * load_default_options - Allocate an Options structure
+ * and initialize it with default values.
  *
- * XXX Would it be better to do more validation now?
- *
- * XXX this implementation uses getopt_long(), which isn't portable to
- * non-glibc based systems...
  */
 
-Options *parse_commandline(int argc, char *argv[])
+static Options *load_default_options(void)
 {
     Options *op;
-    int c, option_index = 0;
-    char *program_name;
-
-    const int num_opts = sizeof(__options) / sizeof(__options[0]) - 1;
-    /* Allocate space for the long options. */
-    struct option *long_options = nvalloc(num_opts * sizeof(struct option));
-    /* Allocate space for the short options: leave enough room for a letter and
-     * ':' for each option, plus the '\0'. */
-    char *short_options = nvalloc(num_opts * 2 + 1);
-    char *pShort = short_options;
-
-    /* Generate the table for getopt_long and the string for the short options. */
-    for (c = 0; c < num_opts; c++) {
-        struct option* op = &long_options[c];
-        const NVOption* o = &__options[c];
-
-        op->name = o->name;
-        op->has_arg =
-            (o->flags & NVOPT_HAS_ARGUMENT) ?
-            required_argument : no_argument;
-        op->flag = NULL;
-        op->val = o->val;
-
-        if (isalnum(o->val)) {
-            *pShort++ = o->val;
-
-            if (o->flags & NVOPT_HAS_ARGUMENT)
-                *pShort++ = ':';
-        }
-    }
-    *pShort = '\0';
 
     op = (Options *) nvalloc(sizeof(Options));
-    
+    if (!op) {
+        return NULL;
+    }
+
     /* statically initialized strings */
-    
     op->proc_mount_point = DEFAULT_PROC_MOUNT_POINT;
     op->log_file_name = DEFAULT_LOG_FILE_NAME;
     op->ftp_site = DEFAULT_FTP_SITE;
@@ -165,10 +128,30 @@ Options *parse_commandline(int argc, char *argv[])
     op->sigwinch_workaround = TRUE;
     op->run_distro_scripts = TRUE;
 
+    return op;
+
+} /* load_default_options() */
+
+
+
+/*
+ * parse_commandline() - Populate the Options structure with
+ * appropriate values, based on the arguments passed at the commandline.
+ * It is intended that this function does only minimal sanity checking --
+ * just enough error trapping to ensure correct syntax of the
+ * commandline options.  Validation of the actual data specified
+ * through the options is left for the functions that use this data.
+ */
+
+static void parse_commandline(int argc, char *argv[], Options *op)
+{
+    int c, boolval;
+    char *strval = NULL, *program_name = NULL;
+
     while (1) {
-        
-        c = getopt_long(argc, argv, short_options,
-                        long_options, &option_index);
+
+        c = nvgetopt(argc, argv, __options, &strval);
+
         if (c == -1)
             break;
         
@@ -187,7 +170,7 @@ Options *parse_commandline(int argc, char *argv[])
         case 'n': op->no_precompiled_interface = TRUE; break;
         case 'c': op->no_ncurses_color = TRUE; break;
         case 'l': op->latest = TRUE; break;
-        case 'm': op->ftp_site = optarg; break;
+        case 'm': op->ftp_site = strval; break;
         case 'f': op->update = op->force_update = TRUE; break;
         case 'h': print_help(FALSE); exit(0); break;
         case 'A': print_help(TRUE); exit(0); break;
@@ -204,86 +187,81 @@ Options *parse_commandline(int argc, char *argv[])
             break;
 
         case 'k':
-            op->kernel_name = optarg;
+            op->kernel_name = strval;
             op->no_precompiled_interface = TRUE;
             op->ignore_cc_version_check = TRUE;
             break;
             
         case XFREE86_PREFIX_OPTION:
         case X_PREFIX_OPTION:
-            op->x_prefix = optarg; break;
+            op->x_prefix = strval; break;
         case X_LIBRARY_PATH_OPTION:
-            op->x_library_path = optarg; break;
+            op->x_library_path = strval; break;
         case X_MODULE_PATH_OPTION:
-            op->x_module_path = optarg; break;
+            op->x_module_path = strval; break;
         case OPENGL_PREFIX_OPTION:
-            op->opengl_prefix = optarg; break;
+            op->opengl_prefix = strval; break;
         case OPENGL_LIBDIR_OPTION:
-            op->opengl_libdir = optarg; break;
+            op->opengl_libdir = strval; break;
 #if defined(NV_X86_64)
         case COMPAT32_CHROOT_OPTION:
-            op->compat32_chroot = optarg; break;
+            op->compat32_chroot = strval; break;
         case COMPAT32_PREFIX_OPTION:
-            op->compat32_prefix = optarg; break;
+            op->compat32_prefix = strval; break;
         case COMPAT32_LIBDIR_OPTION:
-            op->compat32_libdir = optarg; break;
+            op->compat32_libdir = strval; break;
 #endif
         case DOCUMENTATION_PREFIX_OPTION:
-            op->documentation_prefix = optarg; break;
+            op->documentation_prefix = strval; break;
         case INSTALLER_PREFIX_OPTION:
-            op->installer_prefix = optarg; break;
+            op->installer_prefix = strval; break;
         case UTILITY_PREFIX_OPTION:
-            op->utility_prefix = optarg; break;
+            op->utility_prefix = strval; break;
         case UTILITY_LIBDIR_OPTION:
-            op->utility_libdir = optarg; break;
+            op->utility_libdir = strval; break;
         case KERNEL_SOURCE_PATH_OPTION:
-            op->kernel_source_path = optarg; break;
+            op->kernel_source_path = strval; break;
         case KERNEL_OUTPUT_PATH_OPTION:
-            op->kernel_output_path = optarg; break;
+            op->kernel_output_path = strval; break;
         case KERNEL_INCLUDE_PATH_OPTION:
-            op->kernel_include_path = optarg; break;
+            op->kernel_include_path = strval; break;
         case KERNEL_INSTALL_PATH_OPTION:
-            op->kernel_module_installation_path = optarg; break;
+            op->kernel_module_installation_path = strval; break;
         case UNINSTALL_OPTION:
             op->uninstall = TRUE; break;
         case PROC_MOUNT_POINT_OPTION:
-            op->proc_mount_point = optarg; break;
+            op->proc_mount_point = strval; break;
         case USER_INTERFACE_OPTION:
-            op->ui_str = optarg; break;
+            op->ui_str = strval; break;
         case LOG_FILE_NAME_OPTION:
-            op->log_file_name = optarg; break;
+            op->log_file_name = strval; break;
         case HELP_ARGS_ONLY_OPTION:
             print_help_args_only(TRUE, FALSE); exit(0); break;
         case TMPDIR_OPTION:
-            op->tmpdir = optarg; break;
+            op->tmpdir = strval; break;
         case NO_OPENGL_HEADERS_OPTION:
             op->opengl_headers = FALSE; break;
         case FORCE_TLS_OPTION:
-            if (strcasecmp(optarg, "new") == 0)
+            if (strcasecmp(strval, "new") == 0)
                 op->which_tls = FORCE_NEW_TLS;
-            else if (strcasecmp(optarg, "classic") == 0)
+            else if (strcasecmp(strval, "classic") == 0)
                 op->which_tls = FORCE_CLASSIC_TLS;
             else {
-                fmterr("");
-                fmterr("Invalid parameter for '--force-tls'; please "
-                       "run `%s --help` for usage information.", argv[0]);
-                fmterr("");
-                exit(1);
+                fmterr("\n");
+                fmterr("Invalid parameter for '--force-tls'");
+                goto fail;
             }
             break;
 #if defined(NV_X86_64)
         case FORCE_TLS_COMPAT32_OPTION:
-            if (strcasecmp(optarg, "new") == 0)
+            if (strcasecmp(strval, "new") == 0)
                 op->which_tls_compat32 = FORCE_NEW_TLS;
-            else if (strcasecmp(optarg, "classic") == 0)
+            else if (strcasecmp(strval, "classic") == 0)
                 op->which_tls_compat32 = FORCE_CLASSIC_TLS;
             else {
-                fmterr("");
-                fmterr("Invalid parameter for '--force-tls-compat32'; "
-                       "please run `%s --help` for usage information.",
-                       argv[0]);
-                fmterr("");
-                exit(1);
+                fmterr("\n");
+                fmterr("Invalid parameter for '--force-tls-compat32'");
+                goto fail;
             }
             break;
 #endif
@@ -297,7 +275,7 @@ Options *parse_commandline(int argc, char *argv[])
             print_help_args_only(TRUE, TRUE); exit(0);
             break;
         case RPM_FILE_LIST_OPTION:
-            op->rpm_file_list = optarg;
+            op->rpm_file_list = strval;
             break;
         case NO_RUNLEVEL_CHECK_OPTION:
             op->no_runlevel_check = TRUE;
@@ -306,10 +284,10 @@ Options *parse_commandline(int argc, char *argv[])
             op->no_network = TRUE;
             break;
         case PRECOMPILED_KERNEL_INTERFACES_PATH_OPTION:
-            op->precompiled_kernel_interfaces_path = optarg;
+            op->precompiled_kernel_interfaces_path = strval;
             break;
         case PRECOMPILED_KERNEL_INTERFACES_URL_OPTION:
-            op->precompiled_kernel_interfaces_url = optarg;
+            op->precompiled_kernel_interfaces_url = strval;
             break;
         case NO_ABI_NOTE_OPTION:
             op->no_abi_note = TRUE;
@@ -321,21 +299,18 @@ Options *parse_commandline(int argc, char *argv[])
             op->no_recursion = TRUE;
             break;
         case FORCE_SELINUX_OPTION:
-            if (strcasecmp(optarg, "yes") == 0)
+            if (strcasecmp(strval, "yes") == 0)
                 op->selinux_option = SELINUX_FORCE_YES;
-            else if (strcasecmp(optarg, "no") == 0)
+            else if (strcasecmp(strval, "no") == 0)
                 op->selinux_option = SELINUX_FORCE_NO;
-            else if (strcasecmp(optarg, "default")) {
-                fmterr("");
-                fmterr("Invalid parameter for '--force-selinux'; "
-                       "please run `%s --help` for usage information.",
-                       argv[0]);
-                fmterr("");
-                exit(1);
+            else if (strcasecmp(strval, "default")) {
+                fmterr("\n");
+                fmterr("Invalid parameter for '--force-selinux'");
+                goto fail;
             }
             break;
         case SELINUX_CHCON_TYPE_OPTION:
-            op->selinux_chcon_type = optarg; break;
+            op->selinux_chcon_type = strval; break;
         case NO_SIGWINCH_WORKAROUND_OPTION:
             op->sigwinch_workaround = FALSE;
             break;
@@ -354,11 +329,7 @@ Options *parse_commandline(int argc, char *argv[])
             break;
 
         default:
-            fmterr("");
-            fmterr("Invalid commandline, please run `%s --help` "
-                   "for usage information.", argv[0]);
-            fmterr("");
-            exit(1);
+            goto fail;
         }
 
         /*
@@ -373,25 +344,11 @@ Options *parse_commandline(int argc, char *argv[])
             
             op->update_arguments =
                 append_update_arguments(op->update_arguments,
-                                        c, optarg,
-                                        long_options);
+                                        c, strval, __options);
         }
+
     }
 
-    nvfree((void*)long_options);
-    nvfree((void*)short_options);
-
-    if (optind < argc) {
-        fmterr("");
-        fmterr("Unrecognized arguments:");
-        while (optind < argc)
-            fmterrp("  ", argv[optind++]);
-        fmterr("Invalid commandline, please run `%s --help` for "
-               "usage information.", argv[0]);
-        fmterr("");
-        exit(1);
-    }
-    
     /*
      * if the installer prefix was not specified, default it to the
      * utility prefix; this is done so that the installer prefix is
@@ -411,9 +368,16 @@ Options *parse_commandline(int argc, char *argv[])
     if (strcmp(basename(program_name), "nvidia-uninstall") == 0)
         op->uninstall = TRUE;
     free(program_name);
-
-    return (op);
     
+    return;
+    
+ fail:
+    fmterr("\n");
+    fmterr("Invalid commandline, please run `%s --help` "
+           "for usage information.", argv[0]);
+    fmterr("\n");
+    nvfree((void*)op);
+    exit(1);
 } /* parse_commandline() */
 
 
@@ -429,10 +393,18 @@ int main(int argc, char *argv[])
 
     /* Ensure created files get the permissions we expect */
     umask(022);
+
+    /* Load defaults */
+
+    op = load_default_options();
+    if (!op) {
+        fprintf(stderr, "\nOut of memory error.\n\n");
+        return 1;
+    }
     
     /* parse the commandline options */
     
-    op = parse_commandline(argc, argv);
+    parse_commandline(argc, argv, op);
     
     /* init the log file */
     
@@ -519,6 +491,8 @@ int main(int argc, char *argv[])
  done:
     
     ui_close(op);
+    
+    nvfree((void*)op);
     
     return (ret ? 0 : 1);
     
