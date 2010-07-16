@@ -145,6 +145,7 @@ SRC =	backup.c           \
 	kernel.c           \
 	log.c              \
 	misc.c             \
+	nvgetopt.c         \
 	nvidia-installer.c \
 	precompiled.c      \
 	snarf-ftp.c        \

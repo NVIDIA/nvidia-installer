@@ -1992,10 +1992,18 @@ static TextRows *nv_ncurses_create_command_list_textrows(DataStruct *d,
         case INSTALL_CMD:
             perms = nv_ncurses_mode_to_permission_string(c->mode);
             len = strlen(c->s0) + strlen(c->s1) + strlen(perms) + 64;
+            if (c->s2) {
+                len += strlen(c->s2) + 64;
+            }
             str = (char *) malloc(len + 1);
             snprintf(str, len, "Install the file '%s' as '%s' with "
                      "permissions '%s'", c->s0, c->s1, perms);
             free(perms);
+            if (c->s2) {
+                len = strlen(c->s2) + 64;
+                snprintf(str + strlen(str), len,
+                         " then execute the command `%s`", c->s2);
+            }
             break;
             
         case RUN_CMD:
