@@ -588,21 +588,18 @@ int set_destinations(Options *op, Package *p)
             path = "";
             break;
 
-            /*
-             * XXX should the OpenGL headers and documentation also go
-             * under the OpenGL installation prefix?  The Linux OpenGL
-             * ABI requires that the header files be installed in
-             * /usr/include/GL/.
-             */
-
-        case FILE_TYPE_OPENGL_HEADER:
-        case FILE_TYPE_CUDA_HEADER:
-        case FILE_TYPE_VDPAU_HEADER:
-            prefix = op->opengl_prefix;
-            dir = op->opengl_incdir;
-            path = p->entries[i].path;
+        case FILE_TYPE_NVCUVID_LIB:
+        case FILE_TYPE_NVCUVID_SYMLINK:
+            if (p->entries[i].flags & FILE_CLASS_COMPAT32) {
+                prefix = op->compat32_prefix;
+                dir = op->compat32_libdir;
+            } else {
+                prefix = op->opengl_prefix;
+                dir = op->opengl_libdir;
+            }
+            path = "";
             break;
-        
+
         case FILE_TYPE_INSTALLER_BINARY:
             prefix = op->utility_prefix;
             dir = op->utility_bindir;
@@ -1203,7 +1200,6 @@ int install_file(Options *op, const char *srcfile,
 
 int install_symlink(Options *op, const char *linkname, const char *dstfile)
 {   
-    int retval; 
     char *dirc, *dname;
 
     dirc = nvstrdup(dstfile);

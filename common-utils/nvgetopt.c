@@ -1,8 +1,5 @@
 /*
- * nvidia-installer: A tool for installing NVIDIA software packages on
- * Unix and Linux systems.
- *
- * Copyright (C) 2010 NVIDIA Corporation
+ * Copyright (C) 2004-2010 NVIDIA Corporation
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License as
@@ -33,27 +30,28 @@
 #include "nvgetopt.h"
 
 
-/*
- * nvgetopt() - see the glibc getopt_long(3) manpage for usage
- * description.  Options can be prepended with "--" or "-".
- *
- * A global variable stores the current index into the argv array, so
- * subsequent calls to nvgetopt() will advance through argv[].
- *
- * On success, the matching NVGetoptOption.val is returned.
- *
- * On failure, an error is printed to stderr, and 0 is returned.
- *
- * When there are no more options to parse, -1 is returned.
- */
-
-int nvgetopt(int argc, char *argv[], const NVGetoptOption *options,
-             char **strval)
+int nvgetopt(int argc,
+             char *argv[],
+             const NVGetoptOption *options,
+             char **strval,
+             int *boolval,
+             int *intval,
+             double *doubleval,
+             int *disable_val)
 {
     char *c, *a, *arg, *name = NULL, *argument=NULL;
-    int i, found = NVGETOPT_FALSE, ret = 0;
+    int i, found = NVGETOPT_FALSE;
+    int ret = 0;
+    int negate = NVGETOPT_FALSE;
+    int disable = NVGETOPT_FALSE;
     const NVGetoptOption *o = NULL;
     static int argv_index = 0;
+
+    if (strval) *strval = NULL;
+    if (boolval) *boolval = NVGETOPT_FALSE;
+    if (intval) *intval = 0;
+    if (doubleval) *doubleval = 0.0;
+    if (disable_val) *disable_val = NVGETOPT_FALSE;
 
     argv_index++;
 
@@ -102,8 +100,30 @@ int nvgetopt(int argc, char *argv[], const NVGetoptOption *options,
         }
     } else { /* long option */
         for (i = 0; options[i].name; i++) {
-            if (strcmp(options[i].name, name) == 0) {
+            const char *tmpname;
+            int tmp_negate;
+
+            /*
+             * if this option allows negation by prepending with
+             * "--no-" (true for IS_BOOLEAN and ALLOW_DISABLE), then
+             * skip any leading "no-" in the argument
+             */
+
+            if ((options[i].flags & (NVGETOPT_IS_BOOLEAN |
+                                     NVGETOPT_ALLOW_DISABLE)) &&
+                (name[0] == 'n') &&
+                (name[1] == 'o') &&
+                (name[2] == '-')) {
+                tmpname = name + 3;
+                tmp_negate = NVGETOPT_TRUE;
+            } else {
+                tmpname = name;
+                tmp_negate = NVGETOPT_FALSE;
+            }
+
+            if (strcmp(tmpname, options[i].name) == 0) {
                 o = &options[i];
+                negate = tmp_negate;
                 break;
             }
         }
@@ -176,13 +196,33 @@ int nvgetopt(int argc, char *argv[], const NVGetoptOption *options,
         goto done;
     }
 
+
+    /* if the option is boolean, record !negate as the boolean value */
+
+    if (o->flags & NVGETOPT_IS_BOOLEAN) {
+        if (boolval) *boolval = !negate;
+    }
+
+
     /*
-     * if the option takes an argument string, then we either
-     * need to use what was after the "=" in this argv[] entry,
+     * if this option is flagged as "disable-able", then let the
+     * "--no-" prefix get interpreted to mean that the option should
+     * be disabled
+     */
+
+    if ((o->flags & NVGETOPT_ALLOW_DISABLE) && (negate == NVGETOPT_TRUE)) {
+        disable = NVGETOPT_TRUE;
+    }
+
+
+    /*
+     * if the option takes an argument (either string or integer), and
+     * we haven't already decided to disable the option, then we
+     * either need to use what was after the "=" in this argv[] entry,
      * or we need to pull the next entry off of argv[]
      */
 
-    if (o->flags & NVGETOPT_HAS_ARGUMENT) {
+    if ((o->flags & NVGETOPT_HAS_ARGUMENT) && !disable) {
         if (argument) {
             if (!argument[0]) {
                 fprintf(stderr, "%s: option \"%s\" requires an "
@@ -190,19 +230,58 @@ int nvgetopt(int argc, char *argv[], const NVGetoptOption *options,
                 goto done;
             }
         } else {
-            argv_index++;
-            if (argv_index >= argc) {
-                fprintf(stderr, "%s: option \"%s\" requires an "
-                        "argument.\n", argv[0], arg);
-                goto done;
+
+            /*
+             * if the argument is optional, and we're either at the
+             * end of the argv list, or the next argv starts with '-',
+             * then assume there is no argument for this option
+             */
+
+            if ((o->flags & NVGETOPT_ARGUMENT_IS_OPTIONAL) &&
+                ((argv_index == (argc - 1)) ||
+                 (argv[argv_index + 1][0] == '-'))) {
+                argument = NULL;
+                goto argument_processing_done;
+            } else {
+                argv_index++;
+                if (argv_index >= argc) {
+                    fprintf(stderr, "%s: option \"%s\" requires an "
+                            "argument.\n", argv[0], arg);
+                    goto done;
+                }
+                argument = argv[argv_index];
             }
-            argument = argv[argv_index];
         }
 
         /* argument is now a valid string: parse it */
 
-        if ((o->flags & NVGETOPT_STRING_ARGUMENT) && (strval)) {
+        if ((o->flags & NVGETOPT_INTEGER_ARGUMENT) && (intval)) {
+
+            /* parse the argument as an integer */
+
+            char *endptr;
+            *intval = (int) strtol(argument, &endptr, 0);
+            if (*endptr) {
+                fprintf(stderr, "%s: \"%s\" is not a valid argument for "
+                        "option \"%s\".\n", argv[0], argument, arg);
+                goto done;
+            }
+        } else if ((o->flags & NVGETOPT_STRING_ARGUMENT) && (strval)) {
+
+            /* treat the argument as a string */
+
             *strval = strdup(argument);
+        } else if ((o->flags & NVGETOPT_DOUBLE_ARGUMENT) && (doubleval)) {
+
+            /* parse the argument as a double */
+
+            char *endptr;
+            *doubleval = (double) strtod(argument, &endptr);
+            if (*endptr) {
+                fprintf(stderr, "%s: \"%s\" is not a valid argument for "
+                        "option \"%s\".\n", argv[0], argument, arg);
+                goto done;
+            }
         } else {
             fprintf(stderr, "%s: error while assigning argument for "
                     "option \"%s\".\n", argv[0], arg);
@@ -221,9 +300,15 @@ int nvgetopt(int argc, char *argv[], const NVGetoptOption *options,
         }
     }
 
+ argument_processing_done:
+
     ret = o->val;
 
-done:
+    /* fall through */
+
+ done:
+
+    if (disable_val) *disable_val = disable;
 
     free(arg);
     return ret;

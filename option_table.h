@@ -42,7 +42,6 @@ enum {
     LOG_FILE_NAME_OPTION,
     HELP_ARGS_ONLY_OPTION,
     TMPDIR_OPTION,
-    NO_OPENGL_HEADERS_OPTION,
     INSTALLER_PREFIX_OPTION,
     FORCE_TLS_OPTION,
     SANITY_OPTION,
@@ -80,51 +79,51 @@ enum {
 static const NVGetoptOption __options[] = {
     /* These options are printed by "nvidia-installer --help" */
 
-    { "accept-license", 'a', NVGETOPT_HELP_ALWAYS,
+    { "accept-license", 'a', NVGETOPT_HELP_ALWAYS, NULL,
       "Bypass the display and prompting for acceptance of the "
       "NVIDIA Software License Agreement.  By passing this option to "
       "nvidia-installer, you indicate that you have read and accept the "
       "License Agreement contained in the file 'LICENSE' (in the top "
       "level directory of the driver package)." },
 
-    { "update", UPDATE_OPTION, NVGETOPT_HELP_ALWAYS,
-      "Connect to the NVIDIA FTP server ' " DEFAULT_FTP_SITE " ' and determine the "
-      "latest available driver version.  If there is a more recent "
-      "driver available, automatically download and install it.  Any "
+    { "update", UPDATE_OPTION, NVGETOPT_HELP_ALWAYS, NULL,
+      "Connect to the NVIDIA FTP server ' " DEFAULT_FTP_SITE " ' and "
+      "determine the latest available driver version.  If there is a more "
+      "recent driver available, automatically download and install it.  Any "
       "other options given on the commandline will be passed on to the "
       "downloaded driver package when installing it." },
 
-    { "version", 'v', NVGETOPT_HELP_ALWAYS,
+    { "version", 'v', NVGETOPT_HELP_ALWAYS, NULL,
       "Print the nvidia-installer version and exit." },
 
-    { "help", 'h', NVGETOPT_HELP_ALWAYS,
+    { "help", 'h', NVGETOPT_HELP_ALWAYS, NULL,
       "Print usage information for the common commandline options "
       "and exit." },
 
-    { "advanced-options", 'A', NVGETOPT_HELP_ALWAYS,
+    { "advanced-options", 'A', NVGETOPT_HELP_ALWAYS, NULL,
       "Print usage information for the common commandline options "
       "as well as the advanced options, and then exit." },
 
     /* These options are only printed by "nvidia-installer --advanced-help" */
 
-    { "driver-info", 'i', 0,
+    { "driver-info", 'i', 0, NULL,
       "Print information about the currently installed NVIDIA "
       "driver version." },
 
-    { "uninstall", UNINSTALL_OPTION, 0,
+    { "uninstall", UNINSTALL_OPTION, 0, NULL,
       "Uninstall the currently installed NVIDIA driver." },
 
-    { "sanity", SANITY_OPTION, 0,
+    { "sanity", SANITY_OPTION, 0, NULL,
       "Perform basic sanity tests on an existing NVIDIA "
       "driver installation." },
 
-    { "expert", 'e', 0,
+    { "expert", 'e', 0, NULL,
       "Enable 'expert' installation mode; more detailed questions "
       "will be asked, and more verbose output will be printed; "
       "intended for expert users.  The questions may be suppressed "
       "with the '--no-questions' commandline option." },
 
-    { "no-questions", 'q', 0,
+    { "no-questions", 'q', 0, NULL,
       "Do not ask any questions; the default (normally 'yes') "
       "is assumed for "
       "all yes/no questions, and the default string is assumed in "
@@ -133,22 +132,22 @@ static const NVGetoptOption __options[] = {
       "license acceptance; the license may be accepted with the "
       "commandline option '--accept-license'." },
 
-    { "silent", 's', 0,
+    { "silent", 's', 0, NULL,
       "Run silently; no questions are asked and no output is "
       "printed, except for error messages to stderr.  This option "
       "implies '--ui=none --no-questions --accept-license'." },
 
-    { "x-prefix", X_PREFIX_OPTION, NVGETOPT_STRING_ARGUMENT,
+    { "x-prefix", X_PREFIX_OPTION, NVGETOPT_STRING_ARGUMENT, NULL,
       "The prefix under which the X components of the "
       "NVIDIA driver will be installed; the default is '" DEFAULT_X_PREFIX
       "' unless nvidia-installer detects that X.Org >= 7.0 is installed, "
       "in which case the default is '" XORG7_DEFAULT_X_PREFIX "'.  Only "
       "under rare circumstances should this option be used." },
 
-    { "xfree86-prefix", XFREE86_PREFIX_OPTION, NVGETOPT_STRING_ARGUMENT,
+    { "xfree86-prefix", XFREE86_PREFIX_OPTION, NVGETOPT_STRING_ARGUMENT, NULL,
       "This is a deprecated synonym for --x-prefix." },
 
-    { "x-module-path", X_MODULE_PATH_OPTION, NVGETOPT_STRING_ARGUMENT,
+    { "x-module-path", X_MODULE_PATH_OPTION, NVGETOPT_STRING_ARGUMENT, NULL,
       "The path under which the NVIDIA X server modules will be installed.  "
       "If this option is not specified, nvidia-installer uses the following "
       "search order and selects the first valid directory it finds: 1) "
@@ -158,7 +157,7 @@ static const NVGetoptOption __options[] = {
       "than X.Org 7.0) or '" XORG7_DEFAULT_X_MODULEDIR "' (for X.Org 7.0 or "
       "later)." },
 
-    { "x-library-path", X_LIBRARY_PATH_OPTION, NVGETOPT_STRING_ARGUMENT,
+    { "x-library-path", X_LIBRARY_PATH_OPTION, NVGETOPT_STRING_ARGUMENT, NULL,
       "The path under which the NVIDIA X libraries will be installed.  "
       "If this option is not specified, nvidia-installer uses the following "
       "search order and selects the first valid directory it finds: 1) "
@@ -168,14 +167,14 @@ static const NVGetoptOption __options[] = {
       DEFAULT_64BIT_LIBDIR "' or '" DEFAULT_LIBDIR "' on 64bit systems, "
       "depending on the installed Linux distribution." },
 
-    { "opengl-prefix", OPENGL_PREFIX_OPTION, NVGETOPT_STRING_ARGUMENT,
+    { "opengl-prefix", OPENGL_PREFIX_OPTION, NVGETOPT_STRING_ARGUMENT, NULL,
       "The prefix under which the OpenGL components of the "
       "NVIDIA driver will be installed; the default is: '" DEFAULT_OPENGL_PREFIX
       "'.  Only under rare circumstances should this option be used.  "
       "The Linux OpenGL ABI (http://oss.sgi.com/projects/ogl-sample/ABI/) "
       "mandates this default value." },
 
-    { "opengl-libdir", OPENGL_LIBDIR_OPTION, NVGETOPT_STRING_ARGUMENT,
+    { "opengl-libdir", OPENGL_LIBDIR_OPTION, NVGETOPT_STRING_ARGUMENT, NULL,
       "The path relative to the OpenGL library installation prefix under "
       "which the NVIDIA OpenGL components will be installed.  The "
       "default is '" DEFAULT_LIBDIR "' on 32bit systems, and '"
@@ -185,6 +184,7 @@ static const NVGetoptOption __options[] = {
 
 #if defined(NV_X86_64)
     { "compat32-chroot", COMPAT32_CHROOT_OPTION, NVGETOPT_STRING_ARGUMENT,
+      NULL,
       "The top-level prefix (chroot) relative to which the 32bit "
       "compatibility OpenGL libraries will be installed on Linux/x86-64 "
       "systems; this option is unset by default, the 32bit OpenGL "
@@ -193,12 +193,14 @@ static const NVGetoptOption __options[] = {
       "circumstances should this option be used." },
 
     { "compat32-prefix", COMPAT32_PREFIX_OPTION, NVGETOPT_STRING_ARGUMENT,
+      NULL,
       "The prefix under which the 32bit compatibility OpenGL components "
       "of the NVIDIA driver will be installed; the default is: '"
       DEFAULT_OPENGL_PREFIX "'.  Only under rare circumstances should "
       "this option be used." },
 
     { "compat32-libdir", COMPAT32_LIBDIR_OPTION, NVGETOPT_STRING_ARGUMENT,
+      NULL,
       "The path relative to the 32bit compatibility prefix under which the "
       "32bit compatibility OpenGL components of the NVIDIA driver will "
       "be installed.  The default is '" DEFAULT_LIBDIR "' or '"
@@ -208,35 +210,39 @@ static const NVGetoptOption __options[] = {
 #endif /* NV_X86_64 */
 
     { "installer-prefix", INSTALLER_PREFIX_OPTION, NVGETOPT_STRING_ARGUMENT,
+      NULL,
       "The prefix under which the installer binary will be "
       "installed; the default is: '" DEFAULT_UTILITY_PREFIX "'.  Note: please "
       "use the '--utility-prefix' option instead." },
 
-    { "utility-prefix", UTILITY_PREFIX_OPTION, NVGETOPT_STRING_ARGUMENT,
+    { "utility-prefix", UTILITY_PREFIX_OPTION, NVGETOPT_STRING_ARGUMENT, NULL,
       "The prefix under which the NVIDIA utilities (nvidia-installer, "
       "nvidia-settings, nvidia-xconfig, nvidia-bug-report.sh) and the NVIDIA "
       "utility libraries will be installed; the default is: '"
       DEFAULT_UTILITY_PREFIX "'." },
 
-    { "utility-libdir", UTILITY_LIBDIR_OPTION, NVGETOPT_STRING_ARGUMENT,
+    { "utility-libdir", UTILITY_LIBDIR_OPTION, NVGETOPT_STRING_ARGUMENT, NULL,
       "The path relative to the utility installation prefix under which the "
       "NVIDIA utility libraries will be installed.  The default is '"
       DEFAULT_LIBDIR "' on 32bit systems, and '" DEFAULT_64BIT_LIBDIR
       "' or '" DEFAULT_LIBDIR "' on 64bit " "systems, depending on the "
       "installed Linux distribution." },
 
-    { "documentation-prefix", DOCUMENTATION_PREFIX_OPTION, NVGETOPT_STRING_ARGUMENT,
+    { "documentation-prefix", DOCUMENTATION_PREFIX_OPTION,
+      NVGETOPT_STRING_ARGUMENT,  NULL,
       "The prefix under which the documentation files for the NVIDIA "
       "driver will be installed.  The default is: '"
       DEFAULT_DOCUMENTATION_PREFIX "'." },
 
-    { "kernel-include-path", KERNEL_INCLUDE_PATH_OPTION, NVGETOPT_STRING_ARGUMENT,
+    { "kernel-include-path", KERNEL_INCLUDE_PATH_OPTION,
+      NVGETOPT_STRING_ARGUMENT, NULL,
       "The directory containing the kernel include files that "
       "should be used when compiling the NVIDIA kernel module.  "
       "This option is deprecated; please use '--kernel-source-path' "
       "instead." },
 
-    { "kernel-source-path", KERNEL_SOURCE_PATH_OPTION, NVGETOPT_STRING_ARGUMENT,
+    { "kernel-source-path", KERNEL_SOURCE_PATH_OPTION,
+      NVGETOPT_STRING_ARGUMENT, NULL,
       "The directory containing the kernel source files that "
       "should be used when compiling the NVIDIA kernel module.  "
       "When not specified, the installer will use "
@@ -244,20 +250,23 @@ static const NVGetoptOption __options[] = {
       "directory exists.  Otherwise, it will use "
       "'/usr/src/linux'." },
 
-    { "kernel-output-path", KERNEL_OUTPUT_PATH_OPTION, NVGETOPT_STRING_ARGUMENT,
+    { "kernel-output-path", KERNEL_OUTPUT_PATH_OPTION,
+      NVGETOPT_STRING_ARGUMENT, NULL,
       "The directory containing any KBUILD output files if "
        "either one of the 'KBUILD_OUTPUT' or 'O' parameters were "
        "passed to KBUILD when building the kernel image/modules.  "
        "When not specified, the installer will assume that no "
        "separate output directory was used." },
 
-    { "kernel-install-path", KERNEL_INSTALL_PATH_OPTION, NVGETOPT_STRING_ARGUMENT,
+    { "kernel-install-path", KERNEL_INSTALL_PATH_OPTION,
+      NVGETOPT_STRING_ARGUMENT, NULL,
       "The directory in which the NVIDIA kernel module should be "
       "installed.  The default value is either '/lib/modules/`uname "
       "-r`/kernel/drivers/video' (if '/lib/modules/`uname -r`/kernel' "
       "exists) or '/lib/modules/`uname -r`/video'." },
 
     { "proc-mount-point", PROC_MOUNT_POINT_OPTION, NVGETOPT_STRING_ARGUMENT,
+      NULL,
       "The mount point for the proc file system; if not "
       "specified, then this value defaults to '" DEFAULT_PROC_MOUNT_POINT
       "' (which is normally "
@@ -267,49 +276,44 @@ static const NVGetoptOption __options[] = {
       "the currently running kernel.  This option should only be needed "
       "in very rare circumstances." },
 
-    { "log-file-name", LOG_FILE_NAME_OPTION, NVGETOPT_STRING_ARGUMENT,
+    { "log-file-name", LOG_FILE_NAME_OPTION, NVGETOPT_STRING_ARGUMENT, NULL,
       "File name of the installation log file (the default is: "
       "'" DEFAULT_LOG_FILE_NAME "')." },
 
-    { "tmpdir", TMPDIR_OPTION, NVGETOPT_STRING_ARGUMENT,
+    { "tmpdir", TMPDIR_OPTION, NVGETOPT_STRING_ARGUMENT, NULL,
       "Use the specified directory as a temporary directory when "
       "downloading files from the NVIDIA ftp site; "
       "if not given, then the following list will be searched, and "
       "the first one that exists will be used: $TMPDIR, /tmp, ., "
       "$HOME." },
 
-    { "ftp-mirror", 'm', NVGETOPT_STRING_ARGUMENT,
+    { "ftp-mirror", 'm', NVGETOPT_STRING_ARGUMENT, NULL,
       "Use the specified FTP mirror rather than the default ' "
       DEFAULT_FTP_SITE
       " ' when downloading driver updates." },
 
-    { "latest", 'l', 0,
+    { "latest", 'l', 0, NULL,
       "Connect to the NVIDIA FTP server ' " DEFAULT_FTP_SITE " ' "
       "(or use the ftp mirror "
       "specified with the '--ftp-mirror' option) and query the most "
       "recent " INSTALLER_OS "-" INSTALLER_ARCH " driver version number." },
 
-    { "force-update", 'f', 0,
+    { "force-update", 'f', 0, NULL,
       "Forces an update to proceed, even if the installer "
       "thinks the latest driver is already installed; this option "
       "implies '--update'." },
 
-    { "ui", USER_INTERFACE_OPTION, NVGETOPT_STRING_ARGUMENT,
+    { "ui", USER_INTERFACE_OPTION, NVGETOPT_STRING_ARGUMENT, NULL,
       "Specify what user interface to use, if available.  "
       "Valid values for [UI] are 'ncurses' (the default) or 'none'. "
       "If the ncurses interface fails to initialize, or 'none' "
       "is specified, then a simple printf/scanf interface will "
       "be used." },
 
-    { "no-ncurses-color", 'c', 0,
+    { "no-ncurses-color", 'c', 0, NULL,
       "Disable use of color in the ncurses user interface." },
 
-    { "no-opengl-headers", NO_OPENGL_HEADERS_OPTION, 0,
-      "Normally, installation will install NVIDIA's OpenGL "
-      "header files.  This option disables installation of the NVIDIA "
-      "OpenGL header files." },
-
-    { "force-tls", FORCE_TLS_OPTION, NVGETOPT_STRING_ARGUMENT,
+    { "force-tls", FORCE_TLS_OPTION, NVGETOPT_STRING_ARGUMENT, NULL,
       "NVIDIA's OpenGL libraries are compiled with one of two "
       "different thread local storage (TLS) mechanisms: 'classic tls' "
       "which is used on systems with glibc 2.2 or older, and 'new tls' "
@@ -320,13 +324,14 @@ static const NVGetoptOption __options[] = {
       "for [FORCE-TLS] are 'new' and 'classic'." },
 
 #if defined(NV_X86_64)
-    { "force-tls-compat32", FORCE_TLS_COMPAT32_OPTION, NVGETOPT_STRING_ARGUMENT,
+    { "force-tls-compat32", FORCE_TLS_COMPAT32_OPTION,
+      NVGETOPT_STRING_ARGUMENT, NULL,
       "This option forces the installer to install a specific "
       "32bit compatibility OpenGL TLS library; further details "
       "can be found in the description of the '--force-tls' option." },
 #endif /* NV_X86_64 */
 
-    { "kernel-name", 'k', NVGETOPT_STRING_ARGUMENT,
+    { "kernel-name", 'k', NVGETOPT_STRING_ARGUMENT, NULL,
       "Build and install the NVIDIA kernel module for the "
       "non-running kernel specified by [KERNEL-NAME] ([KERNEL-NAME] "
       "should be the output of `uname -r` when the target kernel is "
@@ -337,10 +342,10 @@ static const NVGetoptOption __options[] = {
       "'/lib/modules/[KERNEL-NAME]/kernel/drivers/video/' and "
       "'/lib/modules/[KERNEL-NAME]/build/', respectively." },
 
-    { "no-precompiled-interface", 'n', 0,
+    { "no-precompiled-interface", 'n', 0, NULL,
       "Disable use of precompiled kernel interfaces." },
 
-    { "no-runlevel-check", NO_RUNLEVEL_CHECK_OPTION, 0,
+    { "no-runlevel-check", NO_RUNLEVEL_CHECK_OPTION, 0, NULL,
       "Normally, the installer checks the current runlevel and "
       "warns users if they are in runlevel 1: in runlevel 1, some "
       "services that are normally active are disabled (such as devfs), "
@@ -348,36 +353,36 @@ static const NVGetoptOption __options[] = {
       "kernel module configuration files.  This option disables the "
       "runlevel check." },
 
-    { "no-abi-note", NO_ABI_NOTE_OPTION, 0,
+    { "no-abi-note", NO_ABI_NOTE_OPTION, 0, NULL,
       "The NVIDIA OpenGL libraries contain an OS ABI note tag, "
       "which identifies the minimum kernel version needed to use the "
       "library.  This option causes the installer to remove this note "
       "from the OpenGL libraries during installation." },
 
-    { "no-rpms", NO_RPMS_OPTION, 0,
+    { "no-rpms", NO_RPMS_OPTION, 0, NULL,
       "Normally, the installer will check for several rpms that "
       "conflict with the driver (specifically: NVIDIA_GLX and "
       "NVIDIA_kernel), and remove them if present.  This option "
       "disables this check." },
 
-    { "no-backup", 'b', 0,
+    { "no-backup", 'b', 0, NULL,
       "During driver installation, conflicting files are backed "
       "up, so that they can be restored when the driver is "
       "uninstalled.  This option causes the installer to simply delete "
       "conflicting files, rather than back them up." },
 
-    { "no-network", 'N', 0,
+    { "no-network", 'N', 0, NULL,
       "This option instructs the installer to not attempt to "
       "connect to the NVIDIA ftp site (for updated precompiled kernel "
       "interfaces, for example)." },
 
-    { "no-recursion", NO_RECURSION_OPTION, 0,
+    { "no-recursion", NO_RECURSION_OPTION, 0, NULL,
       "Normally, nvidia-installer will recursively search for "
       "potentially conflicting libraries under the default OpenGL "
       "and X server installation locations.  With this option set, "
       "the installer will only search in the top-level directories." },
 
-    { "kernel-module-only", 'K', 0,
+    { "kernel-module-only", 'K', 0, NULL,
       "Install a kernel module only, and do not uninstall the "
       "existing driver.  This is intended to be used to install kernel "
       "modules for additional kernels (in cases where you might boot "
@@ -386,25 +391,27 @@ static const NVGetoptOption __options[] = {
       "installed driver must match the version of this kernel "
       "module." },
 
-    { "no-kernel-module", NO_KERNEL_MODULE_OPTION, 0,
+    { "no-kernel-module", NO_KERNEL_MODULE_OPTION, 0, NULL,
       "Install everything but the kernel module, and do not remove any "
       "existing, possibly conflicting kernel modules.  This can be "
       "useful in some DEBUG environments.  If you use this option, you "
       "must be careful to ensure that a NVIDIA kernel module matching "
       "this driver version is installed seperately." },
 
-    { "no-x-check", NO_X_CHECK_OPTION, 0,
+    { "no-x-check", NO_X_CHECK_OPTION, 0, NULL,
       "Do not abort the installation if nvidia-installer detects that "
       "an X server is running.  Only under very rare circumstances should "
       "this option be used." },
 
     { "precompiled-kernel-interfaces-path",
-      PRECOMPILED_KERNEL_INTERFACES_PATH_OPTION, NVGETOPT_STRING_ARGUMENT,
+      PRECOMPILED_KERNEL_INTERFACES_PATH_OPTION,
+      NVGETOPT_STRING_ARGUMENT, NULL,
       "Before searching for a precompiled kernel interface in the "
       ".run file, search in the specified directory." },
 
     { "precompiled-kernel-interfaces-url",
-      PRECOMPILED_KERNEL_INTERFACES_URL_OPTION, NVGETOPT_STRING_ARGUMENT,
+      PRECOMPILED_KERNEL_INTERFACES_URL_OPTION,
+      NVGETOPT_STRING_ARGUMENT, NULL,
       "If no precompiled kernel interfaces are found within the driver package "
       "or provided on the file system by the Linux distribution, check the "
       "specified URL for updates.  NVIDIA does not intend to provide updated "
@@ -412,11 +419,11 @@ static const NVGetoptOption __options[] = {
       "for distributing precompiled kernel interfaces in a local area "
       "network." },
 
-    { "no-nouveau-check", 'z', 0,
+    { "no-nouveau-check", 'z', 0, NULL,
       "Normally, nvidia-installer aborts installation if the nouveau kernel "
       "driver is in use.  Use this option to disable this check." },
 
-    { "run-nvidia-xconfig", 'X', 0,
+    { "run-nvidia-xconfig", 'X', 0, NULL,
       "nvidia-installer can optionally invoke the nvidia-xconfig utility.  "
       "This will update the system X configuration file so that the NVIDIA X "
       "driver is used.  The pre-existing X configuration file will be backed "
@@ -426,7 +433,7 @@ static const NVGetoptOption __options[] = {
       "'yes'.  This is useful with the '--no-questions' or '--silent' "
       "options, which assume the default values for all questions." },
     
-    { "force-selinux", FORCE_SELINUX_OPTION, NVGETOPT_STRING_ARGUMENT,
+    { "force-selinux", FORCE_SELINUX_OPTION, NVGETOPT_STRING_ARGUMENT, NULL,
       "Linux installations using SELinux (Security-Enhanced Linux) "
       "require that the security type of all shared libraries be set "
       "to 'shlib_t' or 'textrel_shlib_t', depending on the distribution. "
@@ -441,19 +448,20 @@ static const NVGetoptOption __options[] = {
       "'no' (prevent setting of the security type), and 'default' "
       "(let nvidia-installer decide when to set the security type)." },
 
-    { "selinux-chcon-type", SELINUX_CHCON_TYPE_OPTION, NVGETOPT_STRING_ARGUMENT,
+    { "selinux-chcon-type", SELINUX_CHCON_TYPE_OPTION,
+      NVGETOPT_STRING_ARGUMENT, NULL,
       "When SELinux support is enabled, nvidia-installer will try to determine "
       "which chcon argument to use by first trying 'textrel_shlib_t', then "
       "'texrel_shlib_t', then 'shlib_t'.  Use this option to override this "
       "detection logic." },
 
-    { "no-sigwinch-workaround", NO_SIGWINCH_WORKAROUND_OPTION, 0,
+    { "no-sigwinch-workaround", NO_SIGWINCH_WORKAROUND_OPTION, 0, NULL,
       "Normally, nvidia-installer ignores the SIGWINCH signal before it "
       "forks to execute commands, e.g. to build the kernel module, and "
       "restores the SIGWINCH signal handler after the child process "
       "has terminated.  This option disables this behavior." },
 
-    { "no-cc-version-check", NO_CC_VERSION_CHECK_OPTION, 0,
+    { "no-cc-version-check", NO_CC_VERSION_CHECK_OPTION, 0, NULL,
       "The NVIDIA kernel module should be compiled with the same compiler that "
       "was used to compile the currently running kernel. The layout of some "
       "Linux kernel data structures may be dependent on the version of gcc "
@@ -464,19 +472,21 @@ static const NVGetoptOption __options[] = {
       "installation in case of failures. Use this option to override this "
       "check." },
 
-    { "no-distro-scripts", NO_DISTRO_SCRIPTS_OPTION, 0,
+    { "no-distro-scripts", NO_DISTRO_SCRIPTS_OPTION, 0, NULL,
       "Normally, nvidia-installer will run scripts from /usr/lib/nvidia before "
       "and after installing or uninstalling the driver.  Use this option to "
       "disable execution of these scripts." },
 
     /* Orphaned options: These options were in the long_options table in
      * nvidia-installer.c but not in the help. */
-    { "debug",                    'd', 0, NULL },
-    { "help-args-only",           HELP_ARGS_ONLY_OPTION, 0, NULL },
-    { "add-this-kernel",          ADD_THIS_KERNEL_OPTION, 0, NULL },
-    { "rpm-file-list",            RPM_FILE_LIST_OPTION, NVGETOPT_STRING_ARGUMENT, NULL },
-    { "no-rpms",                  NO_RPMS_OPTION, 0, NULL},
-    { "advanced-options-args-only", ADVANCED_OPTIONS_ARGS_ONLY_OPTION, 0, NULL },
+    { "debug",                    'd', 0, NULL,NULL },
+    { "help-args-only",           HELP_ARGS_ONLY_OPTION, 0, NULL, NULL },
+    { "add-this-kernel",          ADD_THIS_KERNEL_OPTION, 0, NULL, NULL },
+    { "rpm-file-list",            RPM_FILE_LIST_OPTION,
+      NVGETOPT_STRING_ARGUMENT, NULL, NULL },
+    { "no-rpms",                  NO_RPMS_OPTION, 0, NULL, NULL},
+    { "advanced-options-args-only", ADVANCED_OPTIONS_ARGS_ONLY_OPTION, 0,
+      NULL, NULL },
 
     { NULL, 0, 0, NULL },
 };

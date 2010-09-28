@@ -577,6 +577,7 @@ static ConflictingFileInfo __xfree86_libs[] = {
     { "libvdpau_trace.",     15, /* strlen("libvdpau_trace.") */     NULL            },
     { "libvdpau_nvidia.",    16, /* strlen("libvdpau_nvidia.") */    NULL            },
     { "libnvidia-compiler.", 19, /* strlen("libnvidia-compiler.") */ NULL            },
+    { "libnvcuvid.",         11, /* strlen("libnvcuvid.") */         NULL            },
     { NULL,                  0,                                      NULL            }
 };
 

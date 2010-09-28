@@ -121,7 +121,6 @@ static Options *load_default_options(void)
     op->distro = get_distribution(op);
 
     op->logging = TRUE; /* log by default */
-    op->opengl_headers = TRUE; /* We now install our GL headers by default */
     op->run_nvidia_xconfig = FALSE;
     op->selinux_option = SELINUX_DEFAULT;
 
@@ -145,12 +144,16 @@ static Options *load_default_options(void)
 
 static void parse_commandline(int argc, char *argv[], Options *op)
 {
-    int c, boolval;
+    int c;
     char *strval = NULL, *program_name = NULL;
 
     while (1) {
 
-        c = nvgetopt(argc, argv, __options, &strval);
+        c = nvgetopt(argc, argv, __options, &strval,
+                     NULL,  /* boolval */
+                     NULL,  /* intval */
+                     NULL,  /* doubleval */
+                     NULL); /* disable_val */
 
         if (c == -1)
             break;
@@ -240,8 +243,6 @@ static void parse_commandline(int argc, char *argv[], Options *op)
             print_help_args_only(TRUE, FALSE); exit(0); break;
         case TMPDIR_OPTION:
             op->tmpdir = strval; break;
-        case NO_OPENGL_HEADERS_OPTION:
-            op->opengl_headers = FALSE; break;
         case FORCE_TLS_OPTION:
             if (strcasecmp(strval, "new") == 0)
                 op->which_tls = FORCE_NEW_TLS;

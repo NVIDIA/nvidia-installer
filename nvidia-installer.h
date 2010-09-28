@@ -119,7 +119,6 @@ typedef struct __options {
     int no_ncurses_color;
     int latest;
     int force_update;
-    int opengl_headers;
     int no_questions;
     int silent;
     int which_tls;
@@ -296,11 +295,11 @@ typedef struct {
 
 /* file types */
 
-#define FILE_TYPE_MASK                          0x00000000ffffffffULL
+#define FILE_TYPE_MASK                          0x0000000fffffffffULL
 
 #define FILE_TYPE_KERNEL_MODULE_SRC             0x0000000000000001ULL
 #define FILE_TYPE_KERNEL_MODULE_CMD             0x0000000000000002ULL
-#define FILE_TYPE_OPENGL_HEADER                 0x0000000000000004ULL
+/* unused                                       0x0000000000000004ULL */
 #define FILE_TYPE_OPENGL_LIB                    0x0000000000000008ULL
 #define FILE_TYPE_XLIB_STATIC_LIB               0x0000000000000010ULL
 #define FILE_TYPE_XLIB_SHARED_LIB               0x0000000000000020ULL
@@ -321,14 +320,17 @@ typedef struct {
 /* Create a symlink only if the file doesn't exist */
 #define FILE_TYPE_XMODULE_NEWSYM                0x0000000000100000ULL
 #define FILE_TYPE_MANPAGE                       0x0000000000200000ULL
-#define FILE_TYPE_CUDA_HEADER                   0x0000000000400000ULL
+/* unused                                       0x0000000000400000ULL */
 #define FILE_TYPE_CUDA_LIB                      0x0000000000800000ULL
 #define FILE_TYPE_CUDA_SYMLINK                  0x0000000001000000ULL
 #define FILE_TYPE_VDPAU_LIB                     0x0000000002000000ULL
 #define FILE_TYPE_VDPAU_SYMLINK                 0x0000000004000000ULL
-#define FILE_TYPE_VDPAU_HEADER                  0x0000000008000000ULL
+/* unused                                       0x0000000008000000ULL */
 #define FILE_TYPE_UTILITY_BIN_SYMLINK           0x0000000010000000ULL
 #define FILE_TYPE_CUDA_ICD                      0x0000000020000000ULL
+#define FILE_TYPE_NVCUVID_LIB                   0x0000000040000000ULL
+#define FILE_TYPE_NVCUVID_SYMLINK               0x0000000080000000ULL
+/* unused                                       0x0000000100000000ULL */
 
 
 /* file class: this is used to distinguish OpenGL libraries */
@@ -352,8 +354,6 @@ typedef struct {
                                     FILE_TYPE_UTILITY_LIB        | \
                                     FILE_TYPE_DOCUMENTATION      | \
                                     FILE_TYPE_MANPAGE            | \
-                                    FILE_TYPE_OPENGL_HEADER      | \
-                                    FILE_TYPE_CUDA_HEADER        | \
                                     FILE_TYPE_CUDA_ICD           | \
                                     FILE_TYPE_KERNEL_MODULE      | \
                                     FILE_TYPE_INSTALLER_BINARY   | \
@@ -362,23 +362,21 @@ typedef struct {
                                     FILE_TYPE_XMODULE_LIB        | \
                                     FILE_TYPE_DOT_DESKTOP        | \
                                     FILE_TYPE_VDPAU_LIB          | \
-                                    FILE_TYPE_VDPAU_HEADER)
+                                    FILE_TYPE_NVCUVID_LIB)
 
 #define FILE_TYPE_HAVE_PATH        (FILE_TYPE_XMODULE_LIB        | \
                                     FILE_TYPE_XMODULE_SYMLINK    | \
                                     FILE_TYPE_XMODULE_NEWSYM     | \
                                     FILE_TYPE_MANPAGE            | \
-                                    FILE_TYPE_OPENGL_HEADER      | \
                                     FILE_TYPE_CUDA_LIB           | \
                                     FILE_TYPE_CUDA_SYMLINK       | \
-                                    FILE_TYPE_CUDA_HEADER        | \
                                     FILE_TYPE_TLS_LIB            | \
                                     FILE_TYPE_TLS_SYMLINK        | \
                                     FILE_TYPE_DOT_DESKTOP        | \
                                     FILE_TYPE_DOCUMENTATION      | \
                                     FILE_TYPE_VDPAU_SYMLINK      | \
-                                    FILE_TYPE_VDPAU_LIB          | \
-                                    FILE_TYPE_VDPAU_HEADER)
+                                    FILE_TYPE_VDPAU_LIB)
+
 
 #define FILE_TYPE_HAVE_ARCH        (FILE_TYPE_OPENGL_LIB         | \
                                     FILE_TYPE_CUDA_LIB           | \
@@ -388,7 +386,9 @@ typedef struct {
                                     FILE_TYPE_TLS_LIB            | \
                                     FILE_TYPE_TLS_SYMLINK        | \
                                     FILE_TYPE_VDPAU_SYMLINK      | \
-                                    FILE_TYPE_VDPAU_LIB)
+                                    FILE_TYPE_VDPAU_LIB          | \
+                                    FILE_TYPE_NVCUVID_LIB        | \
+                                    FILE_TYPE_NVCUVID_SYMLINK)
 
 #define FILE_TYPE_HAVE_CLASS       (FILE_TYPE_TLS_LIB            | \
                                     FILE_TYPE_TLS_SYMLINK)
@@ -400,7 +400,8 @@ typedef struct {
                                     FILE_TYPE_XMODULE_SYMLINK    | \
                                     FILE_TYPE_UTILITY_LIB_SYMLINK| \
                                     FILE_TYPE_UTILITY_BIN_SYMLINK| \
-                                    FILE_TYPE_VDPAU_SYMLINK)
+                                    FILE_TYPE_VDPAU_SYMLINK      | \
+                                    FILE_TYPE_NVCUVID_SYMLINK)
 
 #define FILE_TYPE_NEWSYM           (FILE_TYPE_XMODULE_NEWSYM)
 
@@ -416,7 +417,8 @@ typedef struct {
                                     FILE_TYPE_TLS_LIB            | \
                                     FILE_TYPE_XMODULE_SHARED_LIB | \
                                     FILE_TYPE_UTILITY_LIB        | \
-                                    FILE_TYPE_VDPAU_LIB)
+                                    FILE_TYPE_VDPAU_LIB          | \
+                                    FILE_TYPE_NVCUVID_LIB)
 
 #define TLS_LIB_TYPE_FORCED         0x0001
 #define TLS_LIB_NEW_TLS             0x0002

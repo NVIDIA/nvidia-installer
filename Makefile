@@ -100,8 +100,23 @@ else
   COMPAT_32_SRC =
 endif
 
+##############################################################################
+# The common-utils directory may be in one of two places: either
+# elsewhere in the driver source tree when building nvidia-installer
+# as part of the NVIDIA driver build (in which case, COMMON_UTILS_DIR
+# should be defined by the calling makefile), or directly in the
+# source directory when building from the nvidia-installer source
+# tarball (in which case, the below conditional assignments should be
+# used)
+##############################################################################
+
+COMMON_UTILS_DIR          ?= common-utils
+
 # include the list of source files; defines SRC
 include dist-files.mk
+
+include $(COMMON_UTILS_DIR)/src.mk
+SRC += $(addprefix $(COMMON_UTILS_DIR)/,$(COMMON_UTILS_SRC))
 
 INSTALLER_SRC = $(SRC) $(NCURSES_UI_SO_C) $(TLS_TEST_C) $(TLS_TEST_DSO_C) \
 	$(RTLD_TEST_C) $(COMPAT_32_SRC) $(STAMP_C)
@@ -109,6 +124,8 @@ INSTALLER_SRC = $(SRC) $(NCURSES_UI_SO_C) $(TLS_TEST_C) $(TLS_TEST_DSO_C) \
 INSTALLER_OBJS = $(call BUILD_OBJECT_LIST,$(INSTALLER_SRC))
 
 CFLAGS += -I. -imacros $(CONFIG_H) -I $(OUTPUTDIR)
+CFLAGS += -I $(COMMON_UTILS_DIR)
+
 HOST_CFLAGS += -I. -imacros $(CONFIG_H) -I $(OUTPUTDIR)
 LDFLAGS += -L. -ldl
 

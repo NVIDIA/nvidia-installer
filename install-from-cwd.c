@@ -171,10 +171,6 @@ int install_from_cwd(Options *op)
     
         if (!get_prefixes(op)) goto failed;
 
-        /* ask if we should install the OpenGL header files */
-
-        should_install_opengl_headers(op, p);
-
         /*
          * select the appropriate TLS class, modifying the package as
          * necessary.
@@ -677,10 +673,6 @@ static Package *parse_manifest (Options *op)
                 p->entries[n].flags |= FILE_TYPE_KERNEL_MODULE_SRC;
             else if (strcmp(flag, "KERNEL_MODULE_CMD") == 0)
                 p->entries[n].flags |= FILE_TYPE_KERNEL_MODULE_CMD;
-            else if (strcmp(flag, "OPENGL_HEADER") == 0)
-                p->entries[n].flags |= FILE_TYPE_OPENGL_HEADER;
-            else if (strcmp(flag, "CUDA_HEADER") == 0)
-                p->entries[n].flags |= FILE_TYPE_CUDA_HEADER;
             else if (strcmp(flag, "CUDA_ICD") == 0)
                 p->entries[n].flags |= FILE_TYPE_CUDA_ICD;
             else if (strcmp(flag, "OPENGL_LIB") == 0)
@@ -725,12 +717,14 @@ static Package *parse_manifest (Options *op)
                 p->entries[n].flags |= FILE_TYPE_XMODULE_SYMLINK;
             else if (strcmp(flag, "XMODULE_NEWSYM") == 0)
                 p->entries[n].flags |= FILE_TYPE_XMODULE_NEWSYM;
-            else if (strcmp(flag, "VDPAU_HEADER") == 0)
-                p->entries[n].flags |= FILE_TYPE_VDPAU_HEADER;
             else if (strcmp(flag, "VDPAU_LIB") == 0)
                 p->entries[n].flags |= FILE_TYPE_VDPAU_LIB;
             else if (strcmp(flag, "VDPAU_SYMLINK") == 0)
                 p->entries[n].flags |= FILE_TYPE_VDPAU_SYMLINK;
+            else if (strcmp(flag, "NVCUVID_LIB") == 0)
+                p->entries[n].flags |= FILE_TYPE_NVCUVID_LIB;
+            else if (strcmp(flag, "NVCUVID_LIB_SYMLINK") == 0)
+                p->entries[n].flags |= FILE_TYPE_NVCUVID_SYMLINK;
             else {
                 nvfree(flag);
                 goto invalid_manifest_file;
