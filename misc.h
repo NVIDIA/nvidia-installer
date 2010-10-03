@@ -120,6 +120,7 @@ int check_for_modular_xorg(Options *op);
 int check_for_nvidia_graphics_devices(Options *op, Package *p);
 int run_nvidia_xconfig(Options *op);
 int run_distro_hook(Options *op, const char *hook);
+int check_for_nouveau(Options *op);
 
 TextRows *nv_format_text_rows(const char *prefix, const char *buf,
                               int width, int word_boundary);
