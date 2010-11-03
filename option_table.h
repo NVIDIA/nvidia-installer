@@ -412,6 +412,10 @@ static const NVGetoptOption __options[] = {
       "for distributing precompiled kernel interfaces in a local area "
       "network." },
 
+    { "no-nouveau-check", 'z', 0,
+      "Normally, nvidia-installer aborts installation if the nouveau kernel "
+      "driver is in use.  Use this option to disable this check." },
+
     { "run-nvidia-xconfig", 'X', 0,
       "nvidia-installer can optionally invoke the nvidia-xconfig utility.  "
       "This will update the system X configuration file so that the NVIDIA X "

@@ -141,6 +141,7 @@ typedef struct __options {
     int no_x_check;
     int no_nvidia_xconfig_question;
     int run_distro_scripts;
+    int no_nouveau_check;
 
     char *opengl_prefix;
     char *opengl_libdir;
