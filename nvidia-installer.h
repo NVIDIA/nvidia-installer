@@ -119,6 +119,7 @@ typedef struct __options {
     int no_ncurses_color;
     int latest;
     int force_update;
+    int opengl_headers;
     int no_questions;
     int silent;
     int which_tls;
@@ -299,7 +300,7 @@ typedef struct {
 
 #define FILE_TYPE_KERNEL_MODULE_SRC             0x0000000000000001ULL
 #define FILE_TYPE_KERNEL_MODULE_CMD             0x0000000000000002ULL
-/* unused                                       0x0000000000000004ULL */
+#define FILE_TYPE_OPENGL_HEADER                 0x0000000000000004ULL
 #define FILE_TYPE_OPENGL_LIB                    0x0000000000000008ULL
 #define FILE_TYPE_XLIB_STATIC_LIB               0x0000000000000010ULL
 #define FILE_TYPE_XLIB_SHARED_LIB               0x0000000000000020ULL
@@ -354,6 +355,7 @@ typedef struct {
                                     FILE_TYPE_UTILITY_LIB        | \
                                     FILE_TYPE_DOCUMENTATION      | \
                                     FILE_TYPE_MANPAGE            | \
+                                    FILE_TYPE_OPENGL_HEADER      | \
                                     FILE_TYPE_CUDA_ICD           | \
                                     FILE_TYPE_KERNEL_MODULE      | \
                                     FILE_TYPE_INSTALLER_BINARY   | \
@@ -368,6 +370,7 @@ typedef struct {
                                     FILE_TYPE_XMODULE_SYMLINK    | \
                                     FILE_TYPE_XMODULE_NEWSYM     | \
                                     FILE_TYPE_MANPAGE            | \
+                                    FILE_TYPE_OPENGL_HEADER      | \
                                     FILE_TYPE_CUDA_LIB           | \
                                     FILE_TYPE_CUDA_SYMLINK       | \
                                     FILE_TYPE_TLS_LIB            | \

@@ -1095,6 +1095,55 @@ char *extract_version_string(const char *str)
 
 
 /*
+ * should_install_opengl_headers() - if in expert mode, ask the user
+ * if they want to install OpenGL header files.
+ */
+
+void should_install_opengl_headers(Options *op, Package *p)
+{
+    int i, have_headers = FALSE;
+
+    if (!op->expert) return;
+
+    /*
+     * first, scan through the package to see if we have any header
+     * files to install
+     */
+
+    for (i = 0; i < p->num_entries; i++) {
+        if (p->entries[i].flags & FILE_TYPE_OPENGL_HEADER) {
+            have_headers = TRUE;
+            break;
+        }
+    }
+
+    if (!have_headers) return;
+
+    /*
+     * If we're to provide more verbose descriptions, we could present
+     * something like this:
+     *
+     * ("The %s provides OpenGL header files; these are used when
+     * compiling OpenGL applications.  Most Linux distributions
+     * already have OpenGL header files installed (normally in the
+     * /usr/include/GL/ directory).  If you don't have OpenGL header
+     * files installed and would like to, or if you want to develop
+     * OpenGL applications that take advantage of NVIDIA OpenGL
+     * extensions, then you can install NVIDIA's OpenGL header files
+     * at this time.", p->description);
+     */
+
+    op->opengl_headers = ui_yes_no(op, op->opengl_headers,
+                                   "Install NVIDIA's OpenGL header files?");
+
+    ui_expert(op, "Installation %s install the OpenGL header files.",
+              op->opengl_headers ? "will" : "will not");
+
+} /* should_install_opengl_headers() */
+
+
+
+/*
  * should_install_compat32_files() - ask the user if he/she wishes to
  * install 32bit compatibily libraries.
  */
@@ -1311,6 +1360,7 @@ static int check_file(Options *op, const char *filename,
 uint64_t get_installable_file_mask(Options *op)
 {
     uint64_t installable_files = FILE_TYPE_INSTALLABLE_FILE;
+    if (!op->opengl_headers) installable_files &= ~FILE_TYPE_OPENGL_HEADER;
 
     return installable_files;
 

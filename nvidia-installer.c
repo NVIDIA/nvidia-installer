@@ -121,6 +121,7 @@ static Options *load_default_options(void)
     op->distro = get_distribution(op);
 
     op->logging = TRUE; /* log by default */
+    op->opengl_headers = FALSE; /* do not install our GL headers by default */
     op->run_nvidia_xconfig = FALSE;
     op->selinux_option = SELINUX_DEFAULT;
 
@@ -243,6 +244,8 @@ static void parse_commandline(int argc, char *argv[], Options *op)
             print_help_args_only(TRUE, FALSE); exit(0); break;
         case TMPDIR_OPTION:
             op->tmpdir = strval; break;
+        case OPENGL_HEADERS_OPTION:
+            op->opengl_headers = TRUE; break;
         case FORCE_TLS_OPTION:
             if (strcasecmp(strval, "new") == 0)
                 op->which_tls = FORCE_NEW_TLS;

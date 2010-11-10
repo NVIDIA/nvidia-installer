@@ -600,6 +600,12 @@ int set_destinations(Options *op, Package *p)
             path = "";
             break;
 
+        case FILE_TYPE_OPENGL_HEADER:
+            prefix = op->opengl_prefix;
+            dir = op->opengl_incdir;
+            path = p->entries[i].path;
+            break;
+
         case FILE_TYPE_INSTALLER_BINARY:
             prefix = op->utility_prefix;
             dir = op->utility_bindir;
