@@ -30,8 +30,6 @@
 #include <string.h>
 #include <stdio.h>
 
-#include "string-utils.h"
-#include "alloc-utils.h"
 #include "nvidia-installer.h"
 #include "format.h"
 

@@ -132,11 +132,10 @@ LDFLAGS += -L. -ldl
 MKPRECOMPILED_SRC = crc.c mkprecompiled.c
 MKPRECOMPILED_OBJS = $(call BUILD_OBJECT_LIST,$(MKPRECOMPILED_SRC))
 
-MAKESELF_HELP_SCRIPT_SRC = makeself-help-script.c \
-                           help-args.c \
-                           format.c \
-                           string-utils.c \
-                           alloc-utils.c
+MAKESELF_HELP_SCRIPT_SRC  = makeself-help-script.c
+MAKESELF_HELP_SCRIPT_SRC += help-args.c
+MAKESELF_HELP_SCRIPT_SRC += format.c
+MAKESELF_HELP_SCRIPT_SRC += $(COMMON_UTILS_DIR)/common-utils.c
 
 BUILD_MAKESELF_OBJECT_LIST = \
   $(patsubst %.o,%.makeself.o,$(call BUILD_OBJECT_LIST,$(1)))

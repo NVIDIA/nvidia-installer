@@ -35,9 +35,6 @@
 #include "nvidia-installer.h"
 #include "command-list.h"
 
-#include "alloc-utils.h"
-#include "string-utils.h"
-
 /*
  * NV_VSNPRINTF() - takes a fmt string, and uses vsnprintf to build
  * the resulting string whic it assigns to buf.  The caller of this

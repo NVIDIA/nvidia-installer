@@ -42,6 +42,21 @@
 #include "misc.h"
 
 
+/*
+ * NV_STRCAT() - takes a dynamically allocated string followed by a
+ * NULL-terminated list of arbitrary strings and concatenates the
+ * strings with nvstrcat(); the newly allocated string replaces the
+ * original one, which is freed.
+ */
+#define NV_STRCAT(str, args...)              \
+do {                                         \
+    char *__tmp_str = (str);                 \
+    (str) = nvstrcat(__tmp_str, ##args);     \
+    nvfree(__tmp_str);                       \
+} while (0)
+
+
+
 extern int default_opts;
 
 int redirect_count = 0;

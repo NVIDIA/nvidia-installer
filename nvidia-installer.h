@@ -31,6 +31,7 @@
 #include <sys/types.h>
 #include <stdint.h>
 
+#include "common-utils.h"
 
 /*
  * Enumerated type, listing each of the system utilities we'll need.
@@ -271,17 +272,6 @@ typedef struct {
 } TextRows;
 
 
-
-
-/* define boolean values TRUE and FALSE */
-
-#ifndef TRUE
-#define TRUE 1
-#endif /* TRUE */
-  
-#ifndef FALSE
-#define FALSE 0
-#endif /* FALSE */
 
 
 /* flags for passing into install_from_cwd() */

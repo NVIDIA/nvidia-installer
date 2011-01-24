@@ -49,8 +49,6 @@ SRC += update.c
 SRC += user-interface.c
 SRC += sanity.c
 SRC += help-args.c
-SRC += string-utils.c
-SRC += alloc-utils.c
 
 DIST_FILES := $(SRC)
 
@@ -71,8 +69,6 @@ DIST_FILES += snarf.h
 DIST_FILES += update.h
 DIST_FILES += user-interface.h
 DIST_FILES += help-args.h
-DIST_FILES += string-utils.h
-DIST_FILES += alloc-utils.h
 
 DIST_FILES += COPYING
 DIST_FILES += README
