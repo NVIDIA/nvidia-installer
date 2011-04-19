@@ -49,6 +49,8 @@
 #define BACKUP_DIRECTORY "/var/lib/nvidia"
 #define BACKUP_LOG       (BACKUP_DIRECTORY "/log")
 
+#define RMMOD_MODULE_NAME "nvidia"
+
 /*
  * XXX when uninstalling should we remove directories that were
  * created by our installation?
@@ -115,7 +117,6 @@ typedef struct {
     BackupLogEntry *e;
     int n;
 } BackupInfo;
-
 
 
 static BackupInfo *read_backup_log_file(Options *op);
@@ -500,7 +501,7 @@ static int do_uninstall(Options *op)
     BackupLogEntry *e;
     BackupInfo *b;
     int i, len, ok;
-    char *tmpstr;
+    char *tmpstr, *cmd;
     float percent;
 
     static const char existing_installation_is_borked[] = 
@@ -657,6 +658,15 @@ static int do_uninstall(Options *op)
     if (!remove_directory(op, BACKUP_DIRECTORY)) {
         /* XXX what to do if this fails?... nothing */
     }
+
+    /*
+     * attempt to unload the kernel module, but don't abort if this fails: the
+     * kernel may not have been configured with support for module unloading
+     * (Linux 2.6) or the user might have unloaded it themselves.
+     */
+    cmd = nvstrcat(op->utils[RMMOD], " ", RMMOD_MODULE_NAME, NULL);
+    run_command(op, cmd, NULL, FALSE, 0, TRUE);
+    nvfree(cmd);
 
     run_distro_hook(op, "post-uninstall");
 
