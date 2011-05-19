@@ -25,9 +25,9 @@ int main(int argc, char **argv)
     }
 
     if (strcmp(argv[1], "--help-args-only") == 0)
-        print_help_args_only(TRUE, FALSE);
+        print_help_args_only(FALSE, TRUE, FALSE);
     else if (strcmp(argv[1], "--advanced-options-args-only") == 0)
-        print_help_args_only(TRUE, TRUE);
+        print_help_args_only(FALSE, TRUE, TRUE);
     else {
         print_usage(argv);
         exit(1);

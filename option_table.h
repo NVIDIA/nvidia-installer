@@ -30,6 +30,14 @@
 
 #include "nvgetopt.h"
 
+#define NVGETOPT_OPTION_APPLIES_TO_NVIDIA_UNINSTALL 0x00010000
+
+/* make sure OPTION_APPLIES_TO_NVIDIA_UNINSTALL is in the approved range */
+#if !(NVGETOPT_OPTION_APPLIES_TO_NVIDIA_UNINSTALL & NVGETOPT_UNUSED_FLAG_RANGE)
+#error NVGETOPT_OPTION_APPLIES_TO_NVIDIA_UNINSTALL incorrectly defined
+#endif
+
+
 enum {
     XFREE86_PREFIX_OPTION = 1,
     OPENGL_PREFIX_OPTION,
@@ -94,14 +102,17 @@ static const NVGetoptOption __options[] = {
       "other options given on the commandline will be passed on to the "
       "downloaded driver package when installing it." },
 
-    { "version", 'v', NVGETOPT_HELP_ALWAYS, NULL,
+    { "version", 'v',
+      NVGETOPT_HELP_ALWAYS | NVGETOPT_OPTION_APPLIES_TO_NVIDIA_UNINSTALL, NULL,
       "Print the nvidia-installer version and exit." },
 
-    { "help", 'h', NVGETOPT_HELP_ALWAYS, NULL,
+    { "help", 'h',
+      NVGETOPT_HELP_ALWAYS | NVGETOPT_OPTION_APPLIES_TO_NVIDIA_UNINSTALL, NULL,
       "Print usage information for the common commandline options "
       "and exit." },
 
-    { "advanced-options", 'A', NVGETOPT_HELP_ALWAYS, NULL,
+    { "advanced-options", 'A',
+      NVGETOPT_HELP_ALWAYS | NVGETOPT_OPTION_APPLIES_TO_NVIDIA_UNINSTALL, NULL,
       "Print usage information for the common commandline options "
       "as well as the advanced options, and then exit." },
 
@@ -118,13 +129,13 @@ static const NVGetoptOption __options[] = {
       "Perform basic sanity tests on an existing NVIDIA "
       "driver installation." },
 
-    { "expert", 'e', 0, NULL,
+    { "expert", 'e', NVGETOPT_OPTION_APPLIES_TO_NVIDIA_UNINSTALL, NULL,
       "Enable 'expert' installation mode; more detailed questions "
       "will be asked, and more verbose output will be printed; "
       "intended for expert users.  The questions may be suppressed "
       "with the '--no-questions' commandline option." },
 
-    { "no-questions", 'q', 0, NULL,
+    { "no-questions", 'q', NVGETOPT_OPTION_APPLIES_TO_NVIDIA_UNINSTALL, NULL,
       "Do not ask any questions; the default (normally 'yes') "
       "is assumed for "
       "all yes/no questions, and the default string is assumed in "
@@ -133,7 +144,7 @@ static const NVGetoptOption __options[] = {
       "license acceptance; the license may be accepted with the "
       "commandline option '--accept-license'." },
 
-    { "silent", 's', 0, NULL,
+    { "silent", 's', NVGETOPT_OPTION_APPLIES_TO_NVIDIA_UNINSTALL, NULL,
       "Run silently; no questions are asked and no output is "
       "printed, except for error messages to stderr.  This option "
       "implies '--ui=none --no-questions --accept-license'." },
@@ -277,12 +288,14 @@ static const NVGetoptOption __options[] = {
       "the currently running kernel.  This option should only be needed "
       "in very rare circumstances." },
 
-    { "log-file-name", LOG_FILE_NAME_OPTION, NVGETOPT_STRING_ARGUMENT, NULL,
-      "File name of the installation log file (the default is: "
+    { "log-file-name", LOG_FILE_NAME_OPTION,
+      NVGETOPT_STRING_ARGUMENT | NVGETOPT_OPTION_APPLIES_TO_NVIDIA_UNINSTALL,
+      NULL, "File name of the installation log file (the default is: "
       "'" DEFAULT_LOG_FILE_NAME "')." },
 
-    { "tmpdir", TMPDIR_OPTION, NVGETOPT_STRING_ARGUMENT, NULL,
-      "Use the specified directory as a temporary directory when "
+    { "tmpdir", TMPDIR_OPTION,
+      NVGETOPT_STRING_ARGUMENT | NVGETOPT_OPTION_APPLIES_TO_NVIDIA_UNINSTALL,
+      NULL, "Use the specified directory as a temporary directory when "
       "downloading files from the NVIDIA ftp site; "
       "if not given, then the following list will be searched, and "
       "the first one that exists will be used: $TMPDIR, /tmp, ., "
@@ -304,15 +317,16 @@ static const NVGetoptOption __options[] = {
       "thinks the latest driver is already installed; this option "
       "implies '--update'." },
 
-    { "ui", USER_INTERFACE_OPTION, NVGETOPT_STRING_ARGUMENT, NULL,
-      "Specify what user interface to use, if available.  "
+    { "ui", USER_INTERFACE_OPTION,
+      NVGETOPT_STRING_ARGUMENT | NVGETOPT_OPTION_APPLIES_TO_NVIDIA_UNINSTALL,
+      NULL, "Specify what user interface to use, if available.  "
       "Valid values for [UI] are 'ncurses' (the default) or 'none'. "
       "If the ncurses interface fails to initialize, or 'none' "
       "is specified, then a simple printf/scanf interface will "
       "be used." },
 
-    { "no-ncurses-color", 'c', 0, NULL,
-      "Disable use of color in the ncurses user interface." },
+    { "no-ncurses-color", 'c', NVGETOPT_OPTION_APPLIES_TO_NVIDIA_UNINSTALL,
+      NULL, "Disable use of color in the ncurses user interface." },
 
     { "opengl-headers", OPENGL_HEADERS_OPTION, 0, NULL,
       "Normally, installation will not install NVIDIA's OpenGL "
@@ -392,7 +406,8 @@ static const NVGetoptOption __options[] = {
       "and X server installation locations.  With this option set, "
       "the installer will only search in the top-level directories." },
 
-    { "kernel-module-only", 'K', 0, NULL,
+    { "kernel-module-only", 'K',
+      NVGETOPT_OPTION_APPLIES_TO_NVIDIA_UNINSTALL, NULL,
       "Install a kernel module only, and do not uninstall the "
       "existing driver.  This is intended to be used to install kernel "
       "modules for additional kernels (in cases where you might boot "
@@ -459,13 +474,14 @@ static const NVGetoptOption __options[] = {
       "(let nvidia-installer decide when to set the security type)." },
 
     { "selinux-chcon-type", SELINUX_CHCON_TYPE_OPTION,
-      NVGETOPT_STRING_ARGUMENT, NULL,
-      "When SELinux support is enabled, nvidia-installer will try to determine "
-      "which chcon argument to use by first trying 'textrel_shlib_t', then "
-      "'texrel_shlib_t', then 'shlib_t'.  Use this option to override this "
-      "detection logic." },
+      NVGETOPT_STRING_ARGUMENT | NVGETOPT_OPTION_APPLIES_TO_NVIDIA_UNINSTALL,
+      NULL, "When SELinux support is enabled, nvidia-installer will try to "
+      "determine which chcon argument to use by first trying "
+      "'textrel_shlib_t', then 'texrel_shlib_t', then 'shlib_t'.  Use this "
+      "option to override this detection logic." },
 
-    { "no-sigwinch-workaround", NO_SIGWINCH_WORKAROUND_OPTION, 0, NULL,
+    { "no-sigwinch-workaround", NO_SIGWINCH_WORKAROUND_OPTION,
+      NVGETOPT_OPTION_APPLIES_TO_NVIDIA_UNINSTALL, NULL,
       "Normally, nvidia-installer ignores the SIGWINCH signal before it "
       "forks to execute commands, e.g. to build the kernel module, and "
       "restores the SIGWINCH signal handler after the child process "
@@ -482,7 +498,8 @@ static const NVGetoptOption __options[] = {
       "installation in case of failures. Use this option to override this "
       "check." },
 
-    { "no-distro-scripts", NO_DISTRO_SCRIPTS_OPTION, 0, NULL,
+    { "no-distro-scripts", NO_DISTRO_SCRIPTS_OPTION,
+      NVGETOPT_OPTION_APPLIES_TO_NVIDIA_UNINSTALL, NULL,
       "Normally, nvidia-installer will run scripts from /usr/lib/nvidia before "
       "and after installing or uninstalling the driver.  Use this option to "
       "disable execution of these scripts." },
@@ -500,4 +517,5 @@ static const NVGetoptOption __options[] = {
 
     { NULL, 0, 0, NULL },
 };
+
 #endif /* __OPT_TABLE_H__ */

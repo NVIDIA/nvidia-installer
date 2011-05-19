@@ -28,6 +28,6 @@
 #ifndef __HELP_ARGS_H__
 #define __HELP_ARGS_H__
 
-void print_help_args_only(int args_only, int advanced);
+void print_help_args_only(int is_uninstall, int args_only, int advanced);
 
 #endif /* __HELP_ARGS_H__ */

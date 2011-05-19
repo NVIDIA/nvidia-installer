@@ -66,7 +66,7 @@ static char *cook_description(const char *description)
 
 
 
-void print_help_args_only(int args_only, int advanced)
+void print_help_args_only(int is_uninstall, int args_only, int advanced)
 {
     int i, j, len;
     char *msg, *tmp, scratch[64];
@@ -92,6 +92,13 @@ void print_help_args_only(int args_only, int advanced)
 
         /* Skip options with no help text */
         if (!o->description) continue;
+
+        /* Skip options that do not apply to nvidia-uninstall if we're
+         * invoked as nvidia-uninstall. */
+        if (is_uninstall
+            && !(o->flags & NVGETOPT_OPTION_APPLIES_TO_NVIDIA_UNINSTALL)) {
+            continue;
+        }
 
         if (o->flags & NVGETOPT_IS_BOOLEAN) {
             msg = nvstrcat("--", o->name, "/--no-", o->name, NULL);

@@ -55,7 +55,7 @@
 #include "option_table.h"
 
 static void print_version(void);
-static void print_help(int advanced);
+static void print_help(const char* name, int is_uninstall, int advanced);
 
 
 
@@ -71,7 +71,7 @@ static void print_version(void)
     fmtout(pNV_ID);
     fmtoutp(TAB, "The NVIDIA Software Installer for Unix/Linux.");
     fmtout("");
-    fmtoutp(TAB, "This program is used to install and upgrade "
+    fmtoutp(TAB, "This program is used to install, upgrade and uninstall "
                 "The NVIDIA Accelerated Graphics Driver Set for %s-%s.",
                 INSTALLER_OS, INSTALLER_ARCH);
     fmtout("");
@@ -84,15 +84,15 @@ static void print_version(void)
  * print_help() - print usage information
  */
 
-static void print_help(int advanced)
+static void print_help(const char* name, int is_uninstall, int advanced)
 {
     print_version();
     
     fmtout("");
-    fmtout("nvidia-installer [options]");
+    fmtout("%s [options]", name);
     fmtout("");
     
-    print_help_args_only(FALSE, advanced);
+    print_help_args_only(is_uninstall, FALSE, advanced);
 
 } /* print_help() */
 
@@ -146,7 +146,20 @@ static Options *load_default_options(void)
 static void parse_commandline(int argc, char *argv[], Options *op)
 {
     int c;
+    int print_help_after = FALSE;
+    int print_help_args_only_after = FALSE;
+    int print_advanced_help = FALSE;
     char *strval = NULL, *program_name = NULL;
+
+    /*
+     * if the installer was invoked as "nvidia-uninstall", perform an
+     * uninstallation.
+     */
+    program_name = strdup(argv[0]);
+    if (strcmp(basename(program_name), "nvidia-uninstall") == 0) {
+        op->uninstall = TRUE;
+    }
+    free(program_name);
 
     while (1) {
 
@@ -176,8 +189,11 @@ static void parse_commandline(int argc, char *argv[], Options *op)
         case 'l': op->latest = TRUE; break;
         case 'm': op->ftp_site = strval; break;
         case 'f': op->update = op->force_update = TRUE; break;
-        case 'h': print_help(FALSE); exit(0); break;
-        case 'A': print_help(TRUE); exit(0); break;
+        case 'h': print_help_after = TRUE; break;
+        case 'A':
+            print_help_after = TRUE;
+            print_advanced_help = TRUE;
+            break;
         case 'q': op->no_questions = TRUE; break;
         case 'b': op->no_backup = TRUE; break;
         case 'K':
@@ -241,7 +257,8 @@ static void parse_commandline(int argc, char *argv[], Options *op)
         case LOG_FILE_NAME_OPTION:
             op->log_file_name = strval; break;
         case HELP_ARGS_ONLY_OPTION:
-            print_help_args_only(TRUE, FALSE); exit(0); break;
+            print_help_args_only_after = TRUE;
+            break;
         case TMPDIR_OPTION:
             op->tmpdir = strval; break;
         case OPENGL_HEADERS_OPTION:
@@ -277,7 +294,8 @@ static void parse_commandline(int argc, char *argv[], Options *op)
             op->add_this_kernel = TRUE;
             break;
         case ADVANCED_OPTIONS_ARGS_ONLY_OPTION:
-            print_help_args_only(TRUE, TRUE); exit(0);
+            print_help_args_only_after = TRUE;
+            print_advanced_help = TRUE;
             break;
         case RPM_FILE_LIST_OPTION:
             op->rpm_file_list = strval;
@@ -354,6 +372,16 @@ static void parse_commandline(int argc, char *argv[], Options *op)
 
     }
 
+    if (print_help_after) {
+        print_help(argv[0], op->uninstall, print_advanced_help);
+        exit(0);
+    }
+
+    if (print_help_args_only_after) {
+        print_help_args_only(op->uninstall, TRUE, print_advanced_help);
+        exit(0);
+    }
+
     /*
      * if the installer prefix was not specified, default it to the
      * utility prefix; this is done so that the installer prefix is
@@ -364,15 +392,6 @@ static void parse_commandline(int argc, char *argv[], Options *op)
     if (!op->installer_prefix) {
         op->installer_prefix = op->utility_prefix;
     }
-
-    /*
-     * if the installer was invoked as "nvidia-uninstall", perform an
-     * uninstallation.
-     */
-    program_name = strdup(argv[0]);
-    if (strcmp(basename(program_name), "nvidia-uninstall") == 0)
-        op->uninstall = TRUE;
-    free(program_name);
     
     return;
     
