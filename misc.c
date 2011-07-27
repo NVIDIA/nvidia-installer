@@ -1865,9 +1865,18 @@ static int rtld_test_internal(Options *op, Package *p,
         cmd = nvstrcat(op->utils[LDD], " ", tmpfile, " > ", tmpfile1, NULL);
 
         if (run_command(op, cmd, NULL, FALSE, 0, TRUE)) {
-            ui_warn(op, "Unable to perform the runtime configuration "
-                    "check for library '%s' ('%s'); assuming successful "
-                    "installation.", name, p->entries[i].dst);
+            /* running ldd on a 32-bit SO will fail without a 32-bit loader */
+            if (compat_32_libs) {
+                ui_warn(op, "Unable to perform the runtime configuration "
+                        "check for 32-bit library '%s' ('%s'); this is "
+                        "typically caused by the lack of a 32-bit "
+                        "compatibility environment.  Assuming successful "
+                        "installation.", name, p->entries[i].dst);
+            } else {
+                ui_warn(op, "Unable to perform the runtime configuration "
+                        "check for library '%s' ('%s'); assuming successful "
+                        "installation.", name, p->entries[i].dst);
+            }
             goto done;
         }
 

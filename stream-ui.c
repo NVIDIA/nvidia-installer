@@ -331,6 +331,9 @@ int stream_approve_command_list(Options *op, CommandList *cl,
             fmtoutp(prefix, "install the file '%s' as '%s' with "
                     "permissions '%s'", c->s0, c->s1, perms);
             free(perms);
+            if (c->s2) {
+                fmtoutp(prefix, "execute the command `%s`", c->s2);
+            }
             break;
             
           case RUN_CMD:
@@ -353,7 +356,8 @@ int stream_approve_command_list(Options *op, CommandList *cl,
           default:
 
             fmterrp("ERROR: ", "Error in CommandList! (cmd: %d; s0: '%s';"
-                   "s1: '%s'; mode: %04o)", c->cmd, c->s0, c->s1, c->mode);
+                   "s1: '%s'; s2: '%s'; mode: %04o)",
+                   c->cmd, c->s0, c->s1, c->s2, c->mode);
             fmterr("Aborting installation.");
             return FALSE;
             break;

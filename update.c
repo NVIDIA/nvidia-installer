@@ -221,26 +221,28 @@ int report_latest_driver_version(Options *op)
  */
 
 char *append_update_arguments(char *s, int c, const char *arg,
-                              struct option l[])
+                              const NVGetoptOption *options)
 {
     char *t;
     int i = 0;
 
-    if (!s) s = nvstrcat(" ", NULL);
+    if (!s) {
+        s = nvstrcat(" ", NULL);
+    }
     
     do {
-        if (l[i].val == c) {
-            t = nvstrcat(s, " --", l[i].name, NULL);
+        if (options[i].val == c) {
+            t = nvstrcat(s, " --", options[i].name, NULL);
             nvfree(s);
             s = t;
-            if (l[i].has_arg) {
+            if (options[i].flags & NVGETOPT_HAS_ARGUMENT) {
                 t = nvstrcat(s, "=", arg, NULL);
                 nvfree(s);
                 s = t;
             }
             return (s);
         }
-    } while (l[++i].name);
+    } while (options[++i].name);
     
     return s;
     

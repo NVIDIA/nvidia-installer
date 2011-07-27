@@ -8,7 +8,7 @@
 #include "nvidia-installer.h"
 #include "option_table.h"
 
-static void print_option(const NVOption *o)
+static void print_option(const NVGetoptOption *o)
 {
     char scratch[64], *s;
     int j, len;
@@ -18,7 +18,7 @@ static void print_option(const NVOption *o)
     printf(".TP\n.BI ");
     /* Print the name of the option */
     /* XXX We should backslashify the '-' characters in o->name. */
-    if (o->flags & NVOPT_IS_BOOLEAN) {
+    if (o->flags & NVGETOPT_IS_BOOLEAN) {
         /* "\-\-name, \-\-no\-name */
         printf("\"\\-\\-%s, \\-\\-no\\-%s", o->name, o->name);
     } else if (isalnum(o->val)) {
@@ -29,7 +29,7 @@ static void print_option(const NVOption *o)
         printf("\"\\-\\-%s", o->name);
     }
 
-    if (o->flags & NVOPT_HAS_ARGUMENT) {
+    if (o->flags & NVGETOPT_HAS_ARGUMENT) {
         len = strlen(o->name);
         for (j = 0; j < len; j++) scratch[j] = toupper(o->name[j]);
         scratch[len] = '\0';
@@ -87,7 +87,7 @@ static void print_option(const NVOption *o)
 int main(int argc, char* argv[])
 {
     int i;
-    const NVOption *o;
+    const NVGetoptOption *o;
 
     /* Print the "simple" options, i.e. the ones you get by running
      * nvidia-installer --help.
@@ -96,7 +96,7 @@ int main(int argc, char* argv[])
     for (i = 0; __options[i].name; i++) {
         o = &__options[i];
 
-        if (!(o->flags & OPTION_HELP_ALWAYS))
+        if (!(o->flags & NVGETOPT_HELP_ALWAYS))
             continue;
 
         if (!o->description)
@@ -110,7 +110,7 @@ int main(int argc, char* argv[])
     for (i = 0; __options[i].name; i++) {
         o = &__options[i];
 
-        if (o->flags & OPTION_HELP_ALWAYS)
+        if (o->flags & NVGETOPT_HELP_ALWAYS)
             continue;
 
         if (!o->description)

@@ -219,25 +219,32 @@ CommandList *build_command_list(Options *op, Package *p)
          * may be on a filesystem that doesn't support selinux attributes,
          * such as NFS.
          *
-         * See bug 530083 - "nvidia-installer: ERROR: Failed to execute
-         * execstack: Operation not supported".
+         * Since execstack also changes the file on disk, we need to run it
+         * after the file is installed but before we compute and log its CRC in
+         * the backup log. To achieve that, we tell INTALL_CMD to run execstack
+         * as a post-install step.
+         *
+         * See bugs 530083 and 611327
          */
-        if (p->entries[i].flags & installable_files) {
-            add_command(c, INSTALL_CMD,
-                        p->entries[i].file,
-                        p->entries[i].dst,
-                        p->entries[i].mode);
-        }
-
         if (op->selinux_enabled &&
             (op->utils[EXECSTACK] != NULL) &&
             ((p->entries[i].flags & FILE_TYPE_SHARED_LIB) ||
              (p->entries[i].flags & FILE_TYPE_XMODULE_SHARED_LIB))) {
             tmp = nvstrcat(op->utils[EXECSTACK], " -c ",
                            p->entries[i].dst, NULL);
-            add_command(c, RUN_CMD, tmp);
-            nvfree(tmp);
+        } else {
+            tmp = NULL;
         }
+
+        if (p->entries[i].flags & installable_files) {
+            add_command(c, INSTALL_CMD,
+                        p->entries[i].file,
+                        p->entries[i].dst,
+                        tmp,
+                        p->entries[i].mode);
+        }
+
+        nvfree(tmp);
 
         /*
          * delete the temporary libGL.la and .desktop files generated
@@ -354,6 +361,7 @@ void free_command_list(Options *op, CommandList *cl)
         c = &cl->cmds[i];
         if (c->s0) free(c->s0);
         if (c->s1) free(c->s1);
+        if (c->s2) free(c->s2);
     }
 
     if (cl->cmds) free(cl->cmds);
@@ -362,7 +370,30 @@ void free_command_list(Options *op, CommandList *cl)
 
 } /* free_command_list() */
 
+/*
+ * execute_run_command() - execute a RUN_CMD from the command list.
+ */
 
+static inline int execute_run_command(Options *op, float percent, const char *cmd)
+{
+    int ret;
+    char *data;
+
+    ui_expert(op, "Executing: %s", cmd);
+    ui_status_update(op, percent, "Executing: `%s` "
+                     "(this may take a moment...)", cmd);
+    ret = run_command(op, cmd, &data, TRUE, 0, TRUE);
+    if (ret != 0) {
+        ui_error(op, "Failed to execute `%s`: %s", cmd, data);
+        ret = continue_after_error(op, "Failed to execute `%s`", cmd);
+        if (!ret) {
+            nvfree(data);
+            return FALSE;
+        }
+    }
+    if (data) free(data);
+    return TRUE;
+} /* execute_run_command() */
 
 /*
  * execute_command_list() - execute the commands in the command list.
@@ -374,7 +405,6 @@ int execute_command_list(Options *op, CommandList *c,
                          const char *title, const char *msg)
 {
     int i, ret;
-    char *data;
     float percent;
 
     ui_status_begin(op, title, msg);
@@ -397,24 +427,23 @@ int execute_command_list(Options *op, CommandList *c,
                                            c->cmds[i].s1);
                 if (!ret) return FALSE;
             } else {
+                /*
+                 * perform post-install step before logging the backup
+                 */
+                if (c->cmds[i].s2 &&
+                    !execute_run_command(op, percent, c->cmds[i].s2)) {
+                    return FALSE;
+                }
+
                 log_install_file(op, c->cmds[i].s1);
                 append_to_rpm_file_list(op, &c->cmds[i]);
             }
             break;
             
         case RUN_CMD:
-            ui_expert(op, "Executing: %s", c->cmds[i].s0);
-            ui_status_update(op, percent, "Executing: `%s` "
-                             "(this may take a moment...)", c->cmds[i].s0);
-            ret = run_command(op, c->cmds[i].s0, &data, TRUE, 0, TRUE);
-            if (ret != 0) {
-                ui_error(op, "Failed to execute `%s`: %s",
-                         c->cmds[i].s0, data);
-                ret = continue_after_error(op, "Failed to execute `%s`",
-                                           c->cmds[i].s0);
-                if (!ret) return FALSE;
+            if (!execute_run_command(op, percent, c->cmds[i].s0)) {
+                return FALSE;
             }
-            if (data) free(data);
             break;
 
         case SYMLINK_CMD:
@@ -933,6 +962,7 @@ static void add_command(CommandList *c, int cmd, ...)
     c->cmds[n].cmd  = cmd;
     c->cmds[n].s0   = NULL;
     c->cmds[n].s1   = NULL;
+    c->cmds[n].s2   = NULL;
     c->cmds[n].mode = 0x0;
     
     va_start(ap, cmd);
@@ -943,6 +973,8 @@ static void add_command(CommandList *c, int cmd, ...)
         c->cmds[n].s0 = nvstrdup(s);
         s = va_arg(ap, char *);
         c->cmds[n].s1 = nvstrdup(s);
+        s = va_arg(ap, char *);
+        c->cmds[n].s2 = nvstrdup(s);
         c->cmds[n].mode = va_arg(ap, mode_t);
         break;
       case BACKUP_CMD:
