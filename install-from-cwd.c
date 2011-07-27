@@ -130,6 +130,10 @@ int install_from_cwd(Options *op)
     }
     ran_pre_install_hook = TRUE;
 
+    /* fail if the nouveau driver is currently in use */
+
+    if (!check_for_nouveau(op)) goto failed;
+
     /* attempt to build a kernel module for the target kernel */
 
     if (!op->no_kernel_module) {

@@ -118,6 +118,7 @@ Distribution get_distribution(Options *op);
 int check_for_running_x(Options *op);
 int check_for_modular_xorg(Options *op);
 int run_distro_hook(Options *op, const char *hook);
+int check_for_nouveau(Options *op);
 
 TextRows *nv_format_text_rows(const char *prefix, const char *buf,
                               int width, int word_boundary);

@@ -270,6 +270,7 @@ static void parse_commandline(int argc, char *argv[], Options *op)
             op->silent = op->no_questions = op->accept_license = TRUE;
             op->ui_str = "none";
             break;
+        case 'z': op->no_nouveau_check = TRUE; break;
 
         case 'k':
             op->kernel_name = strval;

@@ -138,6 +138,7 @@ typedef struct __options {
     int sigwinch_workaround;
     int no_x_check;
     int run_distro_scripts;
+    int no_nouveau_check;
 
     char *opengl_prefix;
     char *opengl_libdir;

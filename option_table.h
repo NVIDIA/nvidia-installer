@@ -412,6 +412,10 @@ static const NVGetoptOption __options[] = {
       "for distributing precompiled kernel interfaces in a local area "
       "network." },
 
+    { "no-nouveau-check", 'z', 0,
+      "Normally, nvidia-installer aborts installation if the nouveau kernel "
+      "driver is in use.  Use this option to disable this check." },
+
     { "force-selinux", FORCE_SELINUX_OPTION, NVGETOPT_STRING_ARGUMENT,
       "Linux installations using SELinux (Security-Enhanced Linux) "
       "require that the security type of all shared libraries be set "
