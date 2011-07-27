@@ -832,7 +832,13 @@ static void find_conflicting_files(Options *op,
 
         case FTS_DP:
         case FTS_D:
-            if (op->no_recursion)
+            if (op->no_recursion ||
+                /*
+                 * stop recursing into any "nvidia-cg-toolkit"
+                 * directory to prevent libGL.so.1 from being deleted
+                 * (see bug 843595).
+                 */
+                !strcmp("nvidia-cg-toolkit", ent->fts_name))
                 fts_set(fts, ent, FTS_SKIP);
             break;
 
