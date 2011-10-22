@@ -432,7 +432,7 @@ int main(int argc, char *argv[])
     
     /* init the log file */
     
-    log_init(op);
+    log_init(op, argc, argv);
 
     /* chdir() to the directory containing the binary */
     

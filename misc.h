@@ -35,6 +35,8 @@
 #include "nvidia-installer.h"
 #include "command-list.h"
 
+#define ARRAY_LEN(_arr) (sizeof(_arr) / sizeof(_arr[0]))
+
 /*
  * NV_VSNPRINTF() - takes a fmt string, and uses vsnprintf to build
  * the resulting string whic it assigns to buf.  The caller of this

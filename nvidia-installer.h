@@ -516,7 +516,7 @@ typedef struct {
 
 /* prototypes of functions used throughout the installer */
 
-void log_init(Options *op);
+void log_init(Options *op, int argc, char * const argv[]);
 void log_printf(Options *op, const int wb,
                 const char *prefix, const char *fmt, ...);
 

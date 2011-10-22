@@ -76,10 +76,11 @@ static FILE *log_file_stream;
  * and the state of all noteworthy options.
  */
 
-void log_init(Options *op)
+void log_init(Options *op, int argc, char * const argv[])
 {
     time_t now;
     char *path;
+    int i;
 
     if (!op->logging) return;
     
@@ -106,122 +107,10 @@ void log_init(Options *op)
     log_printf(op, TRUE, NULL, "PATH: %s", STRSTR(path));
     log_printf(op, TRUE, NULL, "");
 
-    log_printf(op, TRUE, NULL, "option status:");
-    log_printf(op, TRUE, NULL, "  license pre-accepted               : %s",
-               BOOLSTR(op->accept_license));
-    log_printf(op, TRUE, NULL, "  update                             : %s",
-               BOOLSTR(op->update));
-    log_printf(op, TRUE, NULL, "  force update                       : %s",
-               BOOLSTR(op->force_update));
-    log_printf(op, TRUE, NULL, "  expert                             : %s",
-               BOOLSTR(op->expert));
-    log_printf(op, TRUE, NULL, "  uninstall                          : %s",
-               BOOLSTR(op->uninstall));
-    log_printf(op, TRUE, NULL, "  driver info                        : %s",
-               BOOLSTR(op->driver_info));
-    log_printf(op, TRUE, NULL, "  precompiled interfaces             : %s",
-               BOOLSTR(!op->no_precompiled_interface));
-    log_printf(op, TRUE, NULL, "  no ncurses color                   : %s",
-               BOOLSTR(op->no_ncurses_color));
-    log_printf(op, TRUE, NULL, "  query latest version               : %s",
-               BOOLSTR(op->latest));
-    log_printf(op, TRUE, NULL, "  no questions                       : %s",
-               BOOLSTR(op->no_questions));
-    log_printf(op, TRUE, NULL, "  silent                             : %s",
-               BOOLSTR(op->silent));
-    log_printf(op, TRUE, NULL, "  no recursion                       : %s",
-               BOOLSTR(op->no_recursion));
-    log_printf(op, TRUE, NULL, "  no backup                          : %s",
-               BOOLSTR(op->no_backup));
-    log_printf(op, TRUE, NULL, "  kernel module only                 : %s",
-               BOOLSTR(op->kernel_module_only));
-    log_printf(op, TRUE, NULL, "  sanity                             : %s",
-               BOOLSTR(op->sanity));
-    log_printf(op, TRUE, NULL, "  add this kernel                    : %s",
-               BOOLSTR(op->add_this_kernel));
-    log_printf(op, TRUE, NULL, "  no runlevel check                  : %s",
-               BOOLSTR(op->no_runlevel_check));
-    log_printf(op, TRUE, NULL, "  no network                         : %s",
-               BOOLSTR(op->no_network));
-    log_printf(op, TRUE, NULL, "  no ABI note                        : %s",
-               BOOLSTR(op->no_abi_note));
-    log_printf(op, TRUE, NULL, "  no RPMs                            : %s",
-               BOOLSTR(op->no_rpms));
-    log_printf(op, TRUE, NULL, "  no kernel module                   : %s",
-               BOOLSTR(op->no_kernel_module));
-    log_printf(op, TRUE, NULL, "  force SELinux                      : %s",
-               SELINUXSTR(op->selinux_option));
-    log_printf(op, TRUE, NULL, "  no X server check                  : %s",
-               BOOLSTR(op->no_x_check));
-    log_printf(op, TRUE, NULL, "  no cc version check                : %s",
-               BOOLSTR(op->ignore_cc_version_check));
-    log_printf(op, TRUE, NULL, "  run distro scripts                 : %s",
-               BOOLSTR(op->run_distro_scripts));
-    log_printf(op, TRUE, NULL, "  no nouveau check                   : %s",
-               BOOLSTR(op->no_nouveau_check));
-    log_printf(op, TRUE, NULL, "  run nvidia-xconfig                 : %s",
-               BOOLSTR(op->run_nvidia_xconfig));
-    log_printf(op, TRUE, NULL, "  sigwinch work around               : %s",
-               BOOLSTR(op->sigwinch_workaround));
-    log_printf(op, TRUE, NULL, "  force tls                          : %s",
-               TLSSTR(op->which_tls));
-#if defined(NV_X86_64)
-    log_printf(op, TRUE, NULL, "  force compat32 tls                 : %s",
-               TLSSTR(op->which_tls_compat32));
-#endif
-    log_printf(op, TRUE, NULL, "  X install prefix                   : %s",
-               STRSTR(op->x_prefix));
-    log_printf(op, TRUE, NULL, "  X library install path             : %s",
-               STRSTR(op->x_library_path));
-    log_printf(op, TRUE, NULL, "  X module install path              : %s",
-               STRSTR(op->x_module_path));
-    log_printf(op, TRUE, NULL, "  OpenGL install prefix              : %s",
-               STRSTR(op->opengl_prefix));
-    log_printf(op, TRUE, NULL, "  OpenGL install libdir              : %s",
-               STRSTR(op->opengl_libdir));
-#if defined(NV_X86_64)
-    log_printf(op, TRUE, NULL, "  compat32 install chroot            : %s",
-               STRSTR(op->compat32_chroot));
-    log_printf(op, TRUE, NULL, "  compat32 install prefix            : %s",
-               STRSTR(op->compat32_prefix));
-    log_printf(op, TRUE, NULL, "  compat32 install libdir            : %s",
-               STRSTR(op->compat32_libdir));
-#endif
-    log_printf(op, TRUE, NULL, "  utility install prefix             : %s",
-               STRSTR(op->utility_prefix));
-    log_printf(op, TRUE, NULL, "  utility install libdir             : %s",
-               STRSTR(op->utility_libdir));
-    log_printf(op, TRUE, NULL, "  installer prefix                   : %s",
-               STRSTR(op->installer_prefix));
-    log_printf(op, TRUE, NULL, "  doc install prefix                 : %s",
-               STRSTR(op->documentation_prefix));
-    log_printf(op, TRUE, NULL, "  kernel name                        : %s",
-               STRSTR(op->kernel_name));
-    log_printf(op, TRUE, NULL, "  kernel include path                : %s",
-               STRSTR(op->kernel_include_path));
-    log_printf(op, TRUE, NULL, "  kernel source path                 : %s",
-               STRSTR(op->kernel_source_path));
-    log_printf(op, TRUE, NULL, "  kernel output path                 : %s",
-               STRSTR(op->kernel_output_path));
-    log_printf(op, TRUE, NULL, "  kernel install path                : %s",
-               STRSTR(op->kernel_module_installation_path));
-    log_printf(op, TRUE, NULL, "  precompiled kernel interfaces path : %s",
-               STRSTR(op->precompiled_kernel_interfaces_path));
-    log_printf(op, TRUE, NULL, "  precompiled kernel interfaces url  : %s",
-               STRSTR(op->precompiled_kernel_interfaces_url));
-    log_printf(op, TRUE, NULL, "  proc mount point                   : %s",
-               STRSTR(op->proc_mount_point));
-    log_printf(op, TRUE, NULL, "  ui                                 : %s",
-               STRSTR(op->ui_str));
-    log_printf(op, TRUE, NULL, "  tmpdir                             : %s",
-               STRSTR(op->tmpdir));
-    log_printf(op, TRUE, NULL, "  ftp mirror                         : %s",
-               STRSTR(op->ftp_site));
-    log_printf(op, TRUE, NULL, "  RPM file list                      : %s",
-               STRSTR(op->rpm_file_list));
-    log_printf(op, TRUE, NULL, "  selinux chcon type                 : %s",
-               STRSTR(op->selinux_chcon_type));
-
+    log_printf(op, TRUE, NULL, "nvidia-installer command line:");
+    for (i = 0; i < argc; i++) {
+        log_printf(op, TRUE, "    ", "%s", argv[i]);
+    }
 
     log_printf(op, TRUE, NULL, "");
     
@@ -235,23 +124,30 @@ void log_init(Options *op)
  * option is not set, then nothing is done here.
  */
 
-#define LOG_WIDTH 79
-
 void log_printf(Options *op, const int wb,
                 const char *prefix, const char *fmt, ...)
 {
     char *buf;
-    int i;
-    TextRows *t;
+    int append_newline = TRUE;
 
     if (!op->logging) return;
 
     NV_VSNPRINTF(buf, fmt);
-    t = nv_format_text_rows(prefix, buf, LOG_WIDTH, wb);
-    
-    for (i = 0; i < t->n; i++) fprintf(log_file_stream, "%s\n", t->t[i]);
-    
-    nv_free_text_rows(t);
+
+    /*
+     * do not append a newline to the end of the string if the caller
+     * already did
+     */
+
+    if (buf && (buf[strlen(buf) - 1] == '\n')) {
+        append_newline = FALSE;
+    }
+
+    if (prefix) {
+        fprintf(log_file_stream, "%s", prefix);
+    }
+    fprintf(log_file_stream, "%s%s", buf, append_newline ? "\n" : "");
+
     nvfree(buf);
     
     /* flush, just to be safe */

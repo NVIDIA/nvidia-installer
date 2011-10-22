@@ -390,8 +390,8 @@ int stream_yes_no(Options *op, const int def, const char *msg)
 
     format(stdout, NULL, "");
     format(stdout, NULL, msg);
-    if (def) fprintf(stdout, "  [default: Yes]: ");
-    else fprintf(stdout, "  [default: No]: ");
+    if (def) fprintf(stdout, "  [default: (Y)es]: ");
+    else fprintf(stdout, "  [default: (N)o]: ");
     fflush(stdout);
     
     buf = fget_next_line(stdin, &eof);

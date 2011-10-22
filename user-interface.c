@@ -69,6 +69,7 @@ extern const int ncurses_ui_array_size;
 /* struct describing the ui data */
 
 typedef struct {
+    char *name;
     char *descr;
     char *filename;
     const char *data_array;
@@ -93,18 +94,31 @@ int ui_init(Options *op)
     int i;
     user_interface_attribute_t ui_list[] = {
         /* { "nvidia-installer GTK+ user interface", NULL, NULL, 0 }, */
-        { "nvidia-installer ncurses user interface", NULL,
+        { "ncurses", "nvidia-installer ncurses user interface", NULL,
           ncurses_ui_array, ncurses_ui_array_size },
-        { NULL, NULL, NULL, 0 }
+        { "none", NULL, NULL, NULL, 0 }
     };
     
     /* dlopen() the appropriate ui shared lib */
     
     __ui = NULL;
-    
-    i = 0;
 
-    if (((op->ui_str) && (strcmp(op->ui_str, "none") == 0)) || (op->silent)) {
+    if (op->ui_str) {
+        for (i = 0; i < ARRAY_LEN(ui_list); i++) {
+            if (strcmp(op->ui_str, ui_list[i].name) == 0) {
+                break;
+            }
+        }
+
+        if (i == ARRAY_LEN(ui_list)) {
+            log_printf(op, TRUE, NULL, "Invalid \"ui\" option: %s", op->ui_str);
+            i = 0;
+        }
+    } else {
+        i = 0;
+    }
+
+    if (op->silent) {
         i = 1;
     }
     
