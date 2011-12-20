@@ -874,6 +874,17 @@ int check_for_unloaded_kernel_module(Options *op, Package *p)
         return TRUE;
     }
 
+    /*
+     * We can also skip this check if we aren't installing a kernel
+     * module at all.
+     */
+
+    if (op->no_kernel_module) {
+        ui_log(op, "Not installing a kernel module; skipping the \"is an "
+               "NVIDIA kernel module loaded?\" test.");
+        return TRUE;
+    }
+
     while (p->bad_modules[n]) {
         if (check_for_loaded_kernel_module(op, p->bad_modules[n])) {
             loaded = TRUE;
