@@ -1880,7 +1880,7 @@ void process_dot_desktop_files(Options *op, Package *p)
 
                 add_package_entry(p,
                                   tmpfile,
-                                  p->entries[i].path,
+                                  nvstrdup(p->entries[i].path),
                                   nvstrdup(p->entries[i].name),
                                   NULL, /* target */
                                   NULL, /* dst */
