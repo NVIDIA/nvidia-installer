@@ -546,7 +546,9 @@ int set_destinations(Options *op, Package *p)
             break;
 
         case FILE_TYPE_XMODULE_SHARED_LIB:
+        case FILE_TYPE_GLX_MODULE_SHARED_LIB:
         case FILE_TYPE_XMODULE_SYMLINK:
+        case FILE_TYPE_GLX_MODULE_SYMLINK:
         case FILE_TYPE_XMODULE_NEWSYM:
             prefix = op->x_module_path;
             dir = "";
@@ -950,6 +952,22 @@ void remove_non_kernel_module_files_from_package(Options *op, Package *p)
     
 } /* remove_non_kernel_module_files_from_package() */
 
+
+/*
+ * clear the FILE_TYPE_MASK bits for each package entry that is not of
+ * type FILE_TYPE_OPENGL_FILE
+ */
+void remove_opengl_files_from_package(Options *op, Package *p)
+{
+    int i;
+
+    for (i = 0; i < p->num_entries; i++) {
+        uint64_t flags = p->entries[i].flags & FILE_TYPE_MASK;
+        if (flags & FILE_TYPE_OPENGL_FILE) {
+            p->entries[i].flags &= ~FILE_TYPE_MASK;
+        }
+    }
+}
 
 
 /*

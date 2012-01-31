@@ -559,18 +559,22 @@ static void find_conflicting_libraries(Options *op,
                                        ConflictingFileInfo *libs,
                                        FileList *l);
 
-static ConflictingFileInfo __xfree86_libs[] = {
+static ConflictingFileInfo __xfree86_opengl_libs[] = {
     { "libnvidia-glcore.",   17, /* strlen("libnvidia-glcore.") */   NULL            },
     { "libGL.",              6,  /* strlen("libGL.") */              NULL            },
     { "libGLwrapper.",       13, /* strlen("libGLwrapper.") */       NULL            },
     { "libglx.",             7,  /* strlen("libglx.") */             "glxModuleData" },
+    { NULL,                  0,                                      NULL            }
+};
+
+static ConflictingFileInfo __xfree86_non_opengl_libs[] = {
     { "libXvMCNVIDIA",       13, /* strlen("libXvMCNVIDIA") */       NULL            },
-    { "libnvidia-cfg.",      14, /* strlen("libnvidia-cfg.") */      NULL            },
     { "nvidia_drv.",         11, /* strlen("nvidia_drv.") */         NULL            },
-    { "libcuda.",            8,  /* strlen("libcuda.") */            NULL            },
     { "libvdpau.",           9,  /* strlen("libvdpau.") */           NULL            },
     { "libvdpau_trace.",     15, /* strlen("libvdpau_trace.") */     NULL            },
     { "libvdpau_nvidia.",    16, /* strlen("libvdpau_nvidia.") */    NULL            },
+    { "libnvidia-cfg.",      14, /* strlen("libnvidia-cfg.") */      NULL            },
+    { "libcuda.",            8,  /* strlen("libcuda.") */            NULL            },
     { "libnvidia-compiler.", 19, /* strlen("libnvidia-compiler.") */ NULL            },
     { "libnvcuvid.",         11, /* strlen("libnvcuvid.") */         NULL            },
     { "libnvidia-ml.",       13, /* strlen("libnvidia-ml.") */       NULL            },
@@ -587,7 +591,10 @@ static void find_conflicting_xfree86_libraries(Options *op,
                                                const char *xprefix,
                                                FileList *l)
 {
-    find_conflicting_libraries(op, xprefix, __xfree86_libs, l);
+    if (!op->no_opengl_files) {
+        find_conflicting_libraries(op, xprefix, __xfree86_opengl_libs, l);
+    }
+    find_conflicting_libraries(op, xprefix, __xfree86_non_opengl_libs, l);
 
 } /* find_conflicting_xfree86_libraries() */
 
@@ -605,8 +612,11 @@ static void find_conflicting_xfree86_libraries_fullpath(Options *op,
                                                         char *path,
                                                         FileList *l)
 {
-    find_conflicting_files(op, path, __xfree86_libs, l);
-    
+    if (!op->no_opengl_files) {
+        find_conflicting_files(op, path, __xfree86_opengl_libs, l);
+    }
+    find_conflicting_files(op, path, __xfree86_non_opengl_libs, l);
+
 } /* find_conflicting_xfree86_libraries_fullpath() */
 
 
@@ -616,6 +626,10 @@ static ConflictingFileInfo __opengl_libs[] = {
     { "libGL.",              6,  /* strlen("libGL.") */              NULL },
     { "libnvidia-tls.",      14, /* strlen("libnvidia-tls.") */      NULL },
     { "libGLwrapper.",       13, /* strlen("libGLwrapper.") */       NULL },
+    { NULL,                  0,                                      NULL }
+};
+
+static ConflictingFileInfo __non_opengl_libs[] = {
     { "libnvidia-cfg.",      14, /* strlen("libnvidia-cfg.") */      NULL },
     { "libcuda.",            8,  /* strlen("libcuda.") */            NULL },
     { "libnvidia-compiler.", 19, /* strlen("libnvidia-compiler.") */ NULL },
@@ -633,7 +647,10 @@ static void find_conflicting_opengl_libraries(Options *op,
                                               const char *glprefix,
                                               FileList *l)
 {
-    find_conflicting_libraries(op, glprefix, __opengl_libs, l);
+    if (!op->no_opengl_files) {
+        find_conflicting_libraries(op, glprefix, __opengl_libs, l);
+    }
+    find_conflicting_libraries(op, glprefix, __non_opengl_libs, l);
 
 } /* find_conflicting_opengl_libraries() */
 

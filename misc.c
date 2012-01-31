@@ -2196,8 +2196,9 @@ int check_for_nvidia_graphics_devices(Options *op, Package *p)
         }
     }
 
+    dev = pacc->devices;
     pci_cleanup(pacc);
-    if (!pacc->devices) return TRUE;
+    if (!dev) return TRUE;
 
     if (!found_supported_device) {
         ui_warn(op, "You do not appear to have an NVIDIA GPU supported by the "

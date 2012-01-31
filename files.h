@@ -34,6 +34,7 @@ int get_license_acceptance(Options *op); /* XXX move? */
 int get_prefixes(Options *op); /* XXX move? */
 int add_kernel_module_to_package(Options *op, Package *p);
 void remove_non_kernel_module_files_from_package(Options *op, Package *p);
+void remove_opengl_files_from_package(Options *op, Package *p);
 void remove_trailing_slashes(char *s);
 int mode_string_to_mode(Options *op, char *s, mode_t *mode);
 char *mode_to_permission_string(mode_t mode);

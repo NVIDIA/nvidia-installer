@@ -198,6 +198,10 @@ int install_from_cwd(Options *op)
 #endif /* NV_X86_64 */
     }
 
+    if (op->no_opengl_files) {
+        remove_opengl_files_from_package(op, p);
+    }
+
     /*
      * now that we have the installation prefixes, build the
      * destination for each file to be installed
@@ -717,6 +721,10 @@ static Package *parse_manifest (Options *op)
                 p->entries[n].flags |= FILE_TYPE_XMODULE_SHARED_LIB;
             else if (strcmp(flag, "XMODULE_SYMLINK") == 0)
                 p->entries[n].flags |= FILE_TYPE_XMODULE_SYMLINK;
+            else if (strcmp(flag, "GLX_MODULE_SHARED_LIB") == 0)
+                p->entries[n].flags |= FILE_TYPE_GLX_MODULE_SHARED_LIB;
+            else if (strcmp(flag, "GLX_MODULE_SYMLINK") == 0)
+                p->entries[n].flags |= FILE_TYPE_GLX_MODULE_SYMLINK;
             else if (strcmp(flag, "XMODULE_NEWSYM") == 0)
                 p->entries[n].flags |= FILE_TYPE_XMODULE_NEWSYM;
             else if (strcmp(flag, "VDPAU_LIB") == 0)

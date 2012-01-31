@@ -138,6 +138,7 @@ typedef struct __options {
     int no_nvidia_xconfig_question;
     int run_distro_scripts;
     int no_nouveau_check;
+    int no_opengl_files;
 
     char *opengl_prefix;
     char *opengl_libdir;
@@ -316,7 +317,8 @@ typedef struct {
 #define FILE_TYPE_CUDA_ICD                      0x0000000020000000ULL
 #define FILE_TYPE_NVCUVID_LIB                   0x0000000040000000ULL
 #define FILE_TYPE_NVCUVID_SYMLINK               0x0000000080000000ULL
-/* unused                                       0x0000000100000000ULL */
+#define FILE_TYPE_GLX_MODULE_SHARED_LIB         0x0000000100000000ULL
+#define FILE_TYPE_GLX_MODULE_SYMLINK            0x0000000200000000ULL
 
 
 /* file class: this is used to distinguish OpenGL libraries */
@@ -331,8 +333,6 @@ typedef struct {
 #define FILE_TYPE_XLIB_LIB         (FILE_TYPE_XLIB_STATIC_LIB | \
                                     FILE_TYPE_XLIB_SHARED_LIB)
 
-#define FILE_TYPE_XMODULE_LIB      (FILE_TYPE_XMODULE_SHARED_LIB)
-
 #define FILE_TYPE_INSTALLABLE_FILE (FILE_TYPE_OPENGL_LIB         | \
                                     FILE_TYPE_CUDA_LIB           | \
                                     FILE_TYPE_XLIB_LIB           | \
@@ -346,13 +346,16 @@ typedef struct {
                                     FILE_TYPE_INSTALLER_BINARY   | \
                                     FILE_TYPE_UTILITY_BINARY     | \
                                     FILE_TYPE_LIBGL_LA           | \
-                                    FILE_TYPE_XMODULE_LIB        | \
+                                    FILE_TYPE_XMODULE_SHARED_LIB | \
+                                    FILE_TYPE_GLX_MODULE_SHARED_LIB | \
                                     FILE_TYPE_DOT_DESKTOP        | \
                                     FILE_TYPE_VDPAU_LIB          | \
                                     FILE_TYPE_NVCUVID_LIB)
 
-#define FILE_TYPE_HAVE_PATH        (FILE_TYPE_XMODULE_LIB        | \
+#define FILE_TYPE_HAVE_PATH        (FILE_TYPE_XMODULE_SHARED_LIB | \
                                     FILE_TYPE_XMODULE_SYMLINK    | \
+                                    FILE_TYPE_GLX_MODULE_SHARED_LIB | \
+                                    FILE_TYPE_GLX_MODULE_SYMLINK | \
                                     FILE_TYPE_XMODULE_NEWSYM     | \
                                     FILE_TYPE_MANPAGE            | \
                                     FILE_TYPE_OPENGL_HEADER      | \
@@ -386,6 +389,7 @@ typedef struct {
                                     FILE_TYPE_XLIB_SYMLINK       | \
                                     FILE_TYPE_TLS_SYMLINK        | \
                                     FILE_TYPE_XMODULE_SYMLINK    | \
+                                    FILE_TYPE_GLX_MODULE_SYMLINK | \
                                     FILE_TYPE_UTILITY_LIB_SYMLINK| \
                                     FILE_TYPE_UTILITY_BIN_SYMLINK| \
                                     FILE_TYPE_VDPAU_SYMLINK      | \
@@ -404,9 +408,19 @@ typedef struct {
                                     FILE_TYPE_XLIB_SHARED_LIB    | \
                                     FILE_TYPE_TLS_LIB            | \
                                     FILE_TYPE_XMODULE_SHARED_LIB | \
+                                    FILE_TYPE_GLX_MODULE_SHARED_LIB | \
                                     FILE_TYPE_UTILITY_LIB        | \
                                     FILE_TYPE_VDPAU_LIB          | \
                                     FILE_TYPE_NVCUVID_LIB)
+
+#define FILE_TYPE_OPENGL_FILE      (FILE_TYPE_OPENGL_HEADER      | \
+                                    FILE_TYPE_OPENGL_LIB         | \
+                                    FILE_TYPE_OPENGL_SYMLINK     | \
+                                    FILE_TYPE_LIBGL_LA           | \
+                                    FILE_TYPE_TLS_LIB            | \
+                                    FILE_TYPE_TLS_SYMLINK        | \
+                                    FILE_TYPE_GLX_MODULE_SHARED_LIB | \
+                                    FILE_TYPE_GLX_MODULE_SYMLINK)
 
 #define TLS_LIB_TYPE_FORCED         0x0001
 #define TLS_LIB_NEW_TLS             0x0002

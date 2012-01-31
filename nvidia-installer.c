@@ -345,7 +345,9 @@ static void parse_commandline(int argc, char *argv[], Options *op)
         case NO_DISTRO_SCRIPTS_OPTION:
             op->run_distro_scripts = FALSE;
             break;
-
+        case NO_OPENGL_FILES_OPTION:
+            op->no_opengl_files = TRUE;
+            break;
         default:
             goto fail;
         }

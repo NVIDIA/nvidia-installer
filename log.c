@@ -134,7 +134,7 @@ void log_printf(Options *op, const int wb,
      * already did
      */
 
-    if (buf && (buf[strlen(buf) - 1] == '\n')) {
+    if (buf && buf[0] && (buf[strlen(buf) - 1] == '\n')) {
         append_newline = FALSE;
     }
 

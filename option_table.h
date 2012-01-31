@@ -77,7 +77,8 @@ enum {
     NO_KERNEL_MODULE_OPTION,
     NO_X_CHECK_OPTION,
     NO_CC_VERSION_CHECK_OPTION,
-    NO_DISTRO_SCRIPTS_OPTION
+    NO_DISTRO_SCRIPTS_OPTION,
+    NO_OPENGL_FILES_OPTION,
 };
 
 static const NVGetoptOption __options[] = {
@@ -498,6 +499,9 @@ static const NVGetoptOption __options[] = {
       "Normally, nvidia-installer will run scripts from /usr/lib/nvidia before "
       "and after installing or uninstalling the driver.  Use this option to "
       "disable execution of these scripts." },
+
+    { "no-opengl-files", NO_OPENGL_FILES_OPTION, 0, NULL,
+      "Do not install any of the OpenGL-related driver files." },
 
     /* Orphaned options: These options were in the long_options table in
      * nvidia-installer.c but not in the help. */
