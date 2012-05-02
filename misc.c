@@ -1723,8 +1723,7 @@ static int rtld_test_internal(Options *op, Package *p,
         if (!name) continue;
 
         s = strstr(name, ".so.1");
-        if (!s) goto next;
-        *(s + strlen(".so.1")) = '\0';
+        if (!s || s[strlen(".so.1")] != '\0') goto next;
 
         cmd = nvstrcat(op->utils[LDD], " ", tmpfile, " > ", tmpfile1, NULL);
 
@@ -2332,24 +2331,28 @@ int check_selinux(Options *op)
 /*
  * run_nvidia_xconfig() - run the `nvidia-xconfig` utility.  Without
  * any options, this will just make sure the X config file uses the
- * NVIDIA driver by default.
+ * NVIDIA driver by default. The restore parameter controls whether
+ * the --restore-original-backup option is added, which attempts to
+ * restore the original backed up X config file.
  */
 
-int run_nvidia_xconfig(Options *op)
+int run_nvidia_xconfig(Options *op, int restore)
 {
     int ret, bRet = TRUE;
-    char *data = NULL, *cmd;
+    char *data = NULL, *cmd, *args;
+
+    args = restore ? " --restore-original-backup" : "";
     
-    cmd = find_system_util("nvidia-xconfig");
+    cmd = nvstrcat(find_system_util("nvidia-xconfig"), args, NULL);
     
-    ret = run_command(op, cmd, &data, FALSE, FALSE, TRUE);
-    nvfree(cmd);
+    ret = run_command(op, cmd, &data, FALSE, 0, TRUE);
     
     if (ret != 0) {
-        ui_error(op, "Failed to run nvidia-xconfig:\n%s", data);
+        ui_error(op, "Failed to run `%s`:\n%s", cmd, data);
         bRet = FALSE;
     }
     
+    nvfree(cmd);
     nvfree(data);
 
     return bRet;

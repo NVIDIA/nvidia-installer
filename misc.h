@@ -30,41 +30,6 @@
 #include "nvidia-installer.h"
 #include "command-list.h"
 
-#define ARRAY_LEN(_arr) (sizeof(_arr) / sizeof(_arr[0]))
-
-/*
- * NV_VSNPRINTF() - takes a fmt string, and uses vsnprintf to build
- * the resulting string whic it assigns to buf.  The caller of this
- * function is responsible for freeing the returned string.
- */
-#define NV_VSNPRINTF(buf, fmt)                                  \
-do {                                                            \
-    if (!fmt) {                                                 \
-        (buf) = NULL;                                           \
-    } else {                                                    \
-        va_list ap;                                             \
-        int len, current_len = NV_LINE_LEN;                     \
-                                                                \
-        (buf) = malloc(current_len);                            \
-                                                                \
-        while (1) {                                             \
-            va_start(ap, fmt);                                  \
-            len = vsnprintf((buf), current_len, (fmt), ap);     \
-            va_end(ap);                                         \
-                                                                \
-            if ((len > -1) && (len < current_len)) {            \
-                break;                                          \
-            } else if (len > -1) {                              \
-                current_len = len + 1;                          \
-            } else {                                            \
-                current_len += NV_LINE_LEN;                     \
-            }                                                   \
-                                                                \
-            (buf) = realloc(buf, current_len);                  \
-        }                                                       \
-    }                                                           \
-} while (0)
-
 char *read_next_word (char *buf, char **e);
 
 int check_euid(Options *op);
@@ -96,7 +61,7 @@ Distribution get_distribution(Options *op);
 int check_for_running_x(Options *op);
 int check_for_modular_xorg(Options *op);
 int check_for_nvidia_graphics_devices(Options *op, Package *p);
-int run_nvidia_xconfig(Options *op);
+int run_nvidia_xconfig(Options *op, int restore);
 int run_distro_hook(Options *op, const char *hook);
 int check_for_nouveau(Options *op);
 

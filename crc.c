@@ -43,6 +43,7 @@
 #include "nvidia-installer.h"
 #include "user-interface.h"
 #include "misc.h"
+#include "crc.h"
 
 #define BIT(x) (1 << (x))
 #define CRC_GEN_MASK (BIT(26) | BIT(23) | BIT(22) | BIT(16) | BIT(12) | \

@@ -36,9 +36,8 @@
 #include "nvidia-installer.h"
 #include "nvidia-installer-ui.h"
 #include "misc.h"
-#include "format.h"
 #include "files.h"
-
+#include "user-interface.h"
 
 /*
  * global user interface pointer

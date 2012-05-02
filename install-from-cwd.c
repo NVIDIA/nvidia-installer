@@ -276,7 +276,7 @@ int install_from_cwd(Options *op)
                         "file will be backed up.");
         
         if (ret) {
-            ret = run_nvidia_xconfig(op);
+            ret = run_nvidia_xconfig(op, FALSE);
         }
         
         if (ret) {

@@ -32,7 +32,7 @@
 #include "nvidia-installer-ui.h"
 #include "misc.h"
 #include "files.h"
-#include "format.h"
+#include "common-utils.h"
 
 /* prototypes of each of the stream ui functions */
 
@@ -182,8 +182,8 @@ char *stream_get_input(Options *op, const char *def, const char *msg)
 {
     char *buf;
     
-    format(stdout, NULL, "");
-    format(stdout, NULL, msg);
+    fmt(stdout, NULL, "");
+    fmt(stdout, NULL, msg);
     fprintf(stdout, "  [default: '%s']: ", def);
     fflush(stdout);
     
@@ -271,9 +271,9 @@ void stream_message(Options *op, const int level, const char *msg)
 
     if ((level == NV_MSG_LEVEL_LOG) && (d->status_active)) return;
 
-    if (msg_attrs[level].newline) format(msg_attrs[level].stream, NULL, "");
-    format(msg_attrs[level].stream, msg_attrs[level].prefix, msg);
-    if (msg_attrs[level].newline) format(msg_attrs[level].stream, NULL, "");
+    if (msg_attrs[level].newline) fmt(msg_attrs[level].stream, NULL, "");
+    fmt(msg_attrs[level].stream, msg_attrs[level].prefix, msg);
+    if (msg_attrs[level].newline) fmt(msg_attrs[level].stream, NULL, "");
 
 } /* stream_message() */
 
@@ -350,7 +350,7 @@ int stream_approve_command_list(Options *op, CommandList *cl,
 
           default:
 
-            fmterrp("ERROR: ", "Error in CommandList! (cmd: %d; s0: '%s';"
+            fmterr("Error in CommandList! (cmd: %d; s0: '%s';"
                    "s1: '%s'; s2: '%s'; mode: %04o)",
                    c->cmd, c->s0, c->s1, c->s2, c->mode);
             fmterr("Aborting installation.");
@@ -383,8 +383,8 @@ int stream_yes_no(Options *op, const int def, const char *msg)
     char *buf;
     int eof, ret = def;
 
-    format(stdout, NULL, "");
-    format(stdout, NULL, msg);
+    fmt(stdout, NULL, "");
+    fmt(stdout, NULL, msg);
     if (def) fprintf(stdout, "  [default: (Y)es]: ");
     else fprintf(stdout, "  [default: (N)o]: ");
     fflush(stdout);

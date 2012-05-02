@@ -260,16 +260,6 @@ typedef struct __package {
 } Package;
 
 
-
-typedef struct {
-    char **t; /* the text rows */
-    int n;    /* number of rows */
-    int m;    /* maximum row length */
-} TextRows;
-
-
-
-
 /* flags for passing into install_from_cwd() */
 
 #define ADJUST_CWD  0x01

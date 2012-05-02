@@ -42,10 +42,8 @@
 #include "user-interface.h"
 #include "backup.h"
 #include "files.h"
-#include "help-args.h"
 #include "misc.h"
 #include "update.h"
-#include "format.h"
 #include "sanity.h"
 #include "option_table.h"
 
@@ -79,17 +77,40 @@ static void print_version(void)
  * print_help() - print usage information
  */
 
+static void print_help_helper(const char *name, const char *description)
+{
+    fmtoutp(TAB, name);
+    fmtoutp(BIGTAB, description);
+    fmtout("");
+}
+
+static void print_options(int is_uninstall, int advanced)
+{
+    unsigned int include_mask = 0;
+
+    if (is_uninstall) {
+        /* only print options with the UNINSTALL flag */
+        include_mask |= NVGETOPT_OPTION_APPLIES_TO_NVIDIA_UNINSTALL;
+    }
+
+    if (!advanced) {
+        /* only print options with the ALWAYS flag */
+        include_mask |= NVGETOPT_HELP_ALWAYS;
+    }
+
+    nvgetopt_print_help(__options, include_mask, print_help_helper);
+}
+
 static void print_help(const char* name, int is_uninstall, int advanced)
 {
     print_version();
-    
+
     fmtout("");
     fmtout("%s [options]", name);
     fmtout("");
-    
-    print_help_args_only(is_uninstall, FALSE, advanced);
 
-} /* print_help() */
+    print_options(is_uninstall, advanced);
+}
 
 
 /*
@@ -264,7 +285,6 @@ static void parse_commandline(int argc, char *argv[], Options *op)
             else if (strcasecmp(strval, "classic") == 0)
                 op->which_tls = FORCE_CLASSIC_TLS;
             else {
-                fmterr("\n");
                 fmterr("Invalid parameter for '--force-tls'");
                 goto fail;
             }
@@ -276,7 +296,6 @@ static void parse_commandline(int argc, char *argv[], Options *op)
             else if (strcasecmp(strval, "classic") == 0)
                 op->which_tls_compat32 = FORCE_CLASSIC_TLS;
             else {
-                fmterr("\n");
                 fmterr("Invalid parameter for '--force-tls-compat32'");
                 goto fail;
             }
@@ -322,7 +341,6 @@ static void parse_commandline(int argc, char *argv[], Options *op)
             else if (strcasecmp(strval, "no") == 0)
                 op->selinux_option = SELINUX_FORCE_NO;
             else if (strcasecmp(strval, "default")) {
-                fmterr("\n");
                 fmterr("Invalid parameter for '--force-selinux'");
                 goto fail;
             }
@@ -375,7 +393,14 @@ static void parse_commandline(int argc, char *argv[], Options *op)
     }
 
     if (print_help_args_only_after) {
-        print_help_args_only(op->uninstall, TRUE, print_advanced_help);
+        /*
+         * We are printing help text for use by makeself.sh; we do not
+         * want this formatted to the width of the current terminal,
+         * so hardcode the width used by fmtout() to 65.
+         */
+        reset_current_terminal_width(65);
+
+        print_options(op->uninstall, print_advanced_help);
         exit(0);
     }
 
@@ -393,10 +418,8 @@ static void parse_commandline(int argc, char *argv[], Options *op)
     return;
     
  fail:
-    fmterr("\n");
     fmterr("Invalid commandline, please run `%s --help` "
            "for usage information.", argv[0]);
-    fmterr("\n");
     nvfree((void*)op);
     exit(1);
 } /* parse_commandline() */

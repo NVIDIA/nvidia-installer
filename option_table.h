@@ -24,6 +24,7 @@
 #define __OPT_TABLE_H__
 
 #include "nvgetopt.h"
+#include "nvidia-installer.h"
 
 #define NVGETOPT_OPTION_APPLIES_TO_NVIDIA_UNINSTALL 0x00010000
 
@@ -316,7 +317,7 @@ static const NVGetoptOption __options[] = {
     { "ui", USER_INTERFACE_OPTION,
       NVGETOPT_STRING_ARGUMENT | NVGETOPT_OPTION_APPLIES_TO_NVIDIA_UNINSTALL,
       NULL, "Specify what user interface to use, if available.  "
-      "Valid values for [UI] are 'ncurses' (the default) or 'none'. "
+      "Valid values for &UI& are 'ncurses' (the default) or 'none'. "
       "If the ncurses interface fails to initialize, or 'none' "
       "is specified, then a simple printf/scanf interface will "
       "be used." },
@@ -341,7 +342,7 @@ static const NVGetoptOption __options[] = {
       "nvidia-installer will select the OpenGL libraries appropriate "
       "for your system; however, you may use this option to force the "
       "installer to install one library type or another.  Valid values "
-      "for [FORCE-TLS] are 'new' and 'classic'." },
+      "for &FORCE-TLS& are 'new' and 'classic'." },
 
 #if defined(NV_X86_64)
     { "force-tls-compat32", FORCE_TLS_COMPAT32_OPTION,
@@ -353,14 +354,14 @@ static const NVGetoptOption __options[] = {
 
     { "kernel-name", 'k', NVGETOPT_STRING_ARGUMENT, NULL,
       "Build and install the NVIDIA kernel module for the "
-      "non-running kernel specified by [KERNEL-NAME] ([KERNEL-NAME] "
+      "non-running kernel specified by &KERNEL-NAME& (&KERNEL-NAME& "
       "should be the output of `uname -r` when the target kernel is "
       "actually running).  This option implies "
       "'--no-precompiled-interface'.  If the options "
       "'--kernel-install-path' and '--kernel-source-path' are not "
-      "given, then they will be inferred from [KERNEL-NAME]; eg: "
-      "'/lib/modules/[KERNEL-NAME]/kernel/drivers/video/' and "
-      "'/lib/modules/[KERNEL-NAME]/build/', respectively." },
+      "given, then they will be inferred from &KERNEL-NAME&; eg: "
+      "'/lib/modules/&KERNEL-NAME&/kernel/drivers/video/' and "
+      "'/lib/modules/&KERNEL-NAME&/build/', respectively." },
 
     { "no-precompiled-interface", 'n', 0, NULL,
       "Disable use of precompiled kernel interfaces." },
@@ -464,7 +465,7 @@ static const NVGetoptOption __options[] = {
       "use it to also clear the executable stack flag of the libraries.  "
       "Use this option to override nvidia-installer's detection of when "
       "to set the security type.  "
-      "Valid values for [FORCE-SELINUX] are 'yes' (force setting of the "
+      "Valid values for &FORCE-SELINUX& are 'yes' (force setting of the "
       "security type), "
       "'no' (prevent setting of the security type), and 'default' "
       "(let nvidia-installer decide when to set the security type)." },
@@ -514,7 +515,7 @@ static const NVGetoptOption __options[] = {
     { "advanced-options-args-only", ADVANCED_OPTIONS_ARGS_ONLY_OPTION, 0,
       NULL, NULL },
 
-    { NULL, 0, 0, NULL },
+    { NULL, 0, 0, NULL, NULL },
 };
 
 #endif /* __OPT_TABLE_H__ */

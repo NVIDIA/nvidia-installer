@@ -28,7 +28,6 @@
 
 #include "nvidia-installer.h"
 #include "misc.h"
-#include "format.h"
 
 /* global stream for log output */
 

@@ -122,15 +122,15 @@ CFLAGS += -I. -imacros $(CONFIG_H) -I $(OUTPUTDIR)
 CFLAGS += -I $(COMMON_UTILS_DIR)
 
 HOST_CFLAGS += -I. -imacros $(CONFIG_H) -I $(OUTPUTDIR)
-LDFLAGS += -L. -ldl
+LDFLAGS += -L.
+LIBS += -ldl
 
 MKPRECOMPILED_SRC = crc.c mkprecompiled.c
 MKPRECOMPILED_OBJS = $(call BUILD_OBJECT_LIST,$(MKPRECOMPILED_SRC))
 
 MAKESELF_HELP_SCRIPT_SRC  = makeself-help-script.c
-MAKESELF_HELP_SCRIPT_SRC += help-args.c
-MAKESELF_HELP_SCRIPT_SRC += format.c
 MAKESELF_HELP_SCRIPT_SRC += $(COMMON_UTILS_DIR)/common-utils.c
+MAKESELF_HELP_SCRIPT_SRC += $(COMMON_UTILS_DIR)/nvgetopt.c
 
 BUILD_MAKESELF_OBJECT_LIST = \
   $(patsubst %.o,%.makeself.o,$(call BUILD_OBJECT_LIST,$(1)))
@@ -157,45 +157,44 @@ install: NVIDIA_INSTALLER_install MKPRECOMPILED_install MANPAGE_install \
   MAKESELF_HELP_SCRIPT_install
 
 NVIDIA_INSTALLER_install: $(NVIDIA_INSTALLER)
-	$(MKDIR) $(bindir)
-	$(INSTALL) $(INSTALL_BIN_ARGS) $< $(bindir)/$(notdir $<)
+	$(MKDIR) $(BINDIR)
+	$(INSTALL) $(INSTALL_BIN_ARGS) $< $(BINDIR)/$(notdir $<)
 
 MKPRECOMPILED_install: $(MKPRECOMPILED)
-	$(MKDIR) $(bindir)
-	$(INSTALL) $(INSTALL_BIN_ARGS) $< $(bindir)/$(notdir $<)
+	$(MKDIR) $(BINDIR)
+	$(INSTALL) $(INSTALL_BIN_ARGS) $< $(BINDIR)/$(notdir $<)
 
 MAKESELF_HELP_SCRIPT_install: $(MAKESELF_HELP_SCRIPT)
-	$(MKDIR) $(bindir)
-	$(INSTALL) $(INSTALL_BIN_ARGS) $< $(bindir)/$(notdir $<)
+	$(MKDIR) $(BINDIR)
+	$(INSTALL) $(INSTALL_BIN_ARGS) $< $(BINDIR)/$(notdir $<)
 
 MANPAGE_install: $(MANPAGE)
-	$(MKDIR) $(mandir)
-	$(INSTALL) $(INSTALL_DOC_ARGS) $< $(mandir)/$(notdir $<)
+	$(MKDIR) $(MANDIR)
+	$(INSTALL) $(INSTALL_DOC_ARGS) $< $(MANDIR)/$(notdir $<)
 
 $(MKPRECOMPILED): $(MKPRECOMPILED_OBJS)
-	$(call quiet_cmd,LINK) -o $@ \
-	  $(MKPRECOMPILED_OBJS) $(CFLAGS) $(LDFLAGS) $(BIN_LDFLAGS)
+	$(call quiet_cmd,LINK) $(CFLAGS) $(LDFLAGS) $(BIN_LDFLAGS) \
+	  $(MKPRECOMPILED_OBJS) -o $@ $(LIBS)
 	$(call quiet_cmd,STRIP_CMD) $@
 
 $(MAKESELF_HELP_SCRIPT): $(MAKESELF_HELP_SCRIPT_OBJS)
-	$(call quiet_cmd,HOST_LINK) -o $@ \
-	  $(MAKESELF_HELP_SCRIPT_OBJS) $(HOST_CFLAGS) $(HOST_LDFLAGS) \
-	  $(HOST_BIN_LDFLAGS)
+	$(call quiet_cmd,HOST_LINK) $(HOST_CFLAGS) $(HOST_LDFLAGS) \
+	  $(HOST_BIN_LDFLAGS) $(MAKESELF_HELP_SCRIPT_OBJS) -o $@
 	$(call quiet_cmd,STRIP_CMD) $@
 
 $(NVIDIA_INSTALLER): $(INSTALLER_OBJS)
-	$(call quiet_cmd,LINK) -o $@ $(INSTALLER_OBJS) $(CFLAGS) $(LDFLAGS) \
-	  -Bstatic $(PCI_LDFLAGS) -lpci -Bdynamic $(BIN_LDFLAGS)
+	$(call quiet_cmd,LINK) $(CFLAGS) $(LDFLAGS) $(PCI_LDFLAGS) \
+	  $(BIN_LDFLAGS) $(INSTALLER_OBJS) -o $@ \
+	  $(LIBS) -Bstatic -lpci -Bdynamic
 	$(call quiet_cmd,STRIP_CMD) $@
 
 $(GEN_UI_ARRAY): gen-ui-array.c $(CONFIG_H)
-	$(call quiet_cmd,HOST_CC) -o $@ $< $(HOST_CFLAGS) $(HOST_LDFLAGS) \
-	  $(HOST_BIN_LDFLAGS)
+	$(call quiet_cmd,HOST_CC) $(HOST_CFLAGS) $(HOST_LDFLAGS) \
+	  $(HOST_BIN_LDFLAGS) $< -o $@
 
 $(NCURSES_UI_SO): $(call BUILD_OBJECT_LIST,ncurses-ui.c)
-	$(call quiet_cmd,LINK) -o $@ -shared $< \
-	  $(NCURSES_LDFLAGS) -lncurses \
-	  $(CFLAGS) $(LDFLAGS) $(BIN_LDFLAGS)
+	$(call quiet_cmd,LINK) -shared $(NCURSES_LDFLAGS) \
+	  $(CFLAGS) $(LDFLAGS) $(BIN_LDFLAGS) $< -o $@ -lncurses $(LIBS)
 
 $(NCURSES_UI_SO_C): $(GEN_UI_ARRAY) $(NCURSES_UI_SO)
 	$(call quiet_cmd,GEN_UI_ARRAY) $(NCURSES_UI_SO) ncurses_ui_array > $@
@@ -237,7 +236,7 @@ $(foreach src,$(MAKESELF_HELP_SCRIPT_SRC),\
 # define the rule to generate $(STAMP_C)
 $(eval $(call DEFINE_STAMP_C_RULE, $(INSTALLER_OBJS),$(NVIDIA_INSTALLER_PROGRAM_NAME)))
 
-$(CONFIG_H):
+$(CONFIG_H): $(VERSION_MK)
 	@ $(RM) -f $@
 	@ $(MKDIR) $(OUTPUTDIR)
 	@ $(ECHO)    "#define INSTALLER_OS \"$(TARGET_OS)\"" >> $@
@@ -298,18 +297,24 @@ AUTO_TEXT = ".\\\" WARNING: THIS FILE IS AUTO-GENERATED!  Edit $< instead."
 
 doc: $(MANPAGE)
 
-$(eval $(call DEFINE_OBJECT_RULE,HOST_CC,gen-manpage-opts.c))
+GEN_MANPAGE_OPTS_SRC  = gen-manpage-opts.c
+GEN_MANPAGE_OPTS_SRC += $(COMMON_UTILS_DIR)/gen-manpage-opts-helper.c
 
-$(call BUILD_OBJECT_LIST,gen-manpage-opts.c): $(CONFIG_H)
+GEN_MANPAGE_OPTS_OBJS = $(call BUILD_OBJECT_LIST,$(GEN_MANPAGE_OPTS_SRC))
 
-$(GEN_MANPAGE_OPTS): $(call BUILD_OBJECT_LIST,gen-manpage-opts.c)
-	$(call quiet_cmd,HOST_LINK) $< -o $@ \
-		$(HOST_CFLAGS) $(HOST_LDFLAGS) $(HOST_BIN_LDFLAGS)
+$(foreach src, $(GEN_MANPAGE_OPTS_SRC), \
+    $(eval $(call DEFINE_OBJECT_RULE,HOST_CC,$(src))))
+
+$(GEN_MANPAGE_OPTS_OBJS): $(CONFIG_H)
+
+$(GEN_MANPAGE_OPTS): $(GEN_MANPAGE_OPTS_OBJS)
+	$(call quiet_cmd,HOST_LINK) \
+	    $(HOST_CFLAGS) $(HOST_LDFLAGS) $(HOST_BIN_LDFLAGS) $^ -o $@
 
 $(OPTIONS_1_INC): $(GEN_MANPAGE_OPTS)
 	@./$< > $@
 
-$(MANPAGE): nvidia-installer.1.m4 $(OPTIONS_1_INC)
+$(MANPAGE): nvidia-installer.1.m4 $(OPTIONS_1_INC) $(VERSION_MK)
 	$(call quiet_cmd,M4) \
 	   -D__HEADER__=$(AUTO_TEXT) \
 	   -D__VERSION__=$(NVIDIA_INSTALLER_VERSION) \

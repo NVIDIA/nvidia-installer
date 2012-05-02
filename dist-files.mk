@@ -30,7 +30,6 @@ SRC := backup.c
 SRC += command-list.c
 SRC += crc.c
 SRC += files.c
-SRC += format.c
 SRC += install-from-cwd.c
 SRC += kernel.c
 SRC += log.c
@@ -44,7 +43,6 @@ SRC += stream-ui.c
 SRC += update.c
 SRC += user-interface.c
 SRC += sanity.c
-SRC += help-args.c
 
 DIST_FILES := $(SRC)
 
@@ -52,7 +50,6 @@ DIST_FILES += backup.h
 DIST_FILES += command-list.h
 DIST_FILES += crc.h
 DIST_FILES += files.h
-DIST_FILES += format.h
 DIST_FILES += kernel.h
 DIST_FILES += misc.h
 DIST_FILES += nvidia-installer-ui.h
@@ -64,7 +61,6 @@ DIST_FILES += snarf-internal.h
 DIST_FILES += snarf.h
 DIST_FILES += update.h
 DIST_FILES += user-interface.h
-DIST_FILES += help-args.h
 
 DIST_FILES += COPYING
 DIST_FILES += README

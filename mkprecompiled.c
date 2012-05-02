@@ -85,14 +85,13 @@ typedef struct {
 
 #include "crc.h"
 
-
 /*
  * nv_alloc() - malloc wrapper that checks for errors, and zeros out
  * the memory; if an error occurs, an error is printed to stderr and
  * exit() is called -- this function will only return on success.
  */
 
-void *nv_alloc (size_t size)
+static void *nv_alloc (size_t size)
 {
     void *m = malloc (size);
 
@@ -110,10 +109,14 @@ void *nv_alloc (size_t size)
  * XXX hack to resolve symbols used by crc.c
  */
 
+void *nvalloc(size_t size);
+
 void *nvalloc(size_t size)
 {
     return nv_alloc(size);
 }
+
+void ui_warn(Options *op, const char *fmt, ...);
 
 void ui_warn(Options *op, const char *fmt, ...)
 {
@@ -131,7 +134,7 @@ void ui_warn(Options *op, const char *fmt, ...)
  * fails and calls exit().  This function only returns on success.
  */
 
-int nv_open(const char *pathname, int flags, mode_t mode)
+static int nv_open(const char *pathname, int flags, mode_t mode)
 {
     int fd;
     fd = open(pathname, flags, mode);
@@ -152,7 +155,7 @@ int nv_open(const char *pathname, int flags, mode_t mode)
  * on success.
  */
 
-int nv_get_file_length(const char *filename)
+static int nv_get_file_length(const char *filename)
 {
     struct stat stat_buf;
     int ret;
@@ -175,7 +178,7 @@ int nv_get_file_length(const char *filename)
  * function only returns on success.
  */
 
-void nv_set_file_length(const char *filename, int fd, int len)
+static void nv_set_file_length(const char *filename, int fd, int len)
 {
     if ((lseek(fd, len - 1, SEEK_SET) == -1) ||
         (write(fd, "", 1) == -1)) {
@@ -192,7 +195,8 @@ void nv_set_file_length(const char *filename, int fd, int len)
  * fails and calls exit().  This function only returns on success.
  */
 
-void *nv_mmap(const char *filename, size_t len, int prot, int flags, int fd)
+static void *nv_mmap(const char *filename, size_t len, int prot,
+                     int flags, int fd)
 {
     void *ret;
 
@@ -212,7 +216,7 @@ void *nv_mmap(const char *filename, size_t len, int prot, int flags, int fd)
  * print_help()
  */
 
-void print_help(void)
+static void print_help(void)
 {
     printf("\n%s [options] \n\n", BINNAME);
 
@@ -254,7 +258,7 @@ void print_help(void)
  * structure.
  */
 
-Options *parse_commandline(int argc, char *argv[])
+static Options *parse_commandline(int argc, char *argv[])
 {
     Options *op;
     int c, option_index = 0;
@@ -336,7 +340,7 @@ Options *parse_commandline(int argc, char *argv[])
 
 
 
-char *read_proc_version(void)
+static char *read_proc_version(void)
 {
     int fd, ret, len, version_len;
     char *version, *c = NULL;
@@ -390,7 +394,7 @@ char *read_proc_version(void)
  * Returns 1 if the strings match, 0 if they don't match.
  */
 
-int check_match(char *str)
+static int check_match(char *str)
 {
     int ret = 0;
     char *version = read_proc_version();
@@ -416,7 +420,7 @@ int check_match(char *str)
  * the integer to the data buffer.
  */
 
-void encode_uint32(uint32 val, uint8 data[4])
+static void encode_uint32(uint32 val, uint8 data[4])
 {
     data[0] = ((val >> 0)  & 0xff);
     data[1] = ((val >> 8)  & 0xff);
@@ -432,7 +436,7 @@ void encode_uint32(uint32 val, uint8 data[4])
  * bytes, and build a uint32.
  */
 
-uint32 decode_uint32(char *buf)
+static uint32 decode_uint32(char *buf)
 {
     uint32 ret = 0;
 
@@ -460,7 +464,7 @@ uint32 decode_uint32(char *buf)
  * string, and the proc version string.
  */ 
 
-int pack(Options *op)
+static int pack(Options *op)
 {
     int fd, offset, src_fd;
     uint8 *out, *src, data[4];
@@ -571,7 +575,7 @@ int pack(Options *op)
  * unpack() - unpack the specified package
  */
 
-int unpack(Options *op)
+static int unpack(Options *op)
 {
     int dst_fd, fd, ret, offset, len = 0;
     char *buf, *dst;
