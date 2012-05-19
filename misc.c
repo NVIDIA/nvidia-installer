@@ -1870,8 +1870,7 @@ static int rtld_test_internal(Options *op, Package *p,
         if (!name) continue;
 
         s = strstr(name, ".so.1");
-        if (!s) goto next;
-        *(s + strlen(".so.1")) = '\0';
+        if (!s || s[strlen(".so.1")] != '\0') goto next;
 
         cmd = nvstrcat(op->utils[LDD], " ", tmpfile, " > ", tmpfile1, NULL);
 
