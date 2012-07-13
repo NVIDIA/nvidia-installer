@@ -100,7 +100,40 @@ CommandList *build_command_list(Options *op, Package *p)
     l = (FileList *) nvalloc(sizeof(FileList));
     c = (CommandList *) nvalloc(sizeof(CommandList));
 
-    /* find any possibly conflicting libraries and/or modules */
+    /* find any possibly conflicting modules and/or libraries */
+
+    if (!op->no_kernel_module || op->dkms)
+        find_conflicting_kernel_modules(op, p, l);
+
+    /* check the conflicting file list for any installed kernel modules */
+
+    if (op->kernel_module_only) {
+        if (dkms_module_installed(op, p->version)) {
+            ui_error(op, "A DKMS kernel module with version %s is already "
+                     "installed.", p->version);
+            free_file_list(l);
+            free_command_list(op,c);
+            return NULL;
+        }
+
+        for (i = 0; i < l->num; i++) {
+            if (find_installed_file(op, l->filename[i])) {
+                ui_error(op, "The file '%s' already exists as part of this "
+                         "driver installation.", l->filename[i]);
+                free_file_list(l);
+                free_command_list(op, c);
+                return NULL;
+            }
+        }
+
+        /* XXX: If installing with --kernel-module-only on a system that has
+         * the kernel module sources already installed, but does NOT have a
+         * built kernel module or DKMS module, duplicate entries for the source
+         * files will be added to the backup log, leading to error messages
+         * when uninstalling the driver later leads to redundant attempts to
+         * delete the files. */
+
+    }
     
     if (!op->kernel_module_only) {
         /*
@@ -169,9 +202,6 @@ CommandList *build_command_list(Options *op, Package *p)
 #endif /* NV_X86_64 */
     }
     
-    if (!op->no_kernel_module)
-        find_conflicting_kernel_modules(op, p, l);
-    
     /*
      * find any existing files that clash with what we're going to
      * install
@@ -183,20 +213,6 @@ CommandList *build_command_list(Options *op, Package *p)
     /* condense the file list */
 
     condense_file_list(p, l);
-    
-    /* check the conflicting file list for any installed files */
-
-    if (op->kernel_module_only) {
-        for (i = 0; i < l->num; i++) {
-            if (find_installed_file(op, l->filename[i])) {
-                ui_error(op, "The file '%s' already exists as part of this "
-                         "driver installation.", l->filename[i]);
-                free_file_list(l);
-                free_command_list(op, c);
-                return NULL;
-            }
-        }
-    }
     
     /*
      * all of the files in the conflicting file list should be backed
@@ -664,7 +680,7 @@ static void find_conflicting_opengl_libraries(Options *op,
 static void find_conflicting_kernel_modules(Options *op,
                                             Package *p, FileList *l)
 {
-    int i, n = 0;
+    int i = 0, n = 0;
     ConflictingFileInfo files[2];
     char *paths[3];
     char *tmp = get_kernel_name(op);
@@ -672,14 +688,15 @@ static void find_conflicting_kernel_modules(Options *op,
     memset(files, 0, sizeof(files));
     files[1].name = NULL;
     files[1].len = 0;
-    paths[0] = op->kernel_module_installation_path;
+    if (op->kernel_module_installation_path) {
+        paths[i++] = op->kernel_module_installation_path;
+    }
 
     if (tmp) {
-        paths[1] = nvstrcat("/lib/modules/", tmp, NULL);
-        paths[2] = NULL;
-    } else {
-        paths[1] = NULL;
+        paths[i++] = nvstrcat("/lib/modules/", tmp, NULL);
     }
+
+    paths[i] = NULL;
     
     for (i = 0; paths[i]; i++) {
         for (n = 0; p->bad_module_filenames[n]; n++) {

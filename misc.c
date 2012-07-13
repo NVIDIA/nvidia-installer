@@ -214,64 +214,6 @@ int adjust_cwd(Options *op, const char *program_name)
 } /* adjust_cwd() */
 
 
-
-/*
- * fget_next_line() - read from the given FILE stream until a newline,
- * EOF, or null terminator is encountered, writing data into a
- * growable buffer.  The eof parameter is set to TRUE when EOF is
- * encountered.  In all cases, the returned string is null-terminated.
- *
- * XXX this function will be rather slow because it uses fgetc() to
- * pull each character off the stream one at a time; this is done so
- * that each character can be examined as it's read so that we can
- * appropriately deal with EOFs and newlines.  A better implementation
- * would use fgets(), but that would still require us to parse each
- * read line, checking for newlines or guessing if we hit an EOF.
- */
-
-char *fget_next_line(FILE *fp, int *eof)
-{
-    char *buf = NULL, *tmpbuf;
-    char *c = NULL;
-    int len = 0, buflen = 0;
-    
-    if (eof) *eof = FALSE;
-    
-    while (1) {
-        if (buflen == len) { /* buffer isn't big enough -- grow it */
-            buflen += NV_LINE_LEN;
-            tmpbuf = (char *) nvalloc (buflen);
-            if (!tmpbuf) {
-                if (buf) nvfree(buf);
-                return NULL;
-            }
-            if (buf) {
-                memcpy (tmpbuf, buf, len);
-                nvfree(buf);
-            }
-            buf = tmpbuf;
-            c = buf + len;
-        }
-
-        *c = fgetc(fp);
-        
-        if ((*c == EOF) && (eof)) *eof = TRUE;
-        if ((*c == EOF) || (*c == '\n') || (*c == '\0')) {
-            *c = '\0';
-            return buf;
-        }
-
-        len++;
-        c++;
-
-    } /* while (1) */
-    
-    return NULL; /* should never get here */
-   
-} /* fget_next_line() */
-
-
-
 /*
  * get_next_line() - this function scans for the next newline,
  * carriage return, NUL terminator, or EOF in buf.  If non-NULL, the
@@ -1356,7 +1298,8 @@ uint64_t get_installable_file_mask(Options *op)
 {
     uint64_t installable_files = FILE_TYPE_INSTALLABLE_FILE;
     if (!op->opengl_headers) installable_files &= ~FILE_TYPE_OPENGL_HEADER;
-
+    if (op->no_kernel_module_source)
+        installable_files &= ~FILE_TYPE_KERNEL_MODULE_SRC;
     return installable_files;
 
 } /* get_installable_file_mask() */
@@ -2626,4 +2569,132 @@ int check_for_nouveau(Options *op)
     }
 
     return FALSE;
+}
+
+#define DKMS_STATUS  " status"
+#define DKMS_ADD     " add"
+#define DKMS_BUILD   " build"
+#define DKMS_INSTALL " install"
+#define DKMS_REMOVE  " remove"
+
+/*
+ * Run the DKMS tool with the provided arguments. The following operations
+ * are supported:
+ *
+ *     DKMS_STATUS: 
+ *         Check the status of the specified module.
+ *     DKMS_ADD: requires version
+ *         Adds the module to the DKMS database.
+ *     DKMS_BUILD: requires version
+ *         Builds the module against the currently running kernel.
+ *     DKMS_INSTALL: requires version
+ *         Installs the module for the currently running kernel.
+ *     DKMS_REMOVE: reqires version
+ *         Removes the module from all kernels.
+ *
+ * run_dkms returns TRUE if dkms is found and exits with status 0 when run;
+ * FALSE if dkms can't be found, or exits with non-0 status.
+ */
+static int run_dkms(Options *op, const char* verb, const char *version,
+                    const char *kernel, char** out)
+{
+    char *cmd, *cmdline, *veropt, *kernopt = NULL, *kernopt_all = "";
+    const char *modopt = " -m nvidia"; /* XXX real name is in the Package */
+    char *output;
+    int ret;
+
+    /* Fail if DKMS not found */
+    cmd = find_system_util("dkms");
+    if (!cmd) {
+        if (strcmp(verb, DKMS_STATUS) != 0) {
+            ui_error(op, "Failed to find dkms on the system!");
+        }
+        return FALSE;
+    }
+
+    /* Convert function parameters into commandline arguments. Optional
+     * arguments may be NULL, in which case nvstrcat() will end early. */
+    veropt = version ? nvstrcat(" -v ", version, NULL) : NULL;
+
+    if (strcmp(verb, DKMS_REMOVE) == 0) {
+        /* Always remove DKMS modules from all kernels to avoid confusion. */
+        kernopt_all = " --all";
+    } else {
+        kernopt = kernel ? nvstrcat(" -k ", kernel, NULL) : NULL;
+    }
+
+    cmdline = nvstrcat(cmd, verb, modopt, veropt, kernopt_all, kernopt, NULL);
+
+    nvfree(cmd);
+
+    /* Run DKMS */
+    ret = run_command(op, cmdline, &output, FALSE, 0, TRUE);
+    if (ret != 0) {
+        ui_error(op, "Failed to run `%s`: %s", cmdline, output);
+    }
+
+    nvfree(cmdline);
+    nvfree(veropt);
+    nvfree(kernopt);
+    if (out) {
+        *out = output;
+    } else {
+        nvfree(output);
+    }
+
+    return ret == 0;
+}
+
+/*
+ * Check to see whether the module is installed via DKMS.
+ * (The version parameter is optional: if NULL, check for any version; if
+ * non-NULL, check for the specified version only.)
+ *
+ * Returns TRUE if DKMS is found, and dkms commandline output is non-empty.
+ * Returns FALSE if DKMS not found, or dkms commandline output is empty.
+ */
+int dkms_module_installed(Options* op, const char *version)
+{
+    int ret, bRet = FALSE;
+    char *output = NULL;
+
+    ret = run_dkms(op, DKMS_STATUS, version, NULL, &output);
+
+    if (output) bRet = strcmp("", output) != 0;
+    nvfree(output);
+
+    return ret && bRet;
+}
+
+/*
+ * Install the given version of the module for the currently running kernel
+ */
+int dkms_install_module(Options *op, const char *version, const char *kernel)
+{
+    ui_status_begin(op, "Installing DKMS kernel module:", "Adding to DKMS");
+    if (!run_dkms(op, DKMS_ADD, version, kernel, NULL)) goto failed;
+
+    ui_status_update(op, .05, "Building module (This may take a moment)");
+    if (!run_dkms(op, DKMS_BUILD, version, kernel, NULL)) goto failed;
+
+    ui_status_update(op, .9, "Installing module");
+    if(!run_dkms(op, DKMS_INSTALL, version, kernel, NULL)) goto failed;
+
+    ui_status_end(op, "done.");
+    return TRUE;
+
+ failed:
+    ui_status_end(op, "error.");
+    ui_error(op, "Failed to install the kernel module through DKMS. No kernel "
+                 "module was installed; please try installing again without "
+                 "DKMS, or check the DKMS logs for more information.");
+    return FALSE;
+}
+
+/*
+ * Remove the given version of the module on all available kernels.
+ */
+int dkms_remove_module(Options *op, const char *version)
+{
+    return run_dkms(op, DKMS_REMOVE, version, NULL, NULL);
 }

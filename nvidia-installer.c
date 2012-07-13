@@ -143,6 +143,8 @@ static Options *load_default_options(void)
 
     op->sigwinch_workaround = TRUE;
     op->run_distro_scripts = TRUE;
+    op->no_kernel_module_source = FALSE;
+    op->dkms = FALSE;
 
     return op;
 
@@ -353,6 +355,7 @@ static void parse_commandline(int argc, char *argv[], Options *op)
         case NO_KERNEL_MODULE_OPTION:
             op->no_kernel_module = TRUE;
             op->kernel_module_only = FALSE; /* conflicts */
+            op->no_kernel_module_source = TRUE;
             break;
         case NO_X_CHECK_OPTION:
             op->no_x_check = TRUE;
@@ -365,6 +368,18 @@ static void parse_commandline(int argc, char *argv[], Options *op)
             break;
         case NO_OPENGL_FILES_OPTION:
             op->no_opengl_files = TRUE;
+            break;
+        case KERNEL_MODULE_SOURCE_PREFIX_OPTION:
+            op->kernel_module_src_prefix = strval;
+            break;
+        case KERNEL_MODULE_SOURCE_DIR_OPTION:
+            op->kernel_module_src_dir = strval;
+            break;
+        case NO_KERNEL_MODULE_SOURCE_OPTION:
+            op->no_kernel_module_source = TRUE;
+            break;
+        case DKMS_OPTION:
+            op->dkms = TRUE;
             break;
         default:
             goto fail;

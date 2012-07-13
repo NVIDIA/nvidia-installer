@@ -41,6 +41,7 @@
 #include "files.h"
 #include "misc.h"
 #include "precompiled.h"
+#include "backup.h"
 
 
 static char *get_xdg_data_dir(void);
@@ -478,24 +479,34 @@ void select_tls_class(Options *op, Package *p)
 
 int set_destinations(Options *op, Package *p)
 {
-    char *name, *s;
+    char *name;
     char *prefix, *dir, *path;
     char *xdg_data_dir;
     int i;
-    s = NULL;
-    
+    if (!op->kernel_module_src_dir) {
+        op->kernel_module_src_dir = nvstrcat("nvidia-", p->version, NULL);
+    }
+
     for (i = 0; i < p->num_entries; i++) {
 
         switch (p->entries[i].flags & FILE_TYPE_MASK) {
-            
+
         case FILE_TYPE_KERNEL_MODULE_CMD:
-        case FILE_TYPE_KERNEL_MODULE_SRC:
-            
-            /* we don't install kernel module sources */
-            
+            /* we don't install kernel module commands */
             p->entries[i].dst = NULL;
             continue;
-            
+
+        case FILE_TYPE_KERNEL_MODULE_SRC:
+            if (op->no_kernel_module_source) {
+                /* Don't install kernel module source files if requested. */
+                p->entries[i].dst = NULL;
+                continue;
+            }
+            prefix = op->kernel_module_src_prefix;
+            dir = op->kernel_module_src_dir;
+            path = "";
+            break;
+
         case FILE_TYPE_OPENGL_LIB:
         case FILE_TYPE_OPENGL_SYMLINK:
             if (p->entries[i].flags & FILE_CLASS_COMPAT32) {
@@ -648,6 +659,11 @@ int set_destinations(Options *op, Package *p)
              */
             
             continue;
+
+        case FILE_TYPE_EXPLICIT_PATH:
+            prefix = p->entries[i].path;
+            dir = path = "";
+            break;
 
         default:
             
@@ -860,6 +876,41 @@ int get_prefixes (Options *op)
     remove_trailing_slashes(op->utility_prefix);
     ui_expert(op, "Utility installation prefix is: '%s'", op->utility_prefix);
 
+    if (op->expert) {
+        op->no_kernel_module_source =
+            !ui_yes_no(op, !op->no_kernel_module_source,
+                      "Do you want to install kernel module sources?");
+    }
+
+    if (!op->no_kernel_module_source) {
+        if (op->expert) {
+            ret = ui_get_input(op, op->kernel_module_src_prefix,
+                               "Kernel module source installation prefix");
+            if (ret && ret[0]) {
+                op->kernel_module_src_prefix = ret;
+                if (!confirm_path(op, op->kernel_module_src_prefix))
+                    return FALSE;
+            }
+        }
+    
+        remove_trailing_slashes(op->kernel_module_src_prefix);
+        ui_expert(op, "Kernel module source installation prefix is: '%s'",
+                  op->kernel_module_src_prefix);
+    
+        if (op->expert) {
+            ret = ui_get_input(op, op->kernel_module_src_dir,
+                               "Kernel module source installation directory");
+            if (ret && ret[0]) {
+                op->kernel_module_src_dir = ret;
+                if (!confirm_path(op, op->kernel_module_src_dir)) return FALSE;
+            }
+        }
+    
+        remove_trailing_slashes(op->kernel_module_src_dir);
+        ui_expert(op, "Kernel module source installation directory is: '%s'",
+                  op->kernel_module_src_dir);
+    }
+
 #if defined(NV_X86_64)
     if (op->expert) {
         ret = ui_get_input(op, op->compat32_chroot,
@@ -936,7 +987,7 @@ int add_kernel_module_to_package(Options *op, Package *p)
 /*
  * remove_non_kernel_module_files_from_package() - clear the
  * FILE_TYPE_MASK bits for each package entry that is not of type
- * FILE_TYPE_KERNEL_MODULE
+ * FILE_TYPE_KERNEL_MODULE or FILE_TYPE_KERNEL_MODULE_SRC
  */
 
 void remove_non_kernel_module_files_from_package(Options *op, Package *p)
@@ -946,7 +997,8 @@ void remove_non_kernel_module_files_from_package(Options *op, Package *p)
     for (i = 0; i < p->num_entries; i++) {
         uint64_t flags = p->entries[i].flags & FILE_TYPE_MASK;
         if ((flags != FILE_TYPE_KERNEL_MODULE) &&
-            (flags != FILE_TYPE_KERNEL_MODULE_CMD))
+            (flags != FILE_TYPE_KERNEL_MODULE_CMD) &&
+            (flags != FILE_TYPE_KERNEL_MODULE_SRC))
             p->entries[i].flags &= ~FILE_TYPE_MASK;
     }
     
@@ -1101,13 +1153,15 @@ int confirm_path(Options *op, const char *path)
 
 int mkdir_recursive(Options *op, const char *path, const mode_t mode)
 {
-    char *c, *tmp, ch;
+    char *c, *tmp, ch, *list, *tmplist;
     
     if (!path || !path[0]) return FALSE;
         
     tmp = nvstrdup(path);
     remove_trailing_slashes(tmp);
-        
+
+    list = NULL;
+
     c = tmp;
     do {
         c++;
@@ -1121,11 +1175,21 @@ int mkdir_recursive(Options *op, const char *path, const mode_t mode)
                     free(tmp);
                     return FALSE;
                 }
+                /* Prepend the created directory path to a running list */
+                tmplist = list;
+                list = nvstrcat(tmp, "\n", tmplist, NULL);
+                free(tmplist);
             }
             *c = ch;
         }
     } while (*c);
 
+    /* Log any created directories */
+    if (list) {
+        log_mkdir(op, list);
+    }
+
+    free(list);
     free(tmp);
     return TRUE;
 
@@ -2037,6 +2101,10 @@ void get_default_prefixes_and_paths(Options *op)
         op->documentation_docdir = DEFAULT_DOCDIR;
     if (!op->documentation_mandir)
         op->documentation_mandir = DEFAULT_MANDIR;
+
+    if (!op->kernel_module_src_prefix)
+        op->kernel_module_src_prefix = DEFAULT_KERNEL_MODULE_SRC_PREFIX;
+    /* kernel_module_src_dir's default value is set in set_destinations() */
 
 } /* get_default_prefixes_and_paths() */
 

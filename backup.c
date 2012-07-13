@@ -43,14 +43,9 @@
 
 #define BACKUP_DIRECTORY "/var/lib/nvidia"
 #define BACKUP_LOG       (BACKUP_DIRECTORY "/log")
+#define BACKUP_MKDIR_LOG (BACKUP_DIRECTORY "/dirs")
 
 #define RMMOD_MODULE_NAME "nvidia"
-
-/*
- * XXX when uninstalling should we remove directories that were
- * created by our installation?
- */
-
 
 
 
@@ -120,7 +115,7 @@ static void free_backup_info(BackupInfo *b);
 
 static int check_backup_log_entries(Options *op, BackupInfo *b);
 
-static int do_uninstall(Options *op);
+static int do_uninstall(Options *op, const char *version);
 
 static int sanity_check_backup_log_entries(Options *op, BackupInfo *b);
 
@@ -487,11 +482,103 @@ static int parse_crc(const char *buf, uint32 *crc)
 
 
 /*
+ * Syntax for the mkdir log file:
+ *
+ * Each line in the file contains the name of a directory that was created
+ * during driver installation.
+ *
+ * XXX pathnames containing '\n' will break both this file, and the regular
+ * backup log file.
+ */
+
+
+/*
+ * log_mkdir() - takes a newline-delimited list of directories and appends
+ * them to the log of directories created during installation. The caller
+ * should ensure that directories are listed in decreasing order of depth,
+ * so that removing them in that order will work.
+ */
+int log_mkdir(Options *op, const char *dirs)
+{
+    FILE *log;
+
+    /* open the log file */
+
+    log = fopen(BACKUP_MKDIR_LOG, "a");
+    if (!log) {
+        ui_error(op, "Unable to open mkdir log file '%s' (%s).",
+                 BACKUP_MKDIR_LOG, strerror(errno));
+        return FALSE;
+    }
+
+    fprintf(log, "%s", dirs);
+ 
+    /* close the log file */
+
+    if (fclose(log) != 0) {
+        ui_error(op, "Error while closing mkdir log file '%s' (%s).",
+                 BACKUP_MKDIR_LOG, strerror(errno));
+        return FALSE;
+    }
+    
+    return TRUE;
+}
+
+/*
+ * rmdir_recursive() - Use BACKUP_MKDIR_LOG to find directories that were
+ * created by a previous nvidia-installer, and delete any such directories.
+ * Returns TRUE if the log is found and all directories are successfully
+ * deleted; returns FALSE if any directories failed to be deleted or the
+ * log isn't found.
+ */
+static int rmdir_recursive(Options *op)
+{
+    FILE *log;
+    char *dir;
+    int eof = FALSE, ret = TRUE;
+
+    /* open the log file */
+
+    log = fopen(BACKUP_MKDIR_LOG, "r");
+    if (!log) {
+        /* Fail silently: most likely, the current driver was simply installed
+         * with an nvidia-installer that didn't log created directories. */
+        return FALSE;
+    }
+
+    while (!eof) {
+        dir = fget_next_line(log, &eof);
+        if (dir) {
+            /* Ignore empty lines and the backup directory itself, since it is 
+             * never empty as long as the dirs file is still around. */
+            if (strlen(dir) && strcmp(dir, BACKUP_DIRECTORY) != 0) {
+                if (rmdir(dir) != 0) {
+                    ui_warn(op, "Failed to delete the directory '%s' (%s).",
+                            dir, strerror(errno));
+                    ret = FALSE;
+                }
+            }
+        }
+        free(dir);
+    }
+
+    /* close the log file */
+
+    if (fclose(log) != 0) {
+        ui_error(op, "Error while closing mkdir log file '%s' (%s).",
+                 BACKUP_MKDIR_LOG, strerror(errno));
+        return FALSE;
+    }
+
+    return ret;
+}
+
+/*
  * do_uninstall() - this function uninstalls a previously installed
  * driver, by parsing the BACKUP_LOG file.
  */
 
-static int do_uninstall(Options *op)
+static int do_uninstall(Options *op, const char *version)
 {
     BackupLogEntry *e;
     BackupInfo *b;
@@ -536,6 +623,15 @@ static int do_uninstall(Options *op)
     ui_status_begin(op, tmpstr, "Uninstalling");
 
     free(tmpstr);
+
+    /* Remove any installed DKMS modules */
+
+    if (dkms_module_installed(op, version)) {
+        ui_log(op, "DKMS module detected; removing...");
+        if (!dkms_remove_module(op, version)) {
+            ui_warn(op, "Failed to remove installed DKMS module!");
+        }
+    }
 
     /*
      * given the list of Backup logfile entries, perform the necessary
@@ -644,6 +740,11 @@ static int do_uninstall(Options *op)
             free(tmpstr);
             break;
         }
+    }
+
+    if (!rmdir_recursive(op)) {
+        ui_log(op, "Unable to delete directories created by previous "
+               "installation.");
     }
 
     ui_status_end(op, "done.");
@@ -1209,7 +1310,7 @@ int uninstall_existing_driver(Options *op, const int interactive)
         }
     }
 
-    ret = do_uninstall(op);
+    ret = do_uninstall(op, version);
 
     if (ret) {
         if (interactive) {

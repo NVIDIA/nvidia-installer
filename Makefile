@@ -47,6 +47,7 @@ PCI_LDFLAGS           ?=
 NVIDIA_INSTALLER = $(OUTPUTDIR)/nvidia-installer
 MKPRECOMPILED = $(OUTPUTDIR)/mkprecompiled
 MAKESELF_HELP_SCRIPT = $(OUTPUTDIR)/makeself-help-script
+MAKESELF_HELP_SCRIPT_SH = $(OUTPUTDIR)/makeself-help-script.sh
 
 NVIDIA_INSTALLER_PROGRAM_NAME = "nvidia-installer"
 
@@ -118,10 +119,15 @@ INSTALLER_SRC = $(SRC) $(NCURSES_UI_SO_C) $(TLS_TEST_C) $(TLS_TEST_DSO_C) \
 
 INSTALLER_OBJS = $(call BUILD_OBJECT_LIST,$(INSTALLER_SRC))
 
-CFLAGS += -I. -imacros $(CONFIG_H) -I $(OUTPUTDIR)
-CFLAGS += -I $(COMMON_UTILS_DIR)
+common_cflags  = -I.
+common_cflags += -imacros $(CONFIG_H)
+common_cflags += -I $(OUTPUTDIR)
+common_cflags += -I $(COMMON_UTILS_DIR)
 
-HOST_CFLAGS += -I. -imacros $(CONFIG_H) -I $(OUTPUTDIR)
+CFLAGS += $(common_cflags)
+
+HOST_CFLAGS += $(common_cflags)
+
 LDFLAGS += -L.
 LIBS += -ldl
 
@@ -151,7 +157,8 @@ quiet_GEN_UI_ARRAY = GEN-UI-ARRAY $@
 .PNONY: all install NVIDIA_INSTALLER_install MKPRECOMPILED_install \
   MANPAGE_install MAKESELF_HELP_SCRIPT_install clean clobber
 
-all: $(NVIDIA_INSTALLER) $(MKPRECOMPILED) $(MAKESELF_HELP_SCRIPT) $(MANPAGE)
+all: $(NVIDIA_INSTALLER) $(MKPRECOMPILED) $(MAKESELF_HELP_SCRIPT) \
+  $(MAKESELF_HELP_SCRIPT_SH) $(MANPAGE)
 
 install: NVIDIA_INSTALLER_install MKPRECOMPILED_install MANPAGE_install \
   MAKESELF_HELP_SCRIPT_install
@@ -226,11 +233,11 @@ $(call BUILD_OBJECT_LIST,misc.c): CFLAGS += $(PCI_CFLAGS)
 $(call BUILD_OBJECT_LIST,ncurses-ui.c): CFLAGS += $(NCURSES_CFLAGS) -fPIC
 
 # define the rule to build each object file
-$(foreach src,$(ALL_SRC),$(eval $(call DEFINE_OBJECT_RULE,CC,$(src))))
+$(foreach src,$(ALL_SRC),$(eval $(call DEFINE_OBJECT_RULE,TARGET,$(src))))
 
 # define a rule to build each makeself-help-script object file
 $(foreach src,$(MAKESELF_HELP_SCRIPT_SRC),\
-  $(eval $(call DEFINE_OBJECT_RULE_WITH_OBJECT_NAME,HOST_CC,$(src),\
+  $(eval $(call DEFINE_OBJECT_RULE_WITH_OBJECT_NAME,HOST,$(src),\
     $(call BUILD_MAKESELF_OBJECT_LIST,$(src)))))
 
 # define the rule to generate $(STAMP_C)
@@ -290,6 +297,36 @@ rtld_test: rtld_test.c
 
 
 ##############################################################################
+# rule to build MAKESELF_HELP_SCRIPT_SH; this shell script is packaged
+# with the driver so that the script can be run on any platform when
+# the driver is later repackaged
+##############################################################################
+
+$(MAKESELF_HELP_SCRIPT_SH): $(MAKESELF_HELP_SCRIPT)
+	@ $(ECHO) "#!/bin/sh" > $@
+	@ $(ECHO) "while [ \"\$$1\" ]; do" >> $@
+	@ $(ECHO) "    case \$$1 in" >> $@
+	@ $(ECHO) "        \"--advanced-options-args-only\")" >> $@
+	@ $(ECHO) "            cat <<- \"ADVANCED_OPTIONS_ARGS_ONLY\"" >> $@
+	$(MAKESELF_HELP_SCRIPT) --advanced-options-args-only >> $@
+	@ $(ECHO) "ADVANCED_OPTIONS_ARGS_ONLY" >> $@
+	@ $(ECHO) "            ;;" >> $@
+	@ $(ECHO) "        \"--help-args-only\")" >> $@
+	@ $(ECHO) "            cat <<- \"HELP_ARGS_ONLY\"" >> $@
+	$(MAKESELF_HELP_SCRIPT) --help-args-only >> $@
+	@ $(ECHO) "HELP_ARGS_ONLY" >> $@
+	@ $(ECHO) "            ;;" >> $@
+	@ $(ECHO) "        *)" >> $@
+	@ $(ECHO) "            echo \"unrecognized option '$$1'"\" >> $@
+	@ $(ECHO) "            break" >> $@
+	@ $(ECHO) "            ;;" >> $@
+	@ $(ECHO) "    esac" >> $@
+	@ $(ECHO) "    shift" >> $@
+	@ $(ECHO) "done" >> $@
+	$(CHMOD) u+x $@
+
+
+##############################################################################
 # Documentation
 ##############################################################################
 
@@ -303,7 +340,7 @@ GEN_MANPAGE_OPTS_SRC += $(COMMON_UTILS_DIR)/gen-manpage-opts-helper.c
 GEN_MANPAGE_OPTS_OBJS = $(call BUILD_OBJECT_LIST,$(GEN_MANPAGE_OPTS_SRC))
 
 $(foreach src, $(GEN_MANPAGE_OPTS_SRC), \
-    $(eval $(call DEFINE_OBJECT_RULE,HOST_CC,$(src))))
+    $(eval $(call DEFINE_OBJECT_RULE,HOST,$(src))))
 
 $(GEN_MANPAGE_OPTS_OBJS): $(CONFIG_H)
 

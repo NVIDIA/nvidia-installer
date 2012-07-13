@@ -35,7 +35,6 @@ char *read_next_word (char *buf, char **e);
 int check_euid(Options *op);
 int check_runlevel(Options *op);
 int adjust_cwd(Options *op, const char *program_name);
-char *fget_next_line(FILE *fp, int *eof);
 char *get_next_line(char *buf, char **e, char *start, int length);
 int run_command(Options *op, const char *cmd, char **data,
                 int output, int status, int redirect);
@@ -64,5 +63,8 @@ int check_for_nvidia_graphics_devices(Options *op, Package *p);
 int run_nvidia_xconfig(Options *op, int restore);
 int run_distro_hook(Options *op, const char *hook);
 int check_for_nouveau(Options *op);
+int dkms_module_installed(Options *op, const char *version);
+int dkms_install_module(Options *op, const char *version, const char *kernel);
+int dkms_remove_module(Options *op, const char *version);
 
 #endif /* __NVIDIA_INSTALLER_MISC_H__ */

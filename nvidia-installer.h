@@ -139,6 +139,8 @@ typedef struct __options {
     int run_distro_scripts;
     int no_nouveau_check;
     int no_opengl_files;
+    int no_kernel_module_source;
+    int dkms;
 
     char *opengl_prefix;
     char *opengl_libdir;
@@ -171,6 +173,8 @@ typedef struct __options {
     char *kernel_output_path;
     char *kernel_include_path;
     char *kernel_module_installation_path;
+    char *kernel_module_src_prefix;
+    char *kernel_module_src_dir;
     char *utils[MAX_UTILS];
     
     char *proc_mount_point;
@@ -297,7 +301,7 @@ typedef struct __package {
 /* Create a symlink only if the file doesn't exist */
 #define FILE_TYPE_XMODULE_NEWSYM                0x0000000000100000ULL
 #define FILE_TYPE_MANPAGE                       0x0000000000200000ULL
-/* unused                                       0x0000000000400000ULL */
+#define FILE_TYPE_EXPLICIT_PATH                 0x0000000000400000ULL
 #define FILE_TYPE_CUDA_LIB                      0x0000000000800000ULL
 #define FILE_TYPE_CUDA_SYMLINK                  0x0000000001000000ULL
 #define FILE_TYPE_VDPAU_LIB                     0x0000000002000000ULL
@@ -330,6 +334,7 @@ typedef struct __package {
                                     FILE_TYPE_UTILITY_LIB        | \
                                     FILE_TYPE_DOCUMENTATION      | \
                                     FILE_TYPE_MANPAGE            | \
+                                    FILE_TYPE_EXPLICIT_PATH      | \
                                     FILE_TYPE_OPENGL_HEADER      | \
                                     FILE_TYPE_CUDA_ICD           | \
                                     FILE_TYPE_KERNEL_MODULE      | \
@@ -340,7 +345,8 @@ typedef struct __package {
                                     FILE_TYPE_GLX_MODULE_SHARED_LIB | \
                                     FILE_TYPE_DOT_DESKTOP        | \
                                     FILE_TYPE_VDPAU_LIB          | \
-                                    FILE_TYPE_NVCUVID_LIB)
+                                    FILE_TYPE_NVCUVID_LIB        | \
+                                    FILE_TYPE_KERNEL_MODULE_SRC)
 
 #define FILE_TYPE_HAVE_PATH        (FILE_TYPE_XMODULE_SHARED_LIB | \
                                     FILE_TYPE_XMODULE_SYMLINK    | \
@@ -348,6 +354,7 @@ typedef struct __package {
                                     FILE_TYPE_GLX_MODULE_SYMLINK | \
                                     FILE_TYPE_XMODULE_NEWSYM     | \
                                     FILE_TYPE_MANPAGE            | \
+                                    FILE_TYPE_EXPLICIT_PATH      | \
                                     FILE_TYPE_OPENGL_HEADER      | \
                                     FILE_TYPE_CUDA_LIB           | \
                                     FILE_TYPE_CUDA_SYMLINK       | \
@@ -448,6 +455,8 @@ typedef struct __package {
 #define DEFAULT_DOT_DESKTOPDIR          "share/applications"
 #define DEFAULT_DOCDIR                  "share/doc"
 #define DEFAULT_MANDIR                  "share/man"
+
+#define DEFAULT_KERNEL_MODULE_SRC_PREFIX "/usr/src"
 
 /*
  * As of Xorg 7.x, X components need not be installed relative

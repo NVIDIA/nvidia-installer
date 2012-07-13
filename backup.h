@@ -39,4 +39,6 @@ int get_installed_driver_version_and_descr(Options *, char **, char **);
 int test_installed_files(Options *op);
 int find_installed_file(Options *op, char *filename);
 
+int log_mkdir(Options *op, const char *dirs);
+
 #endif /* __NVIDIA_INSTALLER_BACKUP_H__ */

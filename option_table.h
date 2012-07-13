@@ -35,7 +35,7 @@
 
 
 enum {
-    XFREE86_PREFIX_OPTION = 1,
+    XFREE86_PREFIX_OPTION = 1024,
     OPENGL_PREFIX_OPTION,
     OPENGL_LIBDIR_OPTION,
     KERNEL_INCLUDE_PATH_OPTION,
@@ -80,6 +80,10 @@ enum {
     NO_CC_VERSION_CHECK_OPTION,
     NO_DISTRO_SCRIPTS_OPTION,
     NO_OPENGL_FILES_OPTION,
+    KERNEL_MODULE_SOURCE_PREFIX_OPTION,
+    KERNEL_MODULE_SOURCE_DIR_OPTION,
+    NO_KERNEL_MODULE_SOURCE_OPTION,
+    DKMS_OPTION,
 };
 
 static const NVGetoptOption __options[] = {
@@ -503,6 +507,31 @@ static const NVGetoptOption __options[] = {
 
     { "no-opengl-files", NO_OPENGL_FILES_OPTION, 0, NULL,
       "Do not install any of the OpenGL-related driver files." },
+
+    { "kernel-module-source-prefix", KERNEL_MODULE_SOURCE_PREFIX_OPTION, 
+       NVGETOPT_STRING_ARGUMENT, NULL,
+      "Specify a path where the source directory for the kernel module will "
+      "be installed. Default: install source directory at /usr/src" },
+
+    { "kernel-module-source-dir", KERNEL_MODULE_SOURCE_DIR_OPTION,
+       NVGETOPT_STRING_ARGUMENT, NULL,
+      "Specify the name of the directory where the kernel module sources will "
+      "be installed. Default: directory name is \"nvidia-VERSION\""},
+
+    { "no-kernel-module-source", NO_KERNEL_MODULE_SOURCE_OPTION, 0, NULL,
+      "Skip installation of the kernel module source."},
+
+    { "dkms", DKMS_OPTION, 0, NULL,
+      "nvidia-installer can optionally register the NVIDIA kernel module "
+      "sources, if installed, with DKMS, then build and install a kernel "
+      "module using the DKMS-registered sources.  This will allow the DKMS "
+      "infrastructure to automatically build a new kernel module when "
+      "changing kernels.  During installation, if DKMS is detected, "
+      "nvidia-installer will ask the user if they wish to register the "
+      "module with DKMS; the default response is 'no'.  Use this option to "
+      "make the default response 'yes'.  This is useful with the "
+      "'--no-questions' or '--silent' options, which assume the default "
+      "values for all questions." },
 
     /* Orphaned options: These options were in the long_options table in
      * nvidia-installer.c but not in the help. */

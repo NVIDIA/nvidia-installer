@@ -142,7 +142,25 @@ int install_from_cwd(Options *op)
     /* attempt to build a kernel module for the target kernel */
 
     if (!op->no_kernel_module) {
-        if (!install_kernel_module(op, p)) goto failed;
+
+        /* Offer the DKMS option if DKMS exists and the kernel module sources 
+         * will be installed somewhere */
+
+        if (find_system_util("dkms") && !op->no_kernel_module_source) {
+            op->dkms = ui_yes_no(op, op->dkms,
+                                "Would you like to register the kernel module "
+                                "sources with DKMS? This will allow DKMS to "
+                                "automatically build a new module, if you "
+                                "install a different kernel later.");
+        }
+
+        /* Only do the normal kernel module install if not using DKMS */
+
+        if (op->dkms) {
+            op->no_kernel_module = TRUE;
+        } else if (!install_kernel_module(op, p)) {
+            goto failed;
+        }
     } else {
         ui_warn(op, "You specified the '--no-kernel-module' command line "
                 "option, nvidia-installer will not install a kernel "
@@ -151,6 +169,15 @@ int install_from_cwd(Options *op)
                 "an earlier NVIDIA driver installation.  Please ensure "
                 "that an NVIDIA kernel module matching this driver version "
                 "is installed seperately.");
+
+        /* no_kernel_module should imply no DKMS */
+
+        if (op->dkms) {
+            ui_warn(op, "You have specified both the '--no-kernel-module' "
+                    "and the '--dkms' command line options. The '--dkms' "
+                    "option will be ignored.");
+            op->dkms = FALSE;
+        }
     }
     
     /*
@@ -242,6 +269,11 @@ int install_from_cwd(Options *op)
     /* execute the command list */
 
     if (!do_install(op, p, c)) goto failed;
+
+    /* Register, build, and install the module with DKMS, if requested */
+
+    if (op->dkms && !dkms_install_module(op, p->version, get_kernel_name(op)))
+        goto failed;
 
     /* run the distro postinstall script */
 
@@ -699,6 +731,8 @@ static Package *parse_manifest (Options *op)
                 p->entries[n].flags |= FILE_TYPE_DOCUMENTATION;
             else if (strcmp(flag, "MANPAGE") == 0)
                 p->entries[n].flags |= FILE_TYPE_MANPAGE;
+            else if (strcmp(flag, "EXPLICIT_PATH") == 0)
+                p->entries[n].flags |= FILE_TYPE_EXPLICIT_PATH;
             else if (strcmp(flag, "OPENGL_SYMLINK") == 0)
                 p->entries[n].flags |= FILE_TYPE_OPENGL_SYMLINK;
             else if (strcmp(flag, "CUDA_SYMLINK") == 0)
