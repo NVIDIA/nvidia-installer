@@ -138,6 +138,7 @@ typedef struct __options {
     int no_nvidia_xconfig_question;
     int run_distro_scripts;
     int no_nouveau_check;
+    int disable_nouveau;
     int no_opengl_files;
     int no_kernel_module_source;
     int dkms;

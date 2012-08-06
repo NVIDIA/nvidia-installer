@@ -224,6 +224,7 @@ static void parse_commandline(int argc, char *argv[], Options *op)
             op->ui_str = "none";
             break;
         case 'z': op->no_nouveau_check = TRUE; break;
+        case 'Z': op->disable_nouveau = TRUE; break;
 
         case 'k':
             op->kernel_name = strval;

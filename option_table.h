@@ -449,6 +449,12 @@ static const NVGetoptOption __options[] = {
       "Normally, nvidia-installer aborts installation if the nouveau kernel "
       "driver is in use.  Use this option to disable this check." },
 
+    { "disable-nouveau", 'Z', 0, NULL,
+      "If the nouveau kernel module is detected by nvidia-installer, the "
+      "installer offers to attempt to disable nouveau. The default action "
+      "is to not attempt to disable nouveau; use this option to change the "
+      "default action to attempt to disable nouveau."},
+
     { "run-nvidia-xconfig", 'X', 0, NULL,
       "nvidia-installer can optionally invoke the nvidia-xconfig utility.  "
       "This will update the system X configuration file so that the NVIDIA X "

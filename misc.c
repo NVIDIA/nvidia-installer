@@ -2544,10 +2544,10 @@ int check_for_nouveau(Options *op)
         return FALSE;
     }
 
-    ret = ui_yes_no(op, FALSE, "For some distributions, Nouveau can be "
-                    "disabled by adding a file in the modprobe configuration "
-                    "directory.  Would you like nvidia-installer to attempt "
-                    "to create this modprobe file for you?");
+    ret = ui_yes_no(op, op->disable_nouveau, "For some distributions, Nouveau "
+                    "can be disabled by adding a file in the modprobe "
+                    "configuration directory.  Would you like nvidia-installer "
+                    "to attempt to create this modprobe file for you?");
 
     if (ret) {
         ret = blacklist_nouveau();
