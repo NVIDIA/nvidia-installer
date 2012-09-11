@@ -243,16 +243,19 @@ char *get_next_line(char *buf, char **end, char *start, int length)
     
     if (end) *end = NULL;
     
+    // Cast all char comparisons to EOF to signed char in order to
+    // allow proper sign extension on platforms like GCC ARM where
+    // char is unsigned char
     if ((!buf) ||
         __AT_END(start, buf, length) ||
         (*buf == '\0') ||
-        (*buf == EOF)) return NULL;
+        (((signed char)*buf) == EOF)) return NULL;
     
     c = buf;
     
     while ((!__AT_END(start, c, length)) &&
            (*c != '\0') &&
-           (*c != EOF) &&
+           (((signed char)*c) != EOF) &&
            (*c != '\n') &&
            (*c != '\r')) c++;
 
@@ -264,12 +267,12 @@ char *get_next_line(char *buf, char **end, char *start, int length)
     if (end) {
         while ((!__AT_END(start, c, length)) &&
                (*c != '\0') &&
-               (*c != EOF) &&
+               (((signed char)*c) != EOF) &&
                (!isprint(*c))) c++;
         
         if (__AT_END(start, c, length) ||
             (*c == '\0') ||
-            (*c == EOF)) *end = NULL;
+            (((signed char)*c) == EOF)) *end = NULL;
         else *end = c;
     }
     

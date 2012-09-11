@@ -1806,7 +1806,7 @@ static char *guess_kernel_module_filename(Options *op)
 
 /*
  * get_machine_arch() - get the machine architecture, substituting
- * i386 for i586 and i686.
+ * i386 for i586 and i686 or arm for arm7l.
  */
 
 static char __machine_arch[16];
@@ -1820,9 +1820,11 @@ char *get_machine_arch(Options *op)
                 strerror(errno));
         return NULL;
     } else {
-        if ((strncmp(uname_buf.machine, "i586", 3) == 0) ||
-            (strncmp(uname_buf.machine, "i686", 3) == 0)) {
+        if ((strncmp(uname_buf.machine, "i586", 4) == 0) ||
+            (strncmp(uname_buf.machine, "i686", 4) == 0)) {
             strcpy(__machine_arch, "i386");
+        } else if ((strncmp(uname_buf.machine, "armv", 4) == 0)) {
+            strcpy(__machine_arch, "arm");
         } else {
             strncpy(__machine_arch, uname_buf.machine,
                     sizeof(__machine_arch));
