@@ -706,20 +706,9 @@ int test_kernel_module(Options *op, Package *p)
     }
 
     /*
-     * On Linux 2.6 we depend on the AGPGART frontend module unless
-     * the kernel was configured without support for the Linux AGP
-     * GART driver. Preload it here to satisfy the dependency, which
-     * isn't resolved by `insmod`.
-     */
-    if (strncmp(get_kernel_name(op), "2.4", 3) != 0) {
-        cmd = nvstrcat(op->utils[MODPROBE], " -q agpgart", NULL);
-        run_command(op, cmd, NULL, FALSE, 0, TRUE);
-        nvfree(cmd);
-    }
-
-    /*
-     * Likewise, we need to preload the i2c-core.ko kernel module to
-     * satisfy another dependency not resolved by `insmod`.
+     * On Linux 2.6+ we depend on the i2c-core.ko kernel module unless
+     * the kernel was configured without support for it.  Preload it here to
+     * satisfy the dependency, which isn't resolved by `insmod`.
      */
     if (strncmp(get_kernel_name(op), "2.4", 3) != 0) {
         cmd = nvstrcat(op->utils[MODPROBE], " -q i2c-core", NULL);

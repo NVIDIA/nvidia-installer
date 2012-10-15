@@ -53,22 +53,41 @@ NVIDIA_INSTALLER_PROGRAM_NAME = "nvidia-installer"
 
 NVIDIA_INSTALLER_VERSION := $(NVIDIA_VERSION)
 
+# We only need to run the TLS test on Linux-x86 and Linux-x86_64
+ifeq ($(findstring Linux-x86,$(TARGET_OS)-$(TARGET_ARCH)),)
+  NEED_TLS_TEST =
+else
+  NEED_TLS_TEST = 1
+endif
+
 NCURSES_UI_C       = ncurses-ui.c
 NCURSES_UI_SO      = $(OUTPUTDIR)/nvidia-installer-ncurses-ui.so
 NCURSES_UI_SO_C    = $(OUTPUTDIR)/g_$(notdir $(NCURSES_UI_SO:.so=.c))
 
-TLS_TEST_C         = $(OUTPUTDIR)/g_tls_test.c
-TLS_TEST_DSO_C     = $(OUTPUTDIR)/g_tls_test_dso.c
-TLS_TEST           = tls_test_$(TARGET_OS)-$(TARGET_ARCH)
-TLS_TEST_DSO_SO    = tls_test_dso_$(TARGET_OS)-$(TARGET_ARCH).so
+ifneq ($(NEED_TLS_TEST),)
+  TLS_TEST_C         = $(OUTPUTDIR)/g_tls_test.c
+  TLS_TEST_DSO_C     = $(OUTPUTDIR)/g_tls_test_dso.c
+  TLS_TEST           = tls_test_$(TARGET_OS)-$(TARGET_ARCH)
+  TLS_TEST_DSO_SO    = tls_test_dso_$(TARGET_OS)-$(TARGET_ARCH).so
 
-TLS_TEST_32_C      = $(OUTPUTDIR)/g_tls_test_32.c
-TLS_TEST_DSO_32_C  = $(OUTPUTDIR)/g_tls_test_dso_32.c
-TLS_TEST_32        = tls_test_$(TARGET_OS)-x86
-TLS_TEST_DSO_SO_32 = tls_test_dso_$(TARGET_OS)-x86.so
+  TLS_TEST_32_C      = $(OUTPUTDIR)/g_tls_test_32.c
+  TLS_TEST_DSO_32_C  = $(OUTPUTDIR)/g_tls_test_dso_32.c
+  TLS_TEST_32        = tls_test_$(TARGET_OS)-x86
+  TLS_TEST_DSO_SO_32 = tls_test_dso_$(TARGET_OS)-x86.so
+else
+  TLS_TEST_C         =
+  TLS_TEST_DSO_C     =
+  TLS_TEST           =
+  TLS_TEST_DSO_SO    =
+
+  TLS_TEST_32_C      =
+  TLS_TEST_DSO_32_C  =
+  TLS_TEST_32        =
+  TLS_TEST_DSO_SO_32 =
+endif
 
 RTLD_TEST_C        = $(OUTPUTDIR)/g_rtld_test.c
-RTLD_TEST          = rtld_test_$(TARGET_OS)-$(TARGET_ARCH)
+RTLD_TEST          = rtld_test_$(TARGET_OS)-$(TARGET_ARCH)$(if $(TARGET_ARCH_ABI),-$(TARGET_ARCH_ABI))
 
 RTLD_TEST_32_C     = $(OUTPUTDIR)/g_rtld_test_32.c
 RTLD_TEST_32       = rtld_test_$(TARGET_OS)-x86
@@ -123,6 +142,7 @@ common_cflags  = -I.
 common_cflags += -imacros $(CONFIG_H)
 common_cflags += -I $(OUTPUTDIR)
 common_cflags += -I $(COMMON_UTILS_DIR)
+common_cflags += $(if $(NEED_TLS_TEST),-DNV_TLS_TEST)
 
 CFLAGS += $(common_cflags)
 
@@ -205,19 +225,21 @@ $(NCURSES_UI_SO): $(call BUILD_OBJECT_LIST,ncurses-ui.c)
 $(NCURSES_UI_SO_C): $(GEN_UI_ARRAY) $(NCURSES_UI_SO)
 	$(call quiet_cmd,GEN_UI_ARRAY) $(NCURSES_UI_SO) ncurses_ui_array > $@
 
-$(TLS_TEST_C): $(GEN_UI_ARRAY) $(TLS_TEST)
+ifneq ($(NEED_TLS_TEST),)
+  $(TLS_TEST_C): $(GEN_UI_ARRAY) $(TLS_TEST)
 	$(call quiet_cmd,GEN_UI_ARRAY) $(TLS_TEST) tls_test_array > $@
 
-$(TLS_TEST_DSO_C): $(GEN_UI_ARRAY) $(TLS_TEST_DSO_SO)
+  $(TLS_TEST_DSO_C): $(GEN_UI_ARRAY) $(TLS_TEST_DSO_SO)
 	$(call quiet_cmd,GEN_UI_ARRAY) \
 	  $(TLS_TEST_DSO_SO) tls_test_dso_array > $@
 
-$(TLS_TEST_32_C): $(GEN_UI_ARRAY) $(TLS_TEST_32)
+  $(TLS_TEST_32_C): $(GEN_UI_ARRAY) $(TLS_TEST_32)
 	$(call quiet_cmd,GEN_UI_ARRAY) $(TLS_TEST_32) tls_test_array_32 > $@
 
-$(TLS_TEST_DSO_32_C): $(GEN_UI_ARRAY) $(TLS_TEST_DSO_SO_32)
+  $(TLS_TEST_DSO_32_C): $(GEN_UI_ARRAY) $(TLS_TEST_DSO_SO_32)
 	$(call quiet_cmd,GEN_UI_ARRAY) \
 	  $(TLS_TEST_DSO_SO_32) tls_test_dso_array_32 > $@
+endif
 
 $(RTLD_TEST_C): $(GEN_UI_ARRAY) $(RTLD_TEST)
 	$(call quiet_cmd,GEN_UI_ARRAY) $(RTLD_TEST) rtld_test_array > $@

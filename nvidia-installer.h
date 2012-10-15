@@ -314,6 +314,8 @@ typedef struct __package {
 #define FILE_TYPE_NVCUVID_SYMLINK               0x0000000080000000ULL
 #define FILE_TYPE_GLX_MODULE_SHARED_LIB         0x0000000100000000ULL
 #define FILE_TYPE_GLX_MODULE_SYMLINK            0x0000000200000000ULL
+#define FILE_TYPE_ENCODEAPI_LIB                 0x0000000400000000ULL
+#define FILE_TYPE_ENCODEAPI_SYMLINK             0x0000000800000000ULL
 
 
 /* file class: this is used to distinguish OpenGL libraries */
@@ -347,7 +349,8 @@ typedef struct __package {
                                     FILE_TYPE_DOT_DESKTOP        | \
                                     FILE_TYPE_VDPAU_LIB          | \
                                     FILE_TYPE_NVCUVID_LIB        | \
-                                    FILE_TYPE_KERNEL_MODULE_SRC)
+                                    FILE_TYPE_KERNEL_MODULE_SRC  | \
+                                    FILE_TYPE_ENCODEAPI_LIB)
 
 #define FILE_TYPE_HAVE_PATH        (FILE_TYPE_XMODULE_SHARED_LIB | \
                                     FILE_TYPE_XMODULE_SYMLINK    | \
@@ -377,7 +380,9 @@ typedef struct __package {
                                     FILE_TYPE_VDPAU_SYMLINK      | \
                                     FILE_TYPE_VDPAU_LIB          | \
                                     FILE_TYPE_NVCUVID_LIB        | \
-                                    FILE_TYPE_NVCUVID_SYMLINK)
+                                    FILE_TYPE_NVCUVID_SYMLINK    | \
+                                    FILE_TYPE_ENCODEAPI_LIB      | \
+                                    FILE_TYPE_ENCODEAPI_SYMLINK)
 
 #define FILE_TYPE_HAVE_CLASS       (FILE_TYPE_TLS_LIB            | \
                                     FILE_TYPE_TLS_SYMLINK)
@@ -391,7 +396,8 @@ typedef struct __package {
                                     FILE_TYPE_UTILITY_LIB_SYMLINK| \
                                     FILE_TYPE_UTILITY_BIN_SYMLINK| \
                                     FILE_TYPE_VDPAU_SYMLINK      | \
-                                    FILE_TYPE_NVCUVID_SYMLINK)
+                                    FILE_TYPE_NVCUVID_SYMLINK    | \
+                                    FILE_TYPE_ENCODEAPI_SYMLINK)
 
 #define FILE_TYPE_NEWSYM           (FILE_TYPE_XMODULE_NEWSYM)
 
@@ -409,7 +415,8 @@ typedef struct __package {
                                     FILE_TYPE_GLX_MODULE_SHARED_LIB | \
                                     FILE_TYPE_UTILITY_LIB        | \
                                     FILE_TYPE_VDPAU_LIB          | \
-                                    FILE_TYPE_NVCUVID_LIB)
+                                    FILE_TYPE_NVCUVID_LIB        | \
+                                    FILE_TYPE_ENCODEAPI_LIB)
 
 #define FILE_TYPE_OPENGL_FILE      (FILE_TYPE_OPENGL_HEADER      | \
                                     FILE_TYPE_OPENGL_LIB         | \

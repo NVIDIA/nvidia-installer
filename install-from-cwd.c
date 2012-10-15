@@ -769,6 +769,10 @@ static Package *parse_manifest (Options *op)
                 p->entries[n].flags |= FILE_TYPE_NVCUVID_LIB;
             else if (strcmp(flag, "NVCUVID_LIB_SYMLINK") == 0)
                 p->entries[n].flags |= FILE_TYPE_NVCUVID_SYMLINK;
+            else if (strcmp(flag, "ENCODEAPI_LIB") == 0)
+                p->entries[n].flags |= FILE_TYPE_ENCODEAPI_LIB;
+            else if (strcmp(flag, "ENCODEAPI_LIB_SYMLINK") == 0)
+                p->entries[n].flags |= FILE_TYPE_ENCODEAPI_SYMLINK;
             else {
                 nvfree(flag);
                 goto invalid_manifest_file;

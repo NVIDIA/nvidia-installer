@@ -502,6 +502,16 @@ int log_mkdir(Options *op, const char *dirs)
 {
     FILE *log;
 
+    /*
+     * create the backup directory if it doesn't exist; BACKUP_MKDIR_LOG
+     * is within BACKUP_DIRECTORY, so the below fopen(3) call depends on
+     * the existence of BACKUP_DIRECTORY
+     */
+    if (!directory_exists(op, BACKUP_DIRECTORY) &&
+        !mkdir_with_log(op, BACKUP_DIRECTORY, BACKUP_DIRECTORY_PERMS, FALSE)) {
+        return FALSE;
+    }
+
     /* open the log file */
 
     log = fopen(BACKUP_MKDIR_LOG, "a");

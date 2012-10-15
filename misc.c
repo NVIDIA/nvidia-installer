@@ -1309,6 +1309,7 @@ uint64_t get_installable_file_mask(Options *op)
 
 
 
+#if defined(NV_TLS_TEST)
 /*
  * tls_test() - Starting with glibc 2.3, there is a new thread local
  * storage mechanism.  To accomodate this, NVIDIA's OpenGL libraries
@@ -1480,6 +1481,15 @@ static int tls_test_internal(Options *op, int which_tls,
 
 } /* test_tls_internal() */
 
+#else /* defined(NV_TLS_TEST) */
+
+int tls_test(Options *op, int compat_32_libs)
+{
+    /* Assume the TLS test passed. */
+    return TRUE;
+}
+
+#endif /* defined(NV_TLS_TEST) */
 
 
 /*

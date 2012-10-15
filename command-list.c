@@ -584,7 +584,6 @@ static ConflictingFileInfo __xfree86_opengl_libs[] = {
 };
 
 static ConflictingFileInfo __xfree86_non_opengl_libs[] = {
-    { "libXvMCNVIDIA",       13, /* strlen("libXvMCNVIDIA") */       NULL            },
     { "nvidia_drv.",         11, /* strlen("nvidia_drv.") */         NULL            },
     { "libvdpau.",           9,  /* strlen("libvdpau.") */           NULL            },
     { "libvdpau_trace.",     15, /* strlen("libvdpau_trace.") */     NULL            },
@@ -594,6 +593,7 @@ static ConflictingFileInfo __xfree86_non_opengl_libs[] = {
     { "libnvidia-compiler.", 19, /* strlen("libnvidia-compiler.") */ NULL            },
     { "libnvcuvid.",         11, /* strlen("libnvcuvid.") */         NULL            },
     { "libnvidia-ml.",       13, /* strlen("libnvidia-ml.") */       NULL            },
+    { "libnvidia-encode.",   17, /* strlen("libnvidia-encode.") */   NULL            },
     { NULL,                  0,                                      NULL            }
 };
 
