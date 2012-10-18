@@ -1146,12 +1146,13 @@ int confirm_path(Options *op, const char *path)
 
 
 
-/* 
- * mkdir_recursive() - create the path specified, also creating parent
- * directories as needed; this is equivalent to `mkdir -p`
+/*
+ * mkdir_with_log() - create the path specified, also creating parent
+ * directories as needed; this is equivalent to `mkdir -p`. Log created
+ * directories if the "log" parameter is set.
  */
 
-int mkdir_recursive(Options *op, const char *path, const mode_t mode)
+int mkdir_with_log(Options *op, const char *path, const mode_t mode, int log)
 {
     char *c, *tmp, ch, *list, *tmplist;
     
@@ -1185,7 +1186,7 @@ int mkdir_recursive(Options *op, const char *path, const mode_t mode)
     } while (*c);
 
     /* Log any created directories */
-    if (list) {
+    if (log && list) {
         log_mkdir(op, list);
     }
 
@@ -1193,6 +1194,18 @@ int mkdir_recursive(Options *op, const char *path, const mode_t mode)
     free(tmp);
     return TRUE;
 
+} /* mkdir_with_log */
+
+
+
+/*
+ * mkdir_recursive() - Wrap mkdir_with_log() to create the path specified
+ * with any needed parent directories.
+ */
+
+int mkdir_recursive(Options *op, const char *path, const mode_t mode)
+{
+    return mkdir_with_log(op, path, mode, TRUE);
 } /* mkdir_recursive() */
 
 
