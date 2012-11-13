@@ -155,7 +155,7 @@ int determine_kernel_module_installation_path(Options *op)
 int determine_kernel_source_path(Options *op, Package *p)
 {
     char *CC, *cmd, *result;
-    char *source_file, *source_path;
+    char *source_files[2], *source_path;
     char *arch;
     int ret, count = 0;
     
@@ -268,22 +268,35 @@ int determine_kernel_source_path(Options *op, Package *p)
     }
 
     if (strncmp(result, "2.4", 3) == 0) {
-        source_file = nvstrcat(op->kernel_source_path,
-                               "/include/linux/version.h", NULL);
+        source_files[0] = nvstrcat(op->kernel_source_path,
+                                   "/include/linux/version.h", NULL);
+        source_files[1] = NULL;
         source_path = op->kernel_source_path;
     } else {
-        source_file = nvstrcat(op->kernel_output_path,
-                               "/include/linux/version.h", NULL);
+        source_files[0] = nvstrcat(op->kernel_output_path,
+                                   "/include/linux/version.h", NULL);
+        source_files[1] = nvstrcat(op->kernel_output_path,
+                                   "/include/generated/uapi/linux/version.h",
+                                   NULL);
         source_path = op->kernel_output_path;
     }
     free(result);
-    
-    if (access(source_file, F_OK) != 0) {
-        ui_error(op, "The kernel header file '%s' does not exist.  "
-                 "The most likely reason for this is that the kernel "
-                 "source files in '%s' have not been configured.",
-                 source_file, source_path);
-        return FALSE;
+
+    if (access(source_files[0], F_OK) != 0) {
+        if (!source_files[1]) {
+            ui_error(op, "The kernel header file '%s' does not exist.  "
+                     "The most likely reason for this is that the kernel "
+                     "source files in '%s' have not been configured.",
+                     source_files[0], source_path);
+            return FALSE;
+        } else if (access(source_files[1], F_OK) != 0) {
+            ui_error(op, "Neither the '%s' nor the '%s' kernel header "
+                     "file exists.  The most likely reason for this "
+                     "is that the kernel source files in '%s' have not been "
+                     "configured.",
+                     source_files[0], source_files[1], source_path);
+            return FALSE;
+        }
     }
 
     /* OK, we seem to have a path to a configured kernel source tree */
