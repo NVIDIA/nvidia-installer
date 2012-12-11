@@ -620,6 +620,13 @@ int set_destinations(Options *op, Package *p)
             path = "";
             break;
 
+        case FILE_TYPE_VGX_LIB:
+        case FILE_TYPE_VGX_SYMLINK:
+            prefix = op->opengl_prefix;
+            dir = op->opengl_libdir;
+            path = "";
+            break;
+
         case FILE_TYPE_OPENGL_HEADER:
             prefix = op->opengl_prefix;
             dir = op->opengl_incdir;

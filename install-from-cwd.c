@@ -83,10 +83,6 @@ int install_from_cwd(Options *op)
         "appropriate; see the file /usr/share/doc/"
         "NVIDIA_GLX-1.0/README.txt for details.";
 
-    static const char suse_edit_your_xf86config[] =
-        "On SuSE Linux/United Linux please use SaX2 now to enable "
-        "the NVIDIA driver.";
-
     /*
      * validate the manifest file in the cwd, and process it, building
      * a Package struct
@@ -317,11 +313,7 @@ int install_from_cwd(Options *op)
                        "complete.", p->description, p->version);
         } else {
             
-            if ((op->distro == SUSE) || (op->distro == UNITED_LINUX)) {
-                msg = suse_edit_your_xf86config;
-            } else {
-                msg = edit_your_xf86config;
-            }
+            msg = edit_your_xf86config;
             
             ui_message(op, "Installation of the %s (version: %s) is now "
                        "complete.  %s", p->description,
@@ -773,6 +765,10 @@ static Package *parse_manifest (Options *op)
                 p->entries[n].flags |= FILE_TYPE_ENCODEAPI_LIB;
             else if (strcmp(flag, "ENCODEAPI_LIB_SYMLINK") == 0)
                 p->entries[n].flags |= FILE_TYPE_ENCODEAPI_SYMLINK;
+            else if (strcmp(flag, "VGX_LIB") == 0)
+                p->entries[n].flags |= FILE_TYPE_VGX_LIB;
+            else if (strcmp(flag, "VGX_LIB_SYMLINK") == 0)
+                p->entries[n].flags |= FILE_TYPE_VGX_SYMLINK;
             else {
                 nvfree(flag);
                 goto invalid_manifest_file;
