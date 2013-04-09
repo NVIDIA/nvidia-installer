@@ -24,7 +24,7 @@
 #define __NVIDIA_INSTALLER_H__
 
 #include <sys/types.h>
-#include <stdint.h>
+#include <inttypes.h>
 
 #include "common-utils.h"
 
@@ -55,6 +55,7 @@ typedef enum {
     EXECSTACK,
     PKG_CONFIG,
     XSERVER,
+    OPENSSL,
     MAX_SYSTEM_OPTIONAL_UTILS
 } SystemOptionalUtils;
 
@@ -85,6 +86,7 @@ typedef enum {
     DEBIAN,
     UBUNTU,
     GENTOO,
+    ARCH,
     OTHER
 } Distribution;
 
@@ -116,6 +118,7 @@ typedef struct __options {
     int latest;
     int force_update;
     int opengl_headers;
+    int nvidia_modprobe;
     int no_questions;
     int silent;
     int which_tls;
@@ -168,6 +171,8 @@ typedef struct __options {
     char *documentation_docdir;
     char *documentation_mandir;
 
+    char *application_profile_path;
+
     int modular_xorg;
 
     char *kernel_source_path;
@@ -192,6 +197,14 @@ typedef struct __options {
     char *precompiled_kernel_interfaces_url;
     const char *selinux_chcon_type;
 
+    char *module_signing_secret_key;
+    char *module_signing_public_key;
+    char *module_signing_script;
+    char *module_signing_key_path;
+    char *module_signing_hash;
+
+    int kernel_module_signed;
+
     Distribution distro;
 
     void *ui_priv; /* for use by the ui's */
@@ -200,6 +213,85 @@ typedef struct __options {
 
 } Options;
 
+/*
+ * Types of installed files.  Keep in sync with
+ * manifest.c:packageEntryFileTypeTable[]
+ */
+typedef enum {
+    FILE_TYPE_NONE,
+    FILE_TYPE_KERNEL_MODULE_SRC,
+    FILE_TYPE_KERNEL_MODULE_CMD,
+    FILE_TYPE_OPENGL_HEADER,
+    FILE_TYPE_OPENGL_LIB,
+    FILE_TYPE_XLIB_STATIC_LIB,
+    FILE_TYPE_XLIB_SHARED_LIB,
+    FILE_TYPE_DOCUMENTATION,
+    FILE_TYPE_OPENGL_SYMLINK,
+    FILE_TYPE_XLIB_SYMLINK,
+    FILE_TYPE_KERNEL_MODULE,
+    FILE_TYPE_INSTALLER_BINARY,
+    FILE_TYPE_UTILITY_BINARY,
+    FILE_TYPE_LIBGL_LA,
+    FILE_TYPE_TLS_LIB,
+    FILE_TYPE_TLS_SYMLINK,
+    FILE_TYPE_UTILITY_LIB,
+    FILE_TYPE_DOT_DESKTOP,
+    FILE_TYPE_UTILITY_LIB_SYMLINK,
+    FILE_TYPE_XMODULE_SHARED_LIB,
+    FILE_TYPE_XMODULE_SYMLINK,
+    FILE_TYPE_XMODULE_NEWSYM, /* Create a symlink if the file doesn't exist */
+    FILE_TYPE_MANPAGE,
+    FILE_TYPE_EXPLICIT_PATH,
+    FILE_TYPE_CUDA_LIB,
+    FILE_TYPE_CUDA_SYMLINK,
+    FILE_TYPE_VDPAU_LIB,
+    FILE_TYPE_VDPAU_SYMLINK,
+    FILE_TYPE_UTILITY_BIN_SYMLINK,
+    FILE_TYPE_CUDA_ICD,
+    FILE_TYPE_NVCUVID_LIB,
+    FILE_TYPE_NVCUVID_LIB_SYMLINK,
+    FILE_TYPE_GLX_MODULE_SHARED_LIB,
+    FILE_TYPE_GLX_MODULE_SYMLINK,
+    FILE_TYPE_ENCODEAPI_LIB,
+    FILE_TYPE_ENCODEAPI_LIB_SYMLINK,
+    FILE_TYPE_VGX_LIB,
+    FILE_TYPE_VGX_LIB_SYMLINK,
+    FILE_TYPE_APPLICATION_PROFILE,
+    FILE_TYPE_NVIDIA_MODPROBE,
+    FILE_TYPE_NVIDIA_MODPROBE_MANPAGE,
+    FILE_TYPE_MODULE_SIGNING_KEY,
+    FILE_TYPE_MAX
+} PackageEntryFileType;
+
+typedef enum {
+    FILE_TLS_CLASS_NONE,
+    FILE_TLS_CLASS_NEW,
+    FILE_TLS_CLASS_CLASSIC,
+} PackageEntryFileTlsClass;
+
+typedef enum {
+    FILE_COMPAT_ARCH_NONE,
+    FILE_COMPAT_ARCH_NATIVE,
+    FILE_COMPAT_ARCH_COMPAT32,
+} PackageEntryFileCompatArch;
+
+typedef struct {
+    unsigned int has_arch      : 1;
+    unsigned int has_tls_class : 1;
+    unsigned int installable   : 1;
+    unsigned int has_path      : 1;
+    unsigned int is_symlink    : 1;
+    unsigned int is_shared_lib : 1;
+    unsigned int is_opengl     : 1;
+} PackageEntryFileCapabilities;
+
+/*
+ * PackageEntryFileTypeList::types[] are booleans, indexed by
+ * PackageEntryFileType enum value.
+ */
+typedef struct {
+    uint8_t types[FILE_TYPE_MAX];
+} PackageEntryFileTypeList;
 
 typedef struct __package_entry {
     
@@ -233,7 +325,11 @@ typedef struct __package_entry {
                      * function.
                      */
 
-    uint64_t flags;
+    PackageEntryFileCapabilities caps;
+    PackageEntryFileType type;
+    PackageEntryFileTlsClass tls_class;
+    PackageEntryFileCompatArch compat_arch;
+
     mode_t mode;
 
     ino_t inode;
@@ -275,162 +371,6 @@ typedef struct __package {
 #define NV_LINE_LEN 1024
 #define NV_MIN_LINE_LEN 256
 
-/* file types */
-
-#define FILE_TYPE_MASK                          0x0000003fffffffffULL
-
-#define FILE_TYPE_KERNEL_MODULE_SRC             0x0000000000000001ULL
-#define FILE_TYPE_KERNEL_MODULE_CMD             0x0000000000000002ULL
-#define FILE_TYPE_OPENGL_HEADER                 0x0000000000000004ULL
-#define FILE_TYPE_OPENGL_LIB                    0x0000000000000008ULL
-#define FILE_TYPE_XLIB_STATIC_LIB               0x0000000000000010ULL
-#define FILE_TYPE_XLIB_SHARED_LIB               0x0000000000000020ULL
-#define FILE_TYPE_DOCUMENTATION                 0x0000000000000040ULL
-#define FILE_TYPE_OPENGL_SYMLINK                0x0000000000000080ULL
-#define FILE_TYPE_XLIB_SYMLINK                  0x0000000000000100ULL
-#define FILE_TYPE_KERNEL_MODULE                 0x0000000000000200ULL
-#define FILE_TYPE_INSTALLER_BINARY              0x0000000000000400ULL
-#define FILE_TYPE_UTILITY_BINARY                0x0000000000000800ULL
-#define FILE_TYPE_LIBGL_LA                      0x0000000000001000ULL
-#define FILE_TYPE_TLS_LIB                       0x0000000000002000ULL
-#define FILE_TYPE_TLS_SYMLINK                   0x0000000000004000ULL
-#define FILE_TYPE_UTILITY_LIB                   0x0000000000008000ULL
-#define FILE_TYPE_DOT_DESKTOP                   0x0000000000010000ULL
-#define FILE_TYPE_UTILITY_LIB_SYMLINK           0x0000000000020000ULL
-#define FILE_TYPE_XMODULE_SHARED_LIB            0x0000000000040000ULL
-#define FILE_TYPE_XMODULE_SYMLINK               0x0000000000080000ULL
-/* Create a symlink only if the file doesn't exist */
-#define FILE_TYPE_XMODULE_NEWSYM                0x0000000000100000ULL
-#define FILE_TYPE_MANPAGE                       0x0000000000200000ULL
-#define FILE_TYPE_EXPLICIT_PATH                 0x0000000000400000ULL
-#define FILE_TYPE_CUDA_LIB                      0x0000000000800000ULL
-#define FILE_TYPE_CUDA_SYMLINK                  0x0000000001000000ULL
-#define FILE_TYPE_VDPAU_LIB                     0x0000000002000000ULL
-#define FILE_TYPE_VDPAU_SYMLINK                 0x0000000004000000ULL
-/* unused                                       0x0000000008000000ULL */
-#define FILE_TYPE_UTILITY_BIN_SYMLINK           0x0000000010000000ULL
-#define FILE_TYPE_CUDA_ICD                      0x0000000020000000ULL
-#define FILE_TYPE_NVCUVID_LIB                   0x0000000040000000ULL
-#define FILE_TYPE_NVCUVID_SYMLINK               0x0000000080000000ULL
-#define FILE_TYPE_GLX_MODULE_SHARED_LIB         0x0000000100000000ULL
-#define FILE_TYPE_GLX_MODULE_SYMLINK            0x0000000200000000ULL
-#define FILE_TYPE_ENCODEAPI_LIB                 0x0000000400000000ULL
-#define FILE_TYPE_ENCODEAPI_SYMLINK             0x0000000800000000ULL
-#define FILE_TYPE_VGX_LIB                       0x0000001000000000ULL
-#define FILE_TYPE_VGX_SYMLINK                   0x0000002000000000ULL
-
-/* file class: this is used to distinguish OpenGL libraries */
-
-#define FILE_CLASS_MASK                         0xf000000000000000ULL
-
-#define FILE_CLASS_NEW_TLS                      0x1000000000000000ULL
-#define FILE_CLASS_CLASSIC_TLS                  0x2000000000000000ULL
-#define FILE_CLASS_NATIVE                       0x4000000000000000ULL
-#define FILE_CLASS_COMPAT32                     0x8000000000000000ULL
-
-#define FILE_TYPE_XLIB_LIB         (FILE_TYPE_XLIB_STATIC_LIB | \
-                                    FILE_TYPE_XLIB_SHARED_LIB)
-
-#define FILE_TYPE_INSTALLABLE_FILE (FILE_TYPE_OPENGL_LIB         | \
-                                    FILE_TYPE_CUDA_LIB           | \
-                                    FILE_TYPE_XLIB_LIB           | \
-                                    FILE_TYPE_TLS_LIB            | \
-                                    FILE_TYPE_UTILITY_LIB        | \
-                                    FILE_TYPE_DOCUMENTATION      | \
-                                    FILE_TYPE_MANPAGE            | \
-                                    FILE_TYPE_EXPLICIT_PATH      | \
-                                    FILE_TYPE_OPENGL_HEADER      | \
-                                    FILE_TYPE_CUDA_ICD           | \
-                                    FILE_TYPE_KERNEL_MODULE      | \
-                                    FILE_TYPE_INSTALLER_BINARY   | \
-                                    FILE_TYPE_UTILITY_BINARY     | \
-                                    FILE_TYPE_LIBGL_LA           | \
-                                    FILE_TYPE_XMODULE_SHARED_LIB | \
-                                    FILE_TYPE_GLX_MODULE_SHARED_LIB | \
-                                    FILE_TYPE_DOT_DESKTOP        | \
-                                    FILE_TYPE_VDPAU_LIB          | \
-                                    FILE_TYPE_NVCUVID_LIB        | \
-                                    FILE_TYPE_KERNEL_MODULE_SRC  | \
-                                    FILE_TYPE_ENCODEAPI_LIB      | \
-                                    FILE_TYPE_VGX_LIB)
-
-#define FILE_TYPE_HAVE_PATH        (FILE_TYPE_XMODULE_SHARED_LIB | \
-                                    FILE_TYPE_XMODULE_SYMLINK    | \
-                                    FILE_TYPE_GLX_MODULE_SHARED_LIB | \
-                                    FILE_TYPE_GLX_MODULE_SYMLINK | \
-                                    FILE_TYPE_XMODULE_NEWSYM     | \
-                                    FILE_TYPE_MANPAGE            | \
-                                    FILE_TYPE_EXPLICIT_PATH      | \
-                                    FILE_TYPE_OPENGL_HEADER      | \
-                                    FILE_TYPE_CUDA_LIB           | \
-                                    FILE_TYPE_CUDA_SYMLINK       | \
-                                    FILE_TYPE_TLS_LIB            | \
-                                    FILE_TYPE_TLS_SYMLINK        | \
-                                    FILE_TYPE_DOT_DESKTOP        | \
-                                    FILE_TYPE_DOCUMENTATION      | \
-                                    FILE_TYPE_VDPAU_SYMLINK      | \
-                                    FILE_TYPE_VDPAU_LIB)
-
-
-#define FILE_TYPE_HAVE_ARCH        (FILE_TYPE_OPENGL_LIB         | \
-                                    FILE_TYPE_CUDA_LIB           | \
-                                    FILE_TYPE_OPENGL_SYMLINK     | \
-                                    FILE_TYPE_CUDA_SYMLINK       | \
-                                    FILE_TYPE_LIBGL_LA           | \
-                                    FILE_TYPE_TLS_LIB            | \
-                                    FILE_TYPE_TLS_SYMLINK        | \
-                                    FILE_TYPE_VDPAU_SYMLINK      | \
-                                    FILE_TYPE_VDPAU_LIB          | \
-                                    FILE_TYPE_NVCUVID_LIB        | \
-                                    FILE_TYPE_NVCUVID_SYMLINK    | \
-                                    FILE_TYPE_ENCODEAPI_LIB      | \
-                                    FILE_TYPE_ENCODEAPI_SYMLINK)
-
-#define FILE_TYPE_HAVE_CLASS       (FILE_TYPE_TLS_LIB            | \
-                                    FILE_TYPE_TLS_SYMLINK)
-
-#define FILE_TYPE_SYMLINK          (FILE_TYPE_OPENGL_SYMLINK     | \
-                                    FILE_TYPE_CUDA_SYMLINK       | \
-                                    FILE_TYPE_XLIB_SYMLINK       | \
-                                    FILE_TYPE_TLS_SYMLINK        | \
-                                    FILE_TYPE_XMODULE_SYMLINK    | \
-                                    FILE_TYPE_GLX_MODULE_SYMLINK | \
-                                    FILE_TYPE_UTILITY_LIB_SYMLINK| \
-                                    FILE_TYPE_UTILITY_BIN_SYMLINK| \
-                                    FILE_TYPE_VDPAU_SYMLINK      | \
-                                    FILE_TYPE_NVCUVID_SYMLINK    | \
-                                    FILE_TYPE_ENCODEAPI_SYMLINK  | \
-                                    FILE_TYPE_VGX_SYMLINK)
-
-#define FILE_TYPE_NEWSYM           (FILE_TYPE_XMODULE_NEWSYM)
-
-#define FILE_TYPE_HAVE_TARGET      (FILE_TYPE_SYMLINK            | \
-                                    FILE_TYPE_NEWSYM)
-
-#define FILE_TYPE_RTLD_CHECKED     (FILE_TYPE_OPENGL_LIB         | \
-                                    FILE_TYPE_TLS_LIB)
-
-#define FILE_TYPE_SHARED_LIB       (FILE_TYPE_OPENGL_LIB         | \
-                                    FILE_TYPE_CUDA_LIB           | \
-                                    FILE_TYPE_XLIB_SHARED_LIB    | \
-                                    FILE_TYPE_TLS_LIB            | \
-                                    FILE_TYPE_XMODULE_SHARED_LIB | \
-                                    FILE_TYPE_GLX_MODULE_SHARED_LIB | \
-                                    FILE_TYPE_UTILITY_LIB        | \
-                                    FILE_TYPE_VDPAU_LIB          | \
-                                    FILE_TYPE_NVCUVID_LIB        | \
-                                    FILE_TYPE_ENCODEAPI_LIB      | \
-                                    FILE_TYPE_VGX_LIB)
-
-#define FILE_TYPE_OPENGL_FILE      (FILE_TYPE_OPENGL_HEADER      | \
-                                    FILE_TYPE_OPENGL_LIB         | \
-                                    FILE_TYPE_OPENGL_SYMLINK     | \
-                                    FILE_TYPE_LIBGL_LA           | \
-                                    FILE_TYPE_TLS_LIB            | \
-                                    FILE_TYPE_TLS_SYMLINK        | \
-                                    FILE_TYPE_GLX_MODULE_SHARED_LIB | \
-                                    FILE_TYPE_GLX_MODULE_SYMLINK)
-
 #define TLS_LIB_TYPE_FORCED         0x0001
 #define TLS_LIB_NEW_TLS             0x0002
 #define TLS_LIB_CLASSIC_TLS         0x0004
@@ -445,6 +385,8 @@ typedef struct __package {
 #define PERM_MASK (S_IRWXU|S_IRWXG|S_IRWXO)
 
 #define PRECOMPILED_KERNEL_INTERFACE_FILENAME "precompiled-nv-linux.o"
+#define KERNEL_MODULE_CHECKSUM_FILENAME "nvidia-module-checksum"
+#define DETACHED_SIGNATURE_FILENAME "nvidia-detached-module-signature"
 
 
 /*
@@ -454,10 +396,11 @@ typedef struct __package {
  * is detected, all prefixes/paths can be overriden from the
  * command line.
  */
-#define DEFAULT_OPENGL_PREFIX           "/usr"
-#define DEFAULT_X_PREFIX                "/usr/X11R6"
-#define DEFAULT_UTILITY_PREFIX          "/usr"
-#define DEFAULT_DOCUMENTATION_PREFIX    "/usr"
+#define DEFAULT_OPENGL_PREFIX            "/usr"
+#define DEFAULT_X_PREFIX                 "/usr/X11R6"
+#define DEFAULT_UTILITY_PREFIX           "/usr"
+#define DEFAULT_DOCUMENTATION_PREFIX     "/usr"
+#define DEFAULT_APPLICATION_PROFILE_PATH "/usr/share/nvidia"
 
 #define DEFAULT_LIBDIR                  "lib"
 #define DEFAULT_64BIT_LIBDIR            "lib64"
@@ -468,6 +411,7 @@ typedef struct __package {
 #define DEFAULT_DOCDIR                  "share/doc"
 #define DEFAULT_MANDIR                  "share/man"
 
+#define DEFAULT_MODULE_SIGNING_KEY_PATH "/usr/share/nvidia"
 #define DEFAULT_KERNEL_MODULE_SRC_PREFIX "/usr/src"
 
 /*
@@ -537,8 +481,7 @@ typedef struct __package {
 /* prototypes of functions used throughout the installer */
 
 void log_init(Options *op, int argc, char * const argv[]);
-void log_printf(Options *op, const int wb,
-                const char *prefix, const char *fmt, ...);
+void log_printf(Options *op, const char *prefix, const char *fmt, ...) NV_ATTRIBUTE_PRINTF(3, 4);
 
 int  install_from_cwd(Options *op);
 int  add_this_kernel(Options *op);
@@ -549,7 +492,8 @@ void add_package_entry(Package *p,
                        char *name,
                        char *target,
                        char *dst,
-                       uint64_t flags,
+                       PackageEntryFileType type,
+                       PackageEntryFileTlsClass tls_class,
                        mode_t mode);
 /* XXX */
 

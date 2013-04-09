@@ -387,14 +387,14 @@ void select_tls_class(Options *op, Package *p)
         /*
          * tls libraries will not run on this system; just install the
          * classic OpenGL libraries: clear the FILE_TYPE of any
-         * FILE_CLASS_NEW_TLS package entries.
+         * FILE_TLS_CLASS_NEW package entries.
          */
 
         ui_log(op, "Installing classic TLS OpenGL libraries.");
         
         for (i = 0; i < p->num_entries; i++) {
-            if ((p->entries[i].flags & FILE_CLASS_NEW_TLS) &&
-                (p->entries[i].flags & FILE_CLASS_NATIVE)) {
+            if ((p->entries[i].tls_class == FILE_TLS_CLASS_NEW) &&
+                (p->entries[i].compat_arch == FILE_COMPAT_ARCH_NATIVE)) {
                 /*
                  * XXX don't try to free the destination string for
                  * these invalidated TLS libraries; this prevents
@@ -402,7 +402,7 @@ void select_tls_class(Options *op, Package *p)
                  * I've been unable to reproduce/root cause.
                  */
                 /* nvfree(p->entries[i].dst); */
-                p->entries[i].flags &= ~FILE_TYPE_MASK;
+                p->entries[i].type = FILE_TYPE_NONE;
                 p->entries[i].dst = NULL;
             }
         }
@@ -432,14 +432,14 @@ void select_tls_class(Options *op, Package *p)
         /*
          * 32bit tls libraries will not run on this system; just
          * install the classic OpenGL libraries: clear the FILE_TYPE
-         * of any FILE_CLASS_NEW_TLS_32 package entries.
+         * of any tls_class==NEW && compat_arch==COMPAT32 package entries.
          */
 
         ui_log(op, "Installing classic TLS 32bit OpenGL libraries.");
         
         for (i = 0; i < p->num_entries; i++) {
-            if ((p->entries[i].flags & FILE_CLASS_NEW_TLS) &&
-                (p->entries[i].flags & FILE_CLASS_COMPAT32)) {
+            if ((p->entries[i].tls_class == FILE_TLS_CLASS_NEW) &&
+                (p->entries[i].compat_arch == FILE_COMPAT_ARCH_COMPAT32)) {
                 /*
                  * XXX don't try to free the destination string for
                  * these invalidated TLS libraries; this prevents
@@ -447,7 +447,7 @@ void select_tls_class(Options *op, Package *p)
                  * I've been unable to reproduce/root cause.
                  */
                 /* nvfree(p->entries[i].dst); */
-                p->entries[i].flags &= ~FILE_TYPE_MASK;
+                p->entries[i].type = FILE_TYPE_NONE;
                 p->entries[i].dst = NULL;
             }
         }
@@ -489,7 +489,7 @@ int set_destinations(Options *op, Package *p)
 
     for (i = 0; i < p->num_entries; i++) {
 
-        switch (p->entries[i].flags & FILE_TYPE_MASK) {
+        switch (p->entries[i].type) {
 
         case FILE_TYPE_KERNEL_MODULE_CMD:
             /* we don't install kernel module commands */
@@ -509,7 +509,7 @@ int set_destinations(Options *op, Package *p)
 
         case FILE_TYPE_OPENGL_LIB:
         case FILE_TYPE_OPENGL_SYMLINK:
-            if (p->entries[i].flags & FILE_CLASS_COMPAT32) {
+            if (p->entries[i].compat_arch == FILE_COMPAT_ARCH_COMPAT32) {
                 prefix = op->compat32_prefix;
                 dir = op->compat32_libdir;
             } else {
@@ -521,7 +521,7 @@ int set_destinations(Options *op, Package *p)
 
         case FILE_TYPE_VDPAU_LIB:
         case FILE_TYPE_VDPAU_SYMLINK:
-            if (p->entries[i].flags & FILE_CLASS_COMPAT32) {
+            if (p->entries[i].compat_arch == FILE_COMPAT_ARCH_COMPAT32) {
                 prefix = op->compat32_prefix;
                 dir = op->compat32_libdir;
             } else {
@@ -533,7 +533,7 @@ int set_destinations(Options *op, Package *p)
 
         case FILE_TYPE_CUDA_LIB:
         case FILE_TYPE_CUDA_SYMLINK:
-            if (p->entries[i].flags & FILE_CLASS_COMPAT32) {
+            if (p->entries[i].compat_arch == FILE_COMPAT_ARCH_COMPAT32) {
                 prefix = op->compat32_prefix;
                 dir = op->compat32_libdir;
             } else {
@@ -568,7 +568,7 @@ int set_destinations(Options *op, Package *p)
 
         case FILE_TYPE_TLS_LIB:
         case FILE_TYPE_TLS_SYMLINK:
-            if (p->entries[i].flags & FILE_CLASS_COMPAT32) {
+            if (p->entries[i].compat_arch == FILE_COMPAT_ARCH_COMPAT32) {
                 prefix = op->compat32_prefix;
                 dir = op->compat32_libdir;
             } else {
@@ -586,7 +586,7 @@ int set_destinations(Options *op, Package *p)
             break;
 
         case FILE_TYPE_LIBGL_LA:
-            if (p->entries[i].flags & FILE_CLASS_COMPAT32) {
+            if (p->entries[i].compat_arch == FILE_COMPAT_ARCH_COMPAT32) {
                 prefix = op->compat32_prefix;
                 dir = op->compat32_libdir;
             } else {
@@ -597,8 +597,8 @@ int set_destinations(Options *op, Package *p)
             break;
 
         case FILE_TYPE_NVCUVID_LIB:
-        case FILE_TYPE_NVCUVID_SYMLINK:
-            if (p->entries[i].flags & FILE_CLASS_COMPAT32) {
+        case FILE_TYPE_NVCUVID_LIB_SYMLINK:
+            if (p->entries[i].compat_arch == FILE_COMPAT_ARCH_COMPAT32) {
                 prefix = op->compat32_prefix;
                 dir = op->compat32_libdir;
             } else {
@@ -609,8 +609,8 @@ int set_destinations(Options *op, Package *p)
             break;
 
         case FILE_TYPE_ENCODEAPI_LIB:
-        case FILE_TYPE_ENCODEAPI_SYMLINK:
-            if (p->entries[i].flags & FILE_CLASS_COMPAT32) {
+        case FILE_TYPE_ENCODEAPI_LIB_SYMLINK:
+            if (p->entries[i].compat_arch == FILE_COMPAT_ARCH_COMPAT32) {
                 prefix = op->compat32_prefix;
                 dir = op->compat32_libdir;
             } else {
@@ -621,7 +621,7 @@ int set_destinations(Options *op, Package *p)
             break;
 
         case FILE_TYPE_VGX_LIB:
-        case FILE_TYPE_VGX_SYMLINK:
+        case FILE_TYPE_VGX_LIB_SYMLINK:
             prefix = op->opengl_prefix;
             dir = op->opengl_libdir;
             path = "";
@@ -646,9 +646,15 @@ int set_destinations(Options *op, Package *p)
             break;
 
         case FILE_TYPE_MANPAGE:
+        case FILE_TYPE_NVIDIA_MODPROBE_MANPAGE:
             prefix = op->documentation_prefix;
             dir = op->documentation_mandir;
             path = p->entries[i].path;
+            break;
+
+        case FILE_TYPE_APPLICATION_PROFILE:
+            prefix = op->application_profile_path;
+            dir = path = "";
             break;
 
         case FILE_TYPE_UTILITY_BINARY:
@@ -679,7 +685,13 @@ int set_destinations(Options *op, Package *p)
             
             continue;
 
+        case FILE_TYPE_MODULE_SIGNING_KEY:
+            prefix = op->module_signing_key_path;
+            dir = path = "";
+            break;
+
         case FILE_TYPE_EXPLICIT_PATH:
+        case FILE_TYPE_NVIDIA_MODPROBE:
             prefix = p->entries[i].path;
             dir = path = "";
             break;
@@ -706,7 +718,7 @@ int set_destinations(Options *op, Package *p)
         collapse_multiple_slashes(p->entries[i].dst);
 
 #if defined(NV_X86_64)
-        if ((p->entries[i].flags & FILE_CLASS_COMPAT32) &&
+        if ((p->entries[i].compat_arch == FILE_COMPAT_ARCH_COMPAT32) &&
             (op->compat32_chroot != NULL)) {
 
             /*
@@ -995,6 +1007,7 @@ int add_kernel_module_to_package(Options *op, Package *p)
                       NULL, /* target */
                       dst,
                       FILE_TYPE_KERNEL_MODULE,
+                      FILE_TLS_CLASS_NONE,
                       0644);
 
     return TRUE;
@@ -1004,9 +1017,8 @@ int add_kernel_module_to_package(Options *op, Package *p)
 
 
 /*
- * remove_non_kernel_module_files_from_package() - clear the
- * FILE_TYPE_MASK bits for each package entry that is not of type
- * FILE_TYPE_KERNEL_MODULE or FILE_TYPE_KERNEL_MODULE_SRC
+ * Clear the file type for each package entry that is not type
+ * FILE_TYPE_KERNEL_MODULE or FILE_TYPE_KERNEL_MODULE_SRC.
  */
 
 void remove_non_kernel_module_files_from_package(Options *op, Package *p)
@@ -1014,28 +1026,26 @@ void remove_non_kernel_module_files_from_package(Options *op, Package *p)
     int i;
 
     for (i = 0; i < p->num_entries; i++) {
-        uint64_t flags = p->entries[i].flags & FILE_TYPE_MASK;
-        if ((flags != FILE_TYPE_KERNEL_MODULE) &&
-            (flags != FILE_TYPE_KERNEL_MODULE_CMD) &&
-            (flags != FILE_TYPE_KERNEL_MODULE_SRC))
-            p->entries[i].flags &= ~FILE_TYPE_MASK;
+        if ((p->entries[i].type != FILE_TYPE_KERNEL_MODULE) &&
+            (p->entries[i].type != FILE_TYPE_KERNEL_MODULE_CMD) &&
+            (p->entries[i].type != FILE_TYPE_KERNEL_MODULE_SRC)) {
+            p->entries[i].type = FILE_TYPE_NONE;
+        }
     }
-    
-} /* remove_non_kernel_module_files_from_package() */
+}
 
 
 /*
- * clear the FILE_TYPE_MASK bits for each package entry that is not of
- * type FILE_TYPE_OPENGL_FILE
+ * Clear the file type for each package entry that is not type
+ * FILE_TYPE_OPENGL_FILE.
  */
 void remove_opengl_files_from_package(Options *op, Package *p)
 {
     int i;
 
     for (i = 0; i < p->num_entries; i++) {
-        uint64_t flags = p->entries[i].flags & FILE_TYPE_MASK;
-        if (flags & FILE_TYPE_OPENGL_FILE) {
-            p->entries[i].flags &= ~FILE_TYPE_MASK;
+        if (p->entries[i].caps.is_opengl) {
+            p->entries[i].type = FILE_TYPE_NONE;
         }
     }
 }
@@ -1572,7 +1582,7 @@ int copy_directory_contents(Options *op, const char *src, const char *dst)
 
 int pack_precompiled_kernel_interface(Options *op, Package *p)
 {
-    char *cmd, time_str[256], *proc_version_string;
+    char *cmd, time_str[256], *proc_version_string, *suffix, *file, *newfile;
     char *result, *descr;
     time_t t;
     struct utsname buf;
@@ -1603,12 +1613,13 @@ int pack_precompiled_kernel_interface(Options *op, Package *p)
     
     /* build the mkprecompiled command */
 
+    suffix = nvstrcat("-", p->version, ".", time_str, NULL);
+
     cmd = nvstrcat("./mkprecompiled --interface=",
                    p->kernel_module_build_directory, "/",
                    PRECOMPILED_KERNEL_INTERFACE_FILENAME,
                    " --output=", p->precompiled_kernel_interface_directory,
-                   "/", PRECOMPILED_KERNEL_INTERFACE_FILENAME,
-                   "-", p->version, ".", time_str,
+                   "/", PRECOMPILED_KERNEL_INTERFACE_FILENAME, suffix,
                    " --description=\"", descr, "\"",
                    " --proc-version=\"", proc_version_string, "\"",
                    " --version=", p->version, NULL);
@@ -1620,15 +1631,41 @@ int pack_precompiled_kernel_interface(Options *op, Package *p)
     nvfree(cmd);
     nvfree(proc_version_string);
     nvfree(descr);
+
+    /* pack the detached signature and checksum, if they exist */
+
+    file = nvstrcat(p->kernel_module_build_directory, "/",
+                    DETACHED_SIGNATURE_FILENAME, NULL);
+
+    if (access(file, R_OK) == 0) {
+        newfile = nvstrcat(p->precompiled_kernel_interface_directory, "/",
+                           DETACHED_SIGNATURE_FILENAME, suffix, NULL);
+        rename(file, newfile);
+        nvfree(newfile);
+    }
+
+    nvfree(file);
+
+    file = nvstrcat(p->kernel_module_build_directory, "/",
+                    KERNEL_MODULE_CHECKSUM_FILENAME, NULL);
+
+    if (access(file, R_OK) == 0) {
+        newfile = nvstrcat(p->precompiled_kernel_interface_directory, "/",
+                           KERNEL_MODULE_CHECKSUM_FILENAME, suffix, NULL);
+        rename(file, newfile);
+        nvfree(newfile);
+    }
+
+    nvfree(file);
     
     /* remove the old kernel interface file */
 
-    cmd = nvstrcat(p->kernel_module_build_directory, "/",
-                   PRECOMPILED_KERNEL_INTERFACE_FILENAME, NULL);
+    file = nvstrcat(p->kernel_module_build_directory, "/",
+                    PRECOMPILED_KERNEL_INTERFACE_FILENAME, NULL);
     
-    unlink(cmd); /* XXX what to do if this fails? */
+    unlink(file); /* XXX what to do if this fails? */
 
-    nvfree(cmd);
+    nvfree(file);
     
     if (ret != 0) {
         ui_error(op, "Unable to package precompiled kernel interface: %s",
@@ -1652,7 +1689,7 @@ int pack_precompiled_kernel_interface(Options *op, Package *p)
  * 'replace'.
  */
 
-static char *nv_strreplace(char *src, char *orig, char *replace)
+char *nv_strreplace(char *src, char *orig, char *replace)
 {
     char *prev_s, *end_s, *s;
     char *d, *dst;
@@ -1886,9 +1923,9 @@ void process_libGL_la_files(Options *op, Package *p)
                                NVIDIA_INSTALLER_VERSION, NULL);
 
     for (i = 0; i < package_num_entries; i++) {
-        if ((p->entries[i].flags & FILE_TYPE_LIBGL_LA)) {
+        if ((p->entries[i].type == FILE_TYPE_LIBGL_LA)) {
     
-            if (p->entries[i].flags & FILE_CLASS_COMPAT32) {
+            if (p->entries[i].compat_arch == FILE_COMPAT_ARCH_COMPAT32) {
                 replacements[0] = nvstrcat(op->compat32_prefix,
                                            "/", op->compat32_libdir, NULL);
             } else {
@@ -1898,7 +1935,7 @@ void process_libGL_la_files(Options *op, Package *p)
 
             /* invalidate the template file */
 
-            p->entries[i].flags &= ~FILE_TYPE_MASK;
+            p->entries[i].type = FILE_TYPE_NONE;
             p->entries[i].dst = NULL;
 
             tmpfile = process_template_file(op, &p->entries[i], tokens,
@@ -1922,8 +1959,8 @@ void process_libGL_la_files(Options *op, Package *p)
                                   nvstrdup(p->entries[i].name),
                                   NULL, /* target */
                                   NULL, /* dst */
-                                  ((p->entries[i].flags & FILE_CLASS_MASK) |
-                                   FILE_TYPE_LIBGL_LA),
+                                  FILE_TYPE_LIBGL_LA,
+                                  p->entries[i].tls_class,
                                   p->entries[i].mode);
             }
 
@@ -1961,11 +1998,11 @@ void process_dot_desktop_files(Options *op, Package *p)
     collapse_multiple_slashes(replacements[0]);
 
     for (i = 0; i < package_num_entries; i++) {
-        if ((p->entries[i].flags & FILE_TYPE_DOT_DESKTOP)) {
+        if ((p->entries[i].type == FILE_TYPE_DOT_DESKTOP)) {
     
             /* invalidate the template file */
 
-            p->entries[i].flags &= ~FILE_TYPE_MASK;
+            p->entries[i].type = FILE_TYPE_NONE;
             p->entries[i].dst = NULL;
 
             nvfree(replacements[1]);
@@ -1998,8 +2035,8 @@ void process_dot_desktop_files(Options *op, Package *p)
                                   nvstrdup(p->entries[i].name),
                                   NULL, /* target */
                                   NULL, /* dst */
-                                  ((p->entries[i].flags & FILE_CLASS_MASK) |
-                                   FILE_TYPE_DOT_DESKTOP),
+                                  FILE_TYPE_DOT_DESKTOP,
+                                  p->entries[i].tls_class,
                                   p->entries[i].mode);
             }
         }
@@ -2048,7 +2085,8 @@ void get_default_prefixes_and_paths(Options *op)
     
 #if defined(NV_X86_64)
     if ((op->distro == DEBIAN) ||
-        (op->distro == UBUNTU)) {
+        (op->distro == UBUNTU) ||
+        (op->distro == ARCH)) {
         default_libdir = DEBIAN_DEFAULT_64BIT_LIBDIR;
     } else {
         default_libdir = DEFAULT_64BIT_LIBDIR;
@@ -2087,7 +2125,8 @@ void get_default_prefixes_and_paths(Options *op)
 
     if (!op->compat32_libdir) {
         if ((op->distro == UBUNTU) ||
-            (op->distro == GENTOO)) {
+            (op->distro == GENTOO) ||
+            (op->distro == ARCH)) {
             op->compat32_libdir = UBUNTU_DEFAULT_COMPAT32_LIBDIR;
         } else {
             op->compat32_libdir = DEFAULT_LIBDIR;
@@ -2134,8 +2173,14 @@ void get_default_prefixes_and_paths(Options *op)
     if (!op->documentation_mandir)
         op->documentation_mandir = DEFAULT_MANDIR;
 
+    if (!op->application_profile_path)
+        op->application_profile_path = DEFAULT_APPLICATION_PROFILE_PATH;
+
     if (!op->kernel_module_src_prefix)
         op->kernel_module_src_prefix = DEFAULT_KERNEL_MODULE_SRC_PREFIX;
+
+    if (!op->module_signing_key_path)
+        op->module_signing_key_path = DEFAULT_MODULE_SIGNING_KEY_PATH;
     /* kernel_module_src_dir's default value is set in set_destinations() */
 
 } /* get_default_prefixes_and_paths() */
@@ -2421,3 +2466,70 @@ static void get_x_library_and_module_paths(Options *op)
     }
     
 } /* get_x_library_and_module_paths() */
+
+
+
+/*
+ * get_filename() - Prompt the user for the path to a file. If no file exists
+ * at the given path, keep reprompting until a valid path to a regular file or
+ * symbolic link is given. This is just a thin wrapper around ui_get_input().
+ */
+char *get_filename(Options *op, const char *def, const char *fmt, ...)
+{
+    struct stat stat_buf;
+    char *file = NULL;
+
+    /* XXX This function should never be called if op->no_questions is set,
+     * but just in case that happens by accident, do something besides looping
+     * infinitely if def is a filename that doesn't exist. */
+    if (op->no_questions) {
+        return nvstrdup(def);
+    }
+
+    file = ui_get_input(op, file ? file : def, fmt);
+
+    while (stat(file, &stat_buf) == -1 ||
+           !(S_ISREG(stat_buf.st_mode) || S_ISLNK(stat_buf.st_mode))) {
+        char *oldfile = file;
+
+        ui_message(op, "File \"%s\" does not exist, or is not a regular "
+                   "file. Please enter another filename.", file);
+
+        file = ui_get_input(op, oldfile ? oldfile : def, fmt);
+        nvfree(oldfile);
+    }
+
+    return file;
+} /* get_filename() */
+
+
+
+/*
+ * secure_delete() - Securely delete a file, using `shred -u`. If `shred` isn't
+ * found, fall back to just unlinking, but print a warning message.
+ */
+int secure_delete(Options *op, const char *file)
+{
+    char *cmd;
+
+    cmd = find_system_util("shred");
+
+    if (cmd) {
+        int ret;
+        char *cmdline = nvstrcat(cmd, " -u \"", file, "\"", NULL);
+
+        ret = run_command(op, cmdline, NULL, FALSE, 0, TRUE);
+        log_printf(op, NULL, "%s: %s", cmdline, ret == 0 ? "" : "failed!");
+
+        nvfree(cmd);
+        nvfree(cmdline);
+
+        return ret == 0;
+    } else {
+        ui_warn(op, "`shred` was not found on the system. The file %s will "
+                "be deleted, but not securely. It may be possible to recover "
+                "the file after deletion.", file);
+        unlink(file);
+        return FALSE;
+    }
+} /* secure_delete() */

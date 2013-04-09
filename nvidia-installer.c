@@ -138,6 +138,7 @@ static Options *load_default_options(void)
 
     op->logging = TRUE; /* log by default */
     op->opengl_headers = FALSE; /* do not install our GL headers by default */
+    op->nvidia_modprobe = TRUE;
     op->run_nvidia_xconfig = FALSE;
     op->selinux_option = SELINUX_DEFAULT;
 
@@ -253,6 +254,8 @@ static void parse_commandline(int argc, char *argv[], Options *op)
 #endif
         case DOCUMENTATION_PREFIX_OPTION:
             op->documentation_prefix = strval; break;
+        case APPLICATION_PROFILE_PATH_OPTION:
+            op->application_profile_path = strval; break;
         case INSTALLER_PREFIX_OPTION:
             op->installer_prefix = strval; break;
         case UTILITY_PREFIX_OPTION:
@@ -282,6 +285,8 @@ static void parse_commandline(int argc, char *argv[], Options *op)
             op->tmpdir = strval; break;
         case OPENGL_HEADERS_OPTION:
             op->opengl_headers = TRUE; break;
+        case NO_NVIDIA_MODPROBE_OPTION:
+            op->nvidia_modprobe = FALSE; break;
         case FORCE_TLS_OPTION:
             if (strcasecmp(strval, "new") == 0)
                 op->which_tls = FORCE_NEW_TLS;
@@ -382,6 +387,21 @@ static void parse_commandline(int argc, char *argv[], Options *op)
         case DKMS_OPTION:
             op->dkms = TRUE;
             break;
+        case MODULE_SIGNING_SECRET_KEY_OPTION:
+            op->module_signing_secret_key = strval;
+            break;
+        case MODULE_SIGNING_PUBLIC_KEY_OPTION:
+            op->module_signing_public_key = strval;
+            break;
+        case MODULE_SIGNING_SCRIPT_OPTION:
+            op->module_signing_script = strval;
+            break;
+        case MODULE_SIGNING_KEY_PATH_OPTION:
+            op->module_signing_key_path = strval;
+            break;
+        case MODULE_SIGNING_HASH_OPTION:
+            op->module_signing_hash = strval;
+            break;
         default:
             goto fail;
         }
@@ -419,6 +439,18 @@ static void parse_commandline(int argc, char *argv[], Options *op)
         print_options(op->uninstall, print_advanced_help);
         exit(0);
     }
+
+    /* Disable DKMS if module signing was requested; the two options are
+     * mutually exclusive. */
+    if (op->dkms &&
+        op->module_signing_secret_key && op->module_signing_public_key) {
+        ui_warn(op, "You selected the DKMS kernel module option, and also "
+                "specified a pair of module signing keys. Keys cannot be "
+                "managed securely under the automated DKMS framework. The "
+                "DKMS option will be disabled.");
+        op->dkms = FALSE;
+    }
+
 
     /*
      * if the installer prefix was not specified, default it to the

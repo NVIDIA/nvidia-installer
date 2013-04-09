@@ -27,20 +27,20 @@
 #include "command-list.h"
 
 int   ui_init                (Options*);
-void  ui_set_title           (Options*, const char*, ...);
-char *ui_get_input           (Options*, const char*, const char*, ...);
+void  ui_set_title           (Options*, const char*, ...)              NV_ATTRIBUTE_PRINTF(2, 3);
+char *ui_get_input           (Options*, const char*, const char*, ...) NV_ATTRIBUTE_PRINTF(3, 4);
 int   ui_display_license     (Options*, const char*);
-void  ui_error               (Options*, const char*, ...);
-void  ui_warn                (Options*, const char*, ...);
-void  ui_message             (Options*, const char*, ...);
-void  ui_log                 (Options*, const char*, ...);
-void  ui_expert              (Options*, const char*, ...);
-void  ui_command_output      (Options*, const char*, ...);
-int   ui_approve_command_list(Options*, CommandList*,const char*, ...);
-int   ui_yes_no              (Options*, const int, const char*, ...);
-void  ui_status_begin        (Options*, const char*, const char*, ...);
-void  ui_status_update       (Options*, const float, const char*, ...);
-void  ui_status_end          (Options*, const char*, ...);
+void  ui_error               (Options*, const char*, ...)              NV_ATTRIBUTE_PRINTF(2, 3);
+void  ui_warn                (Options*, const char*, ...)              NV_ATTRIBUTE_PRINTF(2, 3);
+void  ui_message             (Options*, const char*, ...)              NV_ATTRIBUTE_PRINTF(2, 3);
+void  ui_log                 (Options*, const char*, ...)              NV_ATTRIBUTE_PRINTF(2, 3);
+void  ui_expert              (Options*, const char*, ...)              NV_ATTRIBUTE_PRINTF(2, 3);
+void  ui_command_output      (Options*, const char*, ...)              NV_ATTRIBUTE_PRINTF(2, 3);
+int   ui_approve_command_list(Options*, CommandList*,const char*, ...) NV_ATTRIBUTE_PRINTF(3, 4);
+int   ui_yes_no              (Options*, const int, const char*, ...)   NV_ATTRIBUTE_PRINTF(3, 4);
+void  ui_status_begin        (Options*, const char*, const char*, ...) NV_ATTRIBUTE_PRINTF(3, 4);
+void  ui_status_update       (Options*, const float, const char*, ...) NV_ATTRIBUTE_PRINTF(3, 4);
+void  ui_status_end          (Options*, const char*, ...)              NV_ATTRIBUTE_PRINTF(2, 3);
 void  ui_close               (Options*);
 
 #endif /* __NVIDIA_INSTALLER_USER_INTERFACE_H__ */

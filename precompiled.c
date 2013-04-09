@@ -152,8 +152,9 @@ PrecompiledInfo *precompiled_unpack(Options *op,
 {
     int dst_fd, fd, offset, len = 0;
     char *buf, *dst;
-    uint32 crc, val, size;
-    char *version, *description, *proc_version_string;
+    uint32 crc, val, size, linked_module_crc;
+    char *version, *description, *proc_version_string,
+         *detached_signature = NULL;
     struct stat stat_buf;
     PrecompiledInfo *info = NULL;
 
@@ -265,6 +266,45 @@ PrecompiledInfo *precompiled_unpack(Options *op,
     offset += val;
     proc_version_string[val] = '\0';
 
+    /* if this interface appears to have been packaged by nvidia-installer,
+     * get the linked module crc and path to the detached signature. */
+
+    if (strstr(filename, PRECOMPILED_KERNEL_INTERFACE_FILENAME) ==
+        strrchr(filename, '/') + 1) {
+        char *suffix, *dirname, *tmp, *crc_file_path;
+
+        dirname = nvstrdup(filename);
+        tmp = strrchr(dirname, '/');
+        *tmp = '\0';
+
+        suffix = nvstrdup(strrchr(filename, '/') + 1 +
+                          strlen(PRECOMPILED_KERNEL_INTERFACE_FILENAME));
+
+        detached_signature = nvstrcat(dirname, "/", DETACHED_SIGNATURE_FILENAME,
+                                      suffix, NULL);
+        crc_file_path = nvstrcat(dirname, "/", KERNEL_MODULE_CHECKSUM_FILENAME,
+                                 suffix, NULL);
+
+        if (access(detached_signature, F_OK | R_OK) == 0 &&
+            access(crc_file_path, F_OK | R_OK) == 0) {
+            FILE *crc_file;
+
+            crc_file = fopen(crc_file_path, "r");
+            if (crc_file) {
+                int items_read = fread(&linked_module_crc,
+                                       sizeof(linked_module_crc), 1, crc_file);
+                if (items_read != 1) {
+                    ui_warn(op, "A checksum file for a linked kernel module "
+                            "was found, but reading the checksum failed.");
+                    detached_signature = NULL;
+                }
+                fclose(crc_file);
+            }
+        } else {
+            detached_signature = NULL;
+        }
+    }
+
     /* check if the running kernel matches */
 
     if (strcmp(real_proc_version_string, proc_version_string) != 0) {
@@ -317,13 +357,15 @@ PrecompiledInfo *precompiled_unpack(Options *op,
     info->version = version;
     info->proc_version_string = proc_version_string;
     info->description = description;
+    info->detached_signature = detached_signature;
+    info->linked_module_crc = linked_module_crc;
 
     /*
-     * XXX so that the proc version and description strings aren't
-     * freed below
+     * XXX so that the proc version, description, and detached_signature strings
+     * aren't freed below
      */
     
-    proc_version_string = description = NULL;
+    proc_version_string = description = detached_signature = NULL;
 
  done:
     
@@ -335,7 +377,20 @@ PrecompiledInfo *precompiled_unpack(Options *op,
     if (dst_fd > 0) close(dst_fd);
     if (description) free(description);
     if (proc_version_string) free(proc_version_string);
+    if (detached_signature) free(detached_signature);
 
     return info;
     
 } /* mkprecompiled_unpack() */
+
+/*
+ * free_precompiled() - free any malloced strings stored in a PrecompiledInfo,
+ * then free the PrecompiledInfo.
+ */
+void free_precompiled(PrecompiledInfo *info)
+{
+    nvfree(info->description);
+    nvfree(info->proc_version_string);
+    nvfree(info->detached_signature);
+    nvfree(info);
+}

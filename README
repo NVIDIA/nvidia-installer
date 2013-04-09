@@ -17,6 +17,14 @@ implementation of nvidia-installer, but the source code is fairly
 well commented.
 
 
+Build dependencies of nvidia-installer include:
+
+   libkmod ncurses pciutils
+
+Please ensure that the appropriate development packages for these
+dependencies have been installed before building nvidia-installer.
+
+
 One interesting thing to note is that user interface shared libraries
 are built into nvidia-installer to avoid potential problems with
 the installer not being able to find the user interface libraries (or

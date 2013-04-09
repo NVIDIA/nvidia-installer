@@ -42,6 +42,7 @@
 #include "misc.h"
 #include "files.h"
 #include "kernel.h"
+#include "manifest.h"
 
 
 static void free_file_list(FileList* l);
@@ -62,7 +63,8 @@ static void find_conflicting_kernel_modules(Options *op,
                                             Package *p,
                                             FileList *l);
 
-static void find_existing_files(Package *p, FileList *l, uint64_t);
+static void find_existing_files(Package *p, FileList *l,
+                                PackageEntryFileTypeList *file_type_list);
 
 static void condense_file_list(Package *p, FileList *l);
 
@@ -92,11 +94,12 @@ CommandList *build_command_list(Options *op, Package *p)
     FileList *l;
     CommandList *c;
     int i, cmd;
-    uint64_t installable_files;
+    PackageEntryFileTypeList installable_files;
+    PackageEntryFileTypeList tmp_installable_files;
     char *tmp;
 
-    installable_files = get_installable_file_mask(op);
-    
+    get_installable_file_type_list(op, &installable_files);
+
     l = (FileList *) nvalloc(sizeof(FileList));
     c = (CommandList *) nvalloc(sizeof(CommandList));
 
@@ -205,10 +208,12 @@ CommandList *build_command_list(Options *op, Package *p)
     /*
      * find any existing files that clash with what we're going to
      * install
-     * DON'T include files of type FILE_TYPE_NEWSYM
      */
-    
-    find_existing_files(p, l, installable_files | FILE_TYPE_SYMLINK);
+
+    tmp_installable_files = installable_files;
+    add_symlinks_to_file_type_list(&tmp_installable_files);
+
+    find_existing_files(p, l, &tmp_installable_files);
     
     /* condense the file list */
 
@@ -244,14 +249,14 @@ CommandList *build_command_list(Options *op, Package *p)
          */
         if (op->selinux_enabled &&
             (op->utils[EXECSTACK] != NULL) &&
-            (p->entries[i].flags & FILE_TYPE_SHARED_LIB)) {
+            (p->entries[i].caps.is_shared_lib)) {
             tmp = nvstrcat(op->utils[EXECSTACK], " -c ",
                            p->entries[i].dst, NULL);
         } else {
             tmp = NULL;
         }
 
-        if (p->entries[i].flags & installable_files) {
+        if (installable_files.types[p->entries[i].type]) {
             add_command(c, INSTALL_CMD,
                         p->entries[i].file,
                         p->entries[i].dst,
@@ -266,14 +271,14 @@ CommandList *build_command_list(Options *op, Package *p)
          * based on templates earlier.
          */
 
-        if ((p->entries[i].flags & FILE_TYPE_LIBGL_LA) ||
-                (p->entries[i].flags & FILE_TYPE_DOT_DESKTOP)) {
+        if ((p->entries[i].type == FILE_TYPE_LIBGL_LA) ||
+            (p->entries[i].type == FILE_TYPE_DOT_DESKTOP)) {
             add_command(c, DELETE_CMD,
                         p->entries[i].file);
         }
 
         if (op->selinux_enabled &&
-            (p->entries[i].flags & FILE_TYPE_SHARED_LIB)) {
+            (p->entries[i].caps.is_shared_lib)) {
             tmp = nvstrcat(op->utils[CHCON], " -t ", op->selinux_chcon_type,
                            " ", p->entries[i].dst, NULL);
             add_command(c, RUN_CMD, tmp);
@@ -285,11 +290,10 @@ CommandList *build_command_list(Options *op, Package *p)
     /* create any needed symbolic links */
     
     for (i = 0; i < p->num_entries; i++) {
-        if ((p->entries[i].flags & FILE_TYPE_SYMLINK) ||
-            (p->entries[i].flags & FILE_TYPE_NEWSYM)) {
+        if (p->entries[i].caps.is_symlink) {
             /* if it's a NEWSYM and the file already exists, don't add a command
              * for it */
-            if (p->entries[i].flags & FILE_TYPE_NEWSYM) {
+            if (p->entries[i].type == FILE_TYPE_XMODULE_NEWSYM) {
                 struct stat buf;
                 if(!stat(p->entries[i].dst, &buf) || errno != ENOENT) {
                     ui_expert(op, "Not creating a symlink from %s to %s "
@@ -308,7 +312,7 @@ CommandList *build_command_list(Options *op, Package *p)
     /* find any commands we should run */
 
     for (i = 0; i < p->num_entries; i++) {
-        if (p->entries[i].flags & FILE_TYPE_KERNEL_MODULE_CMD) {
+        if (p->entries[i].type == FILE_TYPE_KERNEL_MODULE_CMD) {
             add_command(c, RUN_CMD, p->entries[i].file, NULL, 0);
         }
     }
@@ -322,7 +326,7 @@ CommandList *build_command_list(Options *op, Package *p)
     
     if (op->no_abi_note) {
         for (i = 0; i < p->num_entries; i++) {
-            if (p->entries[i].flags & FILE_TYPE_OPENGL_LIB) {
+            if (p->entries[i].type == FILE_TYPE_OPENGL_LIB) {
                 tmp = nvstrcat(op->utils[OBJCOPY],
                                " --remove-section=.note.ABI-tag ",
                                p->entries[i].dst,
@@ -728,13 +732,14 @@ static void find_conflicting_kernel_modules(Options *op,
  * FileList.
  */
 
-static void find_existing_files(Package *p, FileList *l, uint64_t flag)
+static void find_existing_files(Package *p, FileList *l,
+                                PackageEntryFileTypeList *file_type_list)
 {
     int i;
     struct stat stat_buf;
 
     for (i = 0; i < p->num_entries; i++) {
-        if (p->entries[i].flags & flag) {
+        if (file_type_list->types[p->entries[i].type]) {
             if (lstat(p->entries[i].dst, &stat_buf) == 0) {
                 add_file_to_list(NULL, p->entries[i].dst, l);
             }

@@ -105,7 +105,7 @@ int ui_init(Options *op)
         }
 
         if (i == ARRAY_LEN(ui_list)) {
-            log_printf(op, TRUE, NULL, "Invalid \"ui\" option: %s", op->ui_str);
+            log_printf(op, NULL, "Invalid \"ui\" option: %s", op->ui_str);
             i = 0;
         }
     } else {
@@ -125,20 +125,18 @@ int ui_init(Options *op)
         if (handle) {
             __ui = dlsym(handle, "ui_dispatch_table");
             if (__ui && __ui->detect(op)) {
-                log_printf(op, TRUE, NULL, "Using: %s",
-                           ui_list[i].descr);
+                log_printf(op, NULL, "Using: %s", ui_list[i].descr);
                 __extracted_user_interface_filename = ui_list[i].filename;
                 break;
             } else {
-                log_printf(op, TRUE, NULL, "Unable to initialize: %s",
+                log_printf(op, NULL, "Unable to initialize: %s",
                            ui_list[i].descr);
                 dlclose(handle);
                 __ui = NULL;
             }
         } else {
-            log_printf(op, TRUE, NULL, "Unable to load: %s",
-                       ui_list[i].descr);
-            log_printf(op, TRUE, NULL, "");
+            log_printf(op, NULL, "Unable to load: %s", ui_list[i].descr);
+            log_printf(op, NULL, "");
         }
     }
     
@@ -146,7 +144,7 @@ int ui_init(Options *op)
 
     if (!__ui) {
         __ui = &stream_ui_dispatch_table;
-        log_printf(op, TRUE, NULL, "Using built-in stream user interface");
+        log_printf(op, NULL, "Using built-in stream user interface");
     }
     
     /*
@@ -216,7 +214,7 @@ char *ui_get_input(Options *op, const char *def, const char *fmt, ...)
         ret = __ui->get_input(op, def, msg);
         tmp = nvstrcat(msg, " (Answer: '", ret, "')", NULL);
     }
-    log_printf(op, TRUE, NV_BULLET_STR, tmp);
+    log_printf(op, NV_BULLET_STR, tmp);
     nvfree(msg);
     nvfree(tmp);
 
@@ -251,7 +249,7 @@ void ui_error(Options *op, const char *fmt, ...)
     NV_VSNPRINTF(msg, fmt);
 
     __ui->message(op, NV_MSG_LEVEL_ERROR, msg);
-    log_printf(op, TRUE, "ERROR: ", msg);
+    log_printf(op, "ERROR: ", msg);
     
     free(msg);
 
@@ -266,7 +264,7 @@ void ui_warn(Options *op, const char *fmt, ...)
     NV_VSNPRINTF(msg, fmt);
 
     __ui->message(op, NV_MSG_LEVEL_WARNING, msg);
-    log_printf(op, TRUE, "WARNING: ", msg);
+    log_printf(op, "WARNING: ", msg);
  
     free(msg);
     
@@ -282,7 +280,7 @@ void ui_message(Options *op, const char *fmt, ...)
 
     if (!op->silent) __ui->message(op, NV_MSG_LEVEL_MESSAGE, msg);
     
-    log_printf(op, TRUE, NV_BULLET_STR, msg);
+    log_printf(op, NV_BULLET_STR, msg);
 
     free(msg);
 
@@ -296,7 +294,7 @@ void ui_log(Options *op, const char *fmt, ...)
     NV_VSNPRINTF(msg, fmt);
 
     if (!op->silent) __ui->message(op, NV_MSG_LEVEL_LOG, msg);
-    log_printf(op, TRUE, NV_BULLET_STR, msg);
+    log_printf(op, NV_BULLET_STR, msg);
 
     free(msg);
 
@@ -317,7 +315,7 @@ void ui_expert(Options *op, const char *fmt, ...)
     NV_VSNPRINTF(msg, fmt);
 
     if (!op->silent) __ui->message(op, NV_MSG_LEVEL_LOG, msg);
-    log_printf(op, FALSE, NV_BULLET_STR, msg);
+    log_printf(op, NV_BULLET_STR, msg);
 
     free (msg);
     
@@ -333,7 +331,7 @@ void ui_command_output(Options *op, const char *fmt, ...)
 
     if (!op->silent) __ui->command_output(op, msg);
 
-    log_printf(op, FALSE, NV_CMD_OUT_PREFIX, "%s", msg);
+    log_printf(op, NV_CMD_OUT_PREFIX, "%s", msg);
 
     free(msg);
 
@@ -387,7 +385,7 @@ int ui_yes_no (Options *op, const int def, const char *fmt, ...)
         tmp = nvstrcat(msg, " (Answer: ", (ret ? "Yes" : "No"), ")", NULL);
     }
     
-    log_printf(op, FALSE, NV_BULLET_STR, tmp);
+    log_printf(op, NV_BULLET_STR, tmp);
     nvfree(msg);
     nvfree(tmp);
 
@@ -401,7 +399,7 @@ void ui_status_begin(Options *op, const char *title, const char *fmt, ...)
 {
     char *msg;
 
-    log_printf(op, TRUE, NV_BULLET_STR, title);
+    log_printf(op, NV_BULLET_STR, title);
 
     if (op->silent) return;
  
@@ -434,7 +432,7 @@ void ui_status_end(Options *op, const char *fmt, ...)
     NV_VSNPRINTF(msg, fmt);
 
     if (!op->silent) __ui->status_end(op, msg);
-    log_printf(op, TRUE, NV_BULLET_STR, msg);
+    log_printf(op, NV_BULLET_STR, msg);
     free(msg);
 }
 
@@ -480,7 +478,7 @@ static int extract_user_interface(Options *op, user_interface_attribute_t *ui)
     /* check that this ui is present in the binary */
 
     if ((ui->data_array == NULL) || (ui->data_array_size == 0)) {
-        log_printf(op, TRUE, NULL, "%s: not present.", ui->descr);
+        log_printf(op, NULL, "%s: not present.", ui->descr);
         return FALSE;
     }
 
@@ -490,7 +488,7 @@ static int extract_user_interface(Options *op, user_interface_attribute_t *ui)
     
     fd = mkstemp(ui->filename);
     if (fd == -1) {
-        log_printf(op, TRUE, NULL, "unable to create temporary file (%s)",
+        log_printf(op, NULL, "unable to create temporary file (%s)",
                    strerror(errno));
         goto failed;
     }
@@ -498,12 +496,12 @@ static int extract_user_interface(Options *op, user_interface_attribute_t *ui)
     /* set the temporary file's size */
 
     if (lseek(fd, ui->data_array_size - 1, SEEK_SET) == -1) {
-        log_printf(op, TRUE, NULL, "Unable to set file size for '%s' (%s)",
+        log_printf(op, NULL, "Unable to set file size for '%s' (%s)",
                    ui->filename, strerror(errno));
         goto failed;
     }
     if (write(fd, "", 1) != 1) {
-        log_printf(op, TRUE, NULL, "Unable to write file size for '%s' (%s)",
+        log_printf(op, NULL, "Unable to write file size for '%s' (%s)",
                    ui->filename, strerror(errno));
         goto failed;
     }
@@ -512,7 +510,7 @@ static int extract_user_interface(Options *op, user_interface_attribute_t *ui)
 
     if ((dst = mmap(0, ui->data_array_size, PROT_READ | PROT_WRITE,
                     MAP_FILE | MAP_SHARED, fd, 0)) == (void *) -1) {
-        log_printf(op, TRUE, NULL, "Unable to map destination file '%s' "
+        log_printf(op, NULL, "Unable to map destination file '%s' "
                    "for copying (%s)", ui->filename, strerror(errno));
         goto failed;
     }
@@ -524,7 +522,7 @@ static int extract_user_interface(Options *op, user_interface_attribute_t *ui)
     /* unmap the temporary file */
 
     if (munmap(dst, ui->data_array_size) == -1) {
-        log_printf(op, TRUE, NULL, "Unable to unmap destination file '%s' "
+        log_printf(op, NULL, "Unable to unmap destination file '%s' "
                    "(%s)", ui->filename, strerror(errno));
         goto failed;
     }

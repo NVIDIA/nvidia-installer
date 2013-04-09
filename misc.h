@@ -46,12 +46,11 @@ int check_selinux(Options *op);
 int check_proc_modprobe_path(Options *op);
 int check_development_tools(Options *op, Package *p);
 char *extract_version_string(const char *str);
-int continue_after_error(Options *op, const char *fmt, ...);
+int continue_after_error(Options *op, const char *fmt, ...) NV_ATTRIBUTE_PRINTF(2, 3);
 int do_install(Options *op, Package *p, CommandList *c);
 void should_install_opengl_headers(Options *op, Package *p);
 void should_install_compat32_files(Options *op, Package *p);
 void check_installed_files_from_package(Options *op, Package *p);
-uint64_t get_installable_file_mask(Options *op);
 int tls_test(Options *op, int compat_32_libs);
 int check_runtime_configuration(Options *op, Package *p);
 void collapse_multiple_slashes(char *s);
@@ -66,5 +65,9 @@ int check_for_nouveau(Options *op);
 int dkms_module_installed(Options *op, const char *version);
 int dkms_install_module(Options *op, const char *version, const char *kernel);
 int dkms_remove_module(Options *op, const char *version);
+int unprelink(Options *op, const char *filename);
+int verify_crc(Options *op, const char *filename, unsigned int crc,
+               unsigned int *actual_crc);
+int secure_boot_enabled(void);
 
 #endif /* __NVIDIA_INSTALLER_MISC_H__ */

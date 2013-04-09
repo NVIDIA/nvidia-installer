@@ -121,6 +121,7 @@ static int sanity_check_backup_log_entries(Options *op, BackupInfo *b);
 
 static char *create_backwards_compatible_version_string(const char *str);
 
+static int reverse_strlen_compare(const void *a, const void *b);
 
 
 
@@ -148,7 +149,7 @@ int init_backup(Options *op, Package *p)
 
     /* create the backup directory, with perms only for owner */
 
-    if (!mkdir_recursive(op, BACKUP_DIRECTORY, BACKUP_DIRECTORY_PERMS)) {
+    if (!mkdir_with_log(op, BACKUP_DIRECTORY, BACKUP_DIRECTORY_PERMS, FALSE)) {
         return FALSE;
     }
 
@@ -494,9 +495,7 @@ static int parse_crc(const char *buf, uint32 *crc)
 
 /*
  * log_mkdir() - takes a newline-delimited list of directories and appends
- * them to the log of directories created during installation. The caller
- * should ensure that directories are listed in decreasing order of depth,
- * so that removing them in that order will work.
+ * them to the log of directories created during installation.
  */
 int log_mkdir(Options *op, const char *dirs)
 {
@@ -534,18 +533,32 @@ int log_mkdir(Options *op, const char *dirs)
     return TRUE;
 }
 
+
+
+/*
+ * reverse_strlen_compare() - Compare two strings by length, for sorting
+ * in order of decreasing length.
+ */
+static int reverse_strlen_compare(const void *a, const void *b)
+{
+    return strlen((const char *)b) - strlen((const char *)a);
+}
+
+
+
 /*
  * rmdir_recursive() - Use BACKUP_MKDIR_LOG to find directories that were
  * created by a previous nvidia-installer, and delete any such directories.
  * Returns TRUE if the log is found and all directories are successfully
  * deleted; returns FALSE if any directories failed to be deleted or the
- * log isn't found.
+ * log isn't found. The log enries are processed in reverse order, so that
+ * child directories get properly deleted before their parents.
  */
 static int rmdir_recursive(Options *op)
 {
     FILE *log;
-    char *dir;
-    int eof = FALSE, ret = TRUE;
+    char *dir, **dirs;
+    int eof = FALSE, ret = TRUE, lines, i;
 
     /* open the log file */
 
@@ -556,20 +569,43 @@ static int rmdir_recursive(Options *op)
         return FALSE;
     }
 
-    while (!eof) {
+    /* Count the number of lines */
+
+    for (lines = 0; !eof; lines++) {
         dir = fget_next_line(log, &eof);
-        if (dir) {
+        nvfree(dir);
+    }
+
+    rewind(log);
+
+    dirs = nvalloc(lines * sizeof(char*));
+
+    for (i = 0; i < lines; i++) {
+        dirs[i] = fget_next_line(log, &eof); 
+    }
+
+    qsort(dirs, lines, sizeof(char*), reverse_strlen_compare);
+
+    for (i = lines; i < lines; i++) {
+        if (dirs[i]) {
             /* Ignore empty lines and the backup directory itself, since it is 
              * never empty as long as the dirs file is still around. */
-            if (strlen(dir) && strcmp(dir, BACKUP_DIRECTORY) != 0) {
-                if (rmdir(dir) != 0) {
-                    ui_warn(op, "Failed to delete the directory '%s' (%s).",
-                            dir, strerror(errno));
+            if (strlen(dirs[i]) && strcmp(dir, BACKUP_DIRECTORY) != 0) {
+                if (rmdir(dirs[i]) != 0) {
+                    ui_log(op, "Failed to delete the directory '%s' (%s).",
+                           dirs[i], strerror(errno));
                     ret = FALSE;
                 }
             }
         }
-        free(dir);
+        nvfree(dirs[i]);
+    }
+
+    nvfree(dirs);
+
+    if (!ret) {
+        ui_warn(op, "Failed to delete some directories. See %s for details.",
+                op->log_file_name);
     }
 
     /* close the log file */
@@ -595,6 +631,7 @@ static int do_uninstall(Options *op, const char *version)
     int i, len, ok;
     char *tmpstr, *cmd;
     float percent;
+    int removal_failed = FALSE, restore_failed = FALSE;
 
     static const char existing_installation_is_borked[] = 
         "Your driver installation has been "
@@ -667,16 +704,18 @@ static int do_uninstall(Options *op, const char *version)
 
         case INSTALLED_FILE:
             if (unlink(e->filename) == -1) {
-                ui_warn(op, "Unable to remove installed file '%s' (%s).",
-                        e->filename, strerror(errno));
+                ui_log(op, "Unable to remove installed file '%s' (%s).",
+                       e->filename, strerror(errno));
+                removal_failed = TRUE;
             }
             ui_status_update(op, percent, e->filename);
             break;
 
         case INSTALLED_SYMLINK:
             if (unlink(e->filename) == -1) {
-                ui_warn(op, "Unable to remove installed symlink '%s' (%s).",
-                        e->filename, strerror(errno));
+                ui_log(op, "Unable to remove installed symlink '%s' (%s).",
+                       e->filename, strerror(errno));
+                removal_failed = TRUE;
             }
             ui_status_update(op, percent, e->filename);
             break;
@@ -707,22 +746,21 @@ static int do_uninstall(Options *op, const char *version)
                  */
 
                 if (ok) {
-                    ui_warn(op, "Unable to restore symbolic link "
-                            "%s -> %s (%s).", e->filename, e->target,
-                            strerror(errno));
-                } else {
-                    ui_log(op, "Unable to restore symbolic link "
-                           "%s -> %s (%s).", e->filename, e->target,
-                           strerror(errno));
+                    restore_failed = TRUE;
                 }
+
+                ui_log(op, "Unable to restore symbolic link "
+                       "%s -> %s (%s).", e->filename, e->target,
+                       strerror(errno));
             } else {
                 
                 /* XXX do we need to chmod the symlink? */
 
                 if (lchown(e->filename, e->uid, e->gid)) {
-                    ui_warn(op, "Unable to restore owner (%d) and group "
-                            "(%d) for symbolic link '%s' (%s).",
-                            e->uid, e->gid, e->filename, strerror(errno));
+                    ui_log(op, "Unable to restore owner (%d) and group "
+                           "(%d) for symbolic link '%s' (%s).",
+                           e->uid, e->gid, e->filename, strerror(errno));
+                    restore_failed = TRUE;
                 }
             }
             ui_status_update(op, percent, e->filename);
@@ -733,16 +771,19 @@ static int do_uninstall(Options *op, const char *version)
             tmpstr = nvalloc(len + 1);
             snprintf(tmpstr, len, "%s/%d", BACKUP_DIRECTORY, e->num);
             if (!nvrename(op, tmpstr, e->filename)) {
-                ui_warn(op, "Unable to restore file '%s'.", e->filename);
+                ui_log(op, "Unable to restore file '%s'.", e->filename);
+                restore_failed = TRUE;
             } else {
                 if (chown(e->filename, e->uid, e->gid)) {
-                    ui_warn(op, "Unable to restore owner (%d) and group "
-                            "(%d) for file '%s' (%s).",
-                            e->uid, e->gid, e->filename, strerror(errno));
+                    ui_log(op, "Unable to restore owner (%d) and group "
+                           "(%d) for file '%s' (%s).",
+                           e->uid, e->gid, e->filename, strerror(errno));
+                    restore_failed = TRUE;
                 } else {
                     if (chmod(e->filename, e->mode) == -1) {
-                        ui_warn(op, "Unable to restore permissions %04o for "
-                                "file '%s'.", e->mode, e->filename);
+                        ui_log(op, "Unable to restore permissions %04o for "
+                               "file '%s'.", e->mode, e->filename);
+                        restore_failed = TRUE;
                     }
                 }
             }
@@ -750,6 +791,16 @@ static int do_uninstall(Options *op, const char *version)
             free(tmpstr);
             break;
         }
+    }
+
+    if (removal_failed) {
+        ui_warn(op, "Failed to remove some installed files/symlinks. See %s "
+                "for details", op->log_file_name);
+    }
+
+    if (restore_failed) {
+        ui_warn(op, "Failed to restore some backed up files/symlinks, and/or "
+                "their attributes. See %s for details", op->log_file_name);
     }
 
     if (!rmdir_recursive(op)) {
@@ -837,7 +888,8 @@ static BackupInfo *read_backup_log_file(Options *op)
 
     buf = mmap(0, length, PROT_READ, MAP_FILE | MAP_SHARED, fd, 0);
     if (!buf) {
-        ui_error(op, "Unable to mmap file '%s' (%s).", strerror(errno));
+        ui_error(op, "Unable to mmap file '%s' (%s).", BACKUP_LOG,
+                 strerror(errno));
         return NULL;
     }
     
@@ -1015,22 +1067,43 @@ static int check_backup_log_entries(Options *op, BackupInfo *b)
 
         case INSTALLED_FILE:
             
-            /* check if the file is still there, and has the same crc */
+            /* check if the file is still there */
             
             if (access(e->filename, F_OK) == -1) {
                 ui_log(op, "Unable to access previously installed file "
                        "'%s' (%s).", e->filename, strerror(errno));
                 ret = e->ok = FALSE;
             } else {
-                crc = compute_crc(op, e->filename);
-                
-                if (crc != e->crc) {
-                    ui_log(op, "The previously installed file '%s' has a "
-                           "different checksum (%lu) than "
-                           "when it was installed (%lu).  %s will not be "
-                           "uninstalled.",
-                           e->filename, crc, e->crc, e->filename);
-                    ret = e->ok = FALSE;
+                /* check if the file still has the same crc; if not, try
+                 * un-prelinking it and check the crc again */
+                if (!verify_crc(op, e->filename, e->crc, &crc)) {
+                    ui_expert(op, "The previously installed file '%s' has a "
+                              "different checksum (%ul) than when it was "
+                              "installed (%ul). This may be due to prelinking; "
+                              "attempting `prelink -u %s` to restore the file.",
+                              e->filename, crc, e->crc, e->filename);
+
+                    if (unprelink(op, e->filename) != 0) {
+                        ui_log(op, "The previously installed file '%s' seems "
+                               "to have changed, but `prelink -u` failed; "
+                               "unable to restore '%s' to an un-prelinked "
+                               "state.", e->filename, e->filename);
+                        ret = e->ok = FALSE;
+                    } else if (!verify_crc(op, e->filename, e->crc, &crc)) {
+                        ui_log(op, "The previously installed file '%s' has a "
+                               "different checksum (%ul) after running `pre"
+                               "link -u` than when it was installed (%ul).",
+                               e->filename, crc, e->crc);
+                        ret = e->ok = FALSE;
+                    }
+
+                    if (ret) {
+                        ui_expert(op, "Un-prelinking successful: '%s' will "
+                                  "be uninstalled.", e->filename);
+                    } else {
+                        ui_log(op, "Un-prelinking unsuccessful: '%s' will "
+                               "not be uninstalled.", e->filename);
+                    }
                 }
             }
             ui_status_update(op, percent, e->filename);
@@ -1110,10 +1183,9 @@ static int check_backup_log_entries(Options *op, BackupInfo *b)
                 
                 if (crc != e->crc) {
                     ui_log(op, "Backed up file '%s' (saved as '%s) has "
-                           "different checksum (%lu) than"
-                           "when it was backed up (%lu).  %s will not be "
-                           "restored.", e->filename, tmpstr,
-                           crc, e->crc, e->filename);
+                           "different checksum (%" PRIu32 ") than when it was "
+                           "backed up (%" PRIu32").  %s will not be restored.",
+                           e->filename, tmpstr, crc, e->crc, e->filename);
                     ret = e->ok = FALSE;
                 }
             }
@@ -1463,8 +1535,9 @@ static int sanity_check_backup_log_entries(Options *op, BackupInfo *b)
                 
                 if (crc != e->crc) {
                     ui_error(op, "The installed file '%s' has a different "
-                             "checksum (%lu) than when it was installed "
-                             "(%lu).", e->filename, crc, e->crc);
+                             "checksum (%" PRIu32 ") than when it was "
+                             "installed (%" PRIu32 ").", e->filename, crc,
+                             e->crc);
                     ret = FALSE;
                 }
             }
@@ -1523,9 +1596,9 @@ static int sanity_check_backup_log_entries(Options *op, BackupInfo *b)
                 
                 if (crc != e->crc) {
                     ui_error(op, "Backed up file '%s' (saved as '%s) has a "
-                             "different checksum (%lu) than"
-                             "when it was backed up (%lu).",
-                             e->filename, tmpstr, crc, e->crc);
+                             "different checksum (%" PRIu32 ") than when it "
+                             "was backed up (%" PRIu32 ").", e->filename,
+                             tmpstr, crc, e->crc);
                     ret = FALSE;
                 }
             }

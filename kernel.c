@@ -32,6 +32,8 @@
 #include <string.h>
 #include <limits.h>
 #include <fts.h>
+#include <dlfcn.h>
+#include <libkmod.h>
 
 #include "nvidia-installer.h"
 #include "kernel.h"
@@ -63,6 +65,20 @@ static char *build_distro_precompiled_kernel_interface_dir(Options *op);
 static char *convert_include_path_to_source_path(const char *inc);
 static char *guess_kernel_module_filename(Options *op);
 static char *get_machine_arch(Options *op);
+static int init_libkmod(void);
+static void close_libkmod(void);
+static int run_conftest(Options *op, Package *p, const char *args,
+                        char **result);
+
+/* libkmod handle and function pointers */
+static void *libkmod = NULL;
+static struct kmod_ctx* (*lkmod_new)(const char*, const char* const*) = NULL;
+static struct kmod_ctx* (*lkmod_unref)(struct kmod_ctx*) = NULL;
+static struct kmod_module* (*lkmod_module_unref)(struct kmod_module *) = NULL;
+static int (*lkmod_module_new_from_path)(struct kmod_ctx*, const char*,
+             struct kmod_module**) = NULL;
+static int (*lkmod_module_insert_module)(struct kmod_module*, unsigned int,
+             const char*) = NULL;
 
 /*
  * Message text that is used by several error messages.
@@ -145,6 +161,37 @@ int determine_kernel_module_installation_path(Options *op)
 
 
 /*
+ * run_conftest() - run conftest.sh with the given additional arguments; pass
+ * the result back to the caller. Returns TRUE on success, or FALSE on failure.
+ */
+
+static int run_conftest(Options *op, Package *p, const char *args, char **result)
+{
+    char *CC, *cmd, *arch;
+    int ret;
+
+    arch = get_machine_arch(op);
+    if (!arch)
+        return FALSE;
+
+    CC = getenv("CC");
+    if (!CC) CC = "cc";
+
+    cmd = nvstrcat("sh ", p->kernel_module_build_directory,
+                   "/conftest.sh ", CC, " ", CC, " ", arch, " ",
+                   op->kernel_source_path, " ",
+                   op->kernel_output_path, " ",
+                   args, NULL);
+
+    ret = run_command(op, cmd, result, FALSE, 0, TRUE);
+    nvfree(cmd);
+
+    return ret == 0;
+} /* run_conftest() */
+
+
+
+/*
  * determine_kernel_source_path() - find the qualified path to the
  * kernel source tree.  This is called from install_from_cwd() if we
  * need to compile the kernel interface files.  Assigns
@@ -154,9 +201,8 @@ int determine_kernel_module_installation_path(Options *op)
 
 int determine_kernel_source_path(Options *op, Package *p)
 {
-    char *CC, *cmd, *result;
+    char *result;
     char *source_files[2], *source_path;
-    char *arch;
     int ret, count = 0;
     
     /* determine the kernel source path */
@@ -242,24 +288,11 @@ int determine_kernel_source_path(Options *op, Package *p)
     }
     free(result);
 
-    arch = get_machine_arch(op);
-    if (!arch)
-        return FALSE;
     if (!determine_kernel_output_path(op)) return FALSE;
 
-    CC = getenv("CC");
-    if (!CC) CC = "cc";
-    
-    cmd = nvstrcat("sh ", p->kernel_module_build_directory,
-                   "/conftest.sh ", CC, " ", CC, " ", arch, " ",
-                   op->kernel_source_path, " ",
-                   op->kernel_output_path, " ",
-                   "get_uname", NULL);
-    
-    ret = run_command(op, cmd, &result, FALSE, 0, TRUE);
-    nvfree(cmd);
+    ret = run_conftest(op, p, "get_uname", &result);
 
-    if (ret != 0) {
+    if (!ret) {
         ui_error(op, "Unable to determine the version of the kernel "
                  "sources located in '%s'.  %s",
                  op->kernel_source_path, install_your_kernel_source);
@@ -382,6 +415,87 @@ int determine_kernel_output_path(Options *op)
 
 
 /*
+ * attach_signature() - If we have a detached signature, verify the checksum of
+ * the linked module and append the signature.
+ */
+static int attach_signature(Options *op, Package *p,
+                            const PrecompiledInfo *info) {
+    uint32 actual_crc;
+    char *module_filename;
+    int ret = FALSE, command_ret;
+
+    ui_log(op, "Attaching module signature to linked kernel module.");
+
+    module_filename = nvstrcat(p->kernel_module_build_directory, "/",
+                               p->kernel_module_filename, NULL);
+
+    command_ret = verify_crc(op, module_filename, info->linked_module_crc,
+                     &actual_crc);
+
+    if (command_ret) {
+        FILE *module_file, *signature_file;
+
+        module_file = fopen(module_filename, "a+");
+        signature_file = fopen(info->detached_signature, "r");
+
+        if (module_file && signature_file) {
+            char buf;
+
+            while(fread(&buf, 1, 1, signature_file)) {
+                command_ret = fwrite(&buf, 1, 1, module_file);
+                if (command_ret != 1) {
+                    goto attach_done;
+                }
+            }
+
+            ret = feof(signature_file) &&
+                         !ferror(signature_file) &&
+                         !ferror(module_file);
+
+            op->kernel_module_signed = ret;
+attach_done:
+            fclose(module_file);
+            fclose(signature_file);
+        } else {
+            ret = ui_yes_no(op, FALSE,
+                            "A detached signature was included with the "
+                            "precompiled interface, but opening the linked "
+                            "kernel module and/or the signature file failed."
+                            "\n\nThe detached signature will not be added; "
+                            "would you still like to install the unsigned "
+                            "kernel module?");
+        }
+    } else {
+        ret = ui_yes_no(op, FALSE,
+                        "A detached signature was included with the "
+                        "precompiled interface, but the checksum of the linked "
+                        "kernel module (%d) did not match the checksum of the "
+                        "the kernel module for which the detached signature "
+                        "was generated (%d).\n\nThis can happen if the linker "
+                        "on the installation target system is not the same as "
+                        "the linker on the system that built the precompiled "
+                        "interface.\n\nThe detached signature will not be "
+                        "added; would you still like to install the unsigned "
+                        "kernel module?", actual_crc, info->linked_module_crc);
+    }
+
+    if (ret) {
+        if(op->kernel_module_signed) {
+            ui_log(op, "Signature attached successfully.");
+        } else {
+            ui_log(op, "Signature not attached.");
+        }
+    } else {
+        ui_error(op, "Failed to attach signature.");
+    }
+
+    nvfree(module_filename);
+    return ret;
+} /* attach_signature() */
+
+
+
+/*
  * link_kernel_module() - link the prebuilt kernel interface against
  * the binary-only core of the kernel module.  This results in a
  * complete kernel module, ready for installation.
@@ -390,15 +504,15 @@ int determine_kernel_output_path(Options *op)
  * ld -r -o nvidia.o nv-linux.o nv-kernel.o
  */
 
-int link_kernel_module(Options *op, Package *p)
+int link_kernel_module(Options *op, Package *p, const char *build_directory,
+                       const PrecompiledInfo *info)
 {
     char *cmd, *result;
     int ret;
     
     p->kernel_module_filename = guess_kernel_module_filename(op);
 
-    cmd = nvstrcat("cd ", p->kernel_module_build_directory,
-                   "; ", op->utils[LD],
+    cmd = nvstrcat("cd ", build_directory, "; ", op->utils[LD],
                    " ", LD_OPTIONS,
                    " -o ", p->kernel_module_filename,
                    " ", PRECOMPILED_KERNEL_INTERFACE_FILENAME,
@@ -415,6 +529,10 @@ int link_kernel_module(Options *op, Package *p)
 
     ui_log(op, "Kernel module linked successfully.");
 
+    if (info && info->detached_signature) {
+        return attach_signature(op, p, info);
+    }
+
     return TRUE;
    
 } /* link_kernel_module() */
@@ -428,13 +546,8 @@ int link_kernel_module(Options *op, Package *p)
 
 int build_kernel_module(Options *op, Package *p)
 {
-    char *CC, *result, *cmd, *tmp;
-    char *arch;
+    char *result, *cmd, *tmp;
     int len, ret;
-    
-    arch = get_machine_arch(op);
-    if (!arch)
-        return FALSE;
 
     /*
      * touch all the files in the build directory to avoid make time
@@ -443,23 +556,13 @@ int build_kernel_module(Options *op, Package *p)
     
     touch_directory(op, p->kernel_module_build_directory);
     
-    CC = getenv("CC");
-    if (!CC) CC = "cc";
-    
     /*
      * Check if conftest.sh can determine the Makefile, there's
      * no hope for the make rules if this fails.
      */
-    cmd = nvstrcat("sh ", p->kernel_module_build_directory,
-                   "/conftest.sh ", CC, " ", CC, " ", arch, " ",
-                   op->kernel_source_path, " ",
-                   op->kernel_output_path, " ",
-                   "select_makefile just_msg", NULL);
+    ret = run_conftest(op, p, "select_makefile just_msg", &result);
 
-    ret = run_command(op, cmd, &result, FALSE, 0, TRUE);
-    nvfree(cmd);
-
-    if (ret != 0) {
+    if (!ret) {
         ui_error(op, "%s", result); /* display conftest.sh's error message */
         nvfree(result);
         return FALSE;
@@ -531,6 +634,211 @@ int build_kernel_module(Options *op, Package *p)
     return TRUE;
     
 } /* build_kernel_module() */
+
+
+
+/*
+ * sign_kernel_module() - sign the kernel module. The caller is responsible
+ * for ensuring that the kernel module is already built successfully and that
+ * op->module_signing_{secret,public}_key are set.
+ */
+int sign_kernel_module(Options *op, const char *build_directory, int status) {
+    char *cmd, *mod_sign_cmd, *mod_sign_hash;
+    int ret, success;
+
+    /* if module_signing_script isn't set, then set mod_sign_cmd below to end
+     * the nvstrcat() that builds cmd early. */
+    mod_sign_cmd = op->module_signing_script ?
+                   nvstrcat(" mod_sign_cmd=", op->module_signing_script, NULL) :
+                   NULL;
+
+    mod_sign_hash = op->module_signing_hash ?
+                    nvstrcat(" CONFIG_MODULE_SIG_HASH=",
+                             op->module_signing_hash, NULL) :
+                    NULL;
+
+    if (status) {
+        ui_status_begin(op, "Signing kernel module:", "Signing");
+    }
+
+    cmd = nvstrcat("cd ", build_directory, "; make module-sign"
+                   " SYSSRC=", op->kernel_source_path,
+                   " SYSOUT=", op->kernel_output_path,
+                   " MODSECKEY=", op->module_signing_secret_key,
+                   " MODPUBKEY=", op->module_signing_public_key,
+                   mod_sign_cmd ? mod_sign_cmd : "",
+                   mod_sign_hash ? mod_sign_hash : "", NULL);
+
+    ret = run_command(op, cmd, NULL, TRUE, 20 /* XXX */, TRUE);
+    success = ret == 0;
+
+    nvfree(mod_sign_hash);
+    nvfree(mod_sign_cmd);
+    nvfree(cmd);
+
+    if (status) {
+        ui_status_end(op, success ? "done." : "Failed to sign kernel module.");
+    } else {
+        ui_log(op, success ? "Signed kernel module." : "Module signing failed");
+    }
+    op->kernel_module_signed = success;
+    return success;
+} /* sign_kernel_module */
+
+
+
+/*
+ * byte_tail() - write to outfile from infile, starting at the specified byte
+ * offset, and going until the end of infile. This is needed because `tail -c`
+ * is unreliable in some implementations.
+ */
+static int byte_tail(const char *infile, const char *outfile, int start)
+{
+    FILE *in = NULL, *out = NULL;
+    int success = FALSE, ret;
+    char buf;
+
+    in = fopen(infile, "r");
+    out = fopen(outfile, "w");
+
+    if (!in || !out) {
+        goto done;
+    }
+
+    ret = fseek(in, start, SEEK_SET);
+    if (ret != 0) {
+        goto done;
+    }
+
+    while(fread(&buf, 1, 1, in)) {
+        ret = fwrite(&buf, 1, 1, out);
+        if (ret != 1) {
+            goto done;
+        }
+    }
+
+    success = feof(in) && !ferror(in) && !ferror(out);
+
+done:
+    fclose(in);
+    fclose(out);
+    return success;
+}
+
+
+
+/*
+ * create_detached_signature() - Link the precompiled interface with nv-kernel.o,
+ * sign the resulting linked nvidia.ko, and split the signature off into a separate
+ * file. Copy a checksum and detached signature for the linked module to the kernel
+ * module build directory on success.
+ */
+static int create_detached_signature(Options *op, Package *p,
+                                 const char *build_dir)
+{
+    int ret, command_ret;
+    struct stat st;
+    FILE *checksum_file;
+    char *module_path = NULL, *tmp_path = NULL, *error = NULL, *dstfile = NULL;
+
+    ui_status_begin(op, "Creating a detached signature for the linked "
+                    "kernel module:", "Linking module");
+
+    tmp_path = nvstrcat(build_dir, "/", PRECOMPILED_KERNEL_INTERFACE_FILENAME,
+                        NULL);
+    symlink(p->kernel_interface_filename, tmp_path);
+
+    ret = link_kernel_module(op, p, build_dir, NULL);
+
+    if (!ret) {
+        ui_error(op, "Failed to link a kernel module for signing.");
+        goto done;
+    }
+
+    module_path = nvstrcat(build_dir, "/", p->kernel_module_filename, NULL);
+    command_ret = stat(module_path, &st);
+
+    if (command_ret != 0) {
+        ret = FALSE;
+        error = "Unable to determine size of linked module.";
+        goto done;
+    }
+
+    ui_status_update(op, .25, "Generating module checksum");
+
+    nvfree(tmp_path);
+    tmp_path = nvstrcat(build_dir, "/", KERNEL_MODULE_CHECKSUM_FILENAME, NULL);
+    checksum_file = fopen(tmp_path, "w");
+
+    if(checksum_file) {
+        uint32 crc = compute_crc(op, module_path);
+        command_ret = fwrite(&crc, sizeof(crc), 1, checksum_file);
+        fclose(checksum_file);
+        if (command_ret != 1) {
+            ret = FALSE;
+            error = "Failed to write the module checksum.";
+            goto done;
+        }
+    } else {
+        ret = FALSE;
+        error = "Failed to open the checksum file for writing.";
+        goto done;
+    }
+
+    dstfile = nvstrcat(p->kernel_module_build_directory, "/",
+                       KERNEL_MODULE_CHECKSUM_FILENAME, NULL);
+
+    if (!copy_file(op, tmp_path, dstfile, 0644)) {
+        ret = FALSE;
+        error = "Failed to copy the kernel module checksum file.";
+        goto done;
+    }
+
+    ui_status_update(op, .50, "Signing linked module");
+
+    ret = sign_kernel_module(op, build_dir, FALSE);
+
+    if (!ret) {
+        error = "Failed to sign the linked kernel module.";
+        goto done;
+    }
+
+    ui_status_update(op, .75, "Detaching module signature");
+
+    nvfree(tmp_path);
+    tmp_path = nvstrcat(build_dir, "/", DETACHED_SIGNATURE_FILENAME, NULL);
+    ret = byte_tail(module_path, tmp_path, st.st_size);
+
+    if (!ret) {
+        error = "Failed to detach the module signature";
+        goto done;
+    }
+
+    nvfree(dstfile);
+    dstfile = nvstrcat(p->kernel_module_build_directory, "/",
+                       DETACHED_SIGNATURE_FILENAME, NULL);
+
+    if (!copy_file(op, tmp_path, dstfile, 0644)) {
+        ret = FALSE;
+        error = "Failed to copy the detached signature file.";
+        goto done;
+    }
+
+done:
+    if (ret) {
+        ui_status_end(op, "done.");
+    } else {
+        ui_status_end(op, "Error.");
+        if (error) {
+            ui_error(op, error);
+        }
+    }
+
+    nvfree(dstfile);
+    nvfree(tmp_path);
+    nvfree(module_path);
+    return ret;
+} /* create_detached_signature() */
 
 
 
@@ -622,8 +930,12 @@ int build_kernel_interface(Options *op, Package *p)
                        PRECOMPILED_KERNEL_INTERFACE_FILENAME, NULL);
 
     if (!copy_file(op, kernel_interface, dstfile, 0644)) goto failed;
-    
-    ret = TRUE;
+
+    if (op->module_signing_secret_key && op->module_signing_public_key) {
+        ret = create_detached_signature(op, p, tmpdir);
+    } else {
+        ret = TRUE;
+    }
     
  failed:
     
@@ -681,16 +993,144 @@ void check_for_warning_messages(Options *op)
 
 
 /*
+ * init_libkmod() - Attempt to dlopen() libkmod and the function symbols we
+ * need from it. Set the global libkmod handle and function pointers on
+ * success. Return TRUE if loading all symbols succeeded; FALSE otherwise.
+ */
+static int init_libkmod(void)
+{
+    if (!libkmod) {
+        libkmod = dlopen("libkmod.so.2", RTLD_LAZY);
+        if(!libkmod) {
+            return FALSE;
+        }
+
+        lkmod_new = dlsym(libkmod, "kmod_new");
+        lkmod_unref = dlsym(libkmod, "kmod_unref");
+        lkmod_module_unref = dlsym(libkmod, "kmod_module_unref");
+        lkmod_module_new_from_path = dlsym(libkmod, "kmod_module_new_from_path");
+        lkmod_module_insert_module = dlsym(libkmod, "kmod_module_insert_module");
+    }
+
+    if (libkmod) {
+        /* libkmod was already open, or was just successfully dlopen()ed:
+         * check to make sure all of the symbols are set */
+        if (lkmod_new && lkmod_unref && lkmod_module_unref &&
+            lkmod_module_new_from_path && lkmod_module_insert_module) {
+            return TRUE;
+        } else {
+            /* One or more symbols missing; abort */
+            close_libkmod();
+            return FALSE;
+        }
+    }
+    return FALSE;
+} /* init_libkmod() */
+
+
+
+/*
+ * close_libkmod() - clear all libkmod function pointers and dlclose() libkmod
+ */
+static void close_libkmod(void)
+{
+    if (libkmod) {
+        dlclose(libkmod);
+    }
+
+    libkmod = NULL;
+    lkmod_new = NULL;
+    lkmod_unref = NULL;
+    lkmod_module_unref = NULL;
+    lkmod_module_new_from_path = NULL;
+    lkmod_module_insert_module = NULL;
+} /* close_libkmod() */
+
+
+
+/*
+ * do_insmod() - load the kernel module using libkmod if available; fall back
+ * to insmod otherwise. Returns the result of kmod_module_insert_module() if
+ * available, or of insmod otherwise. Pass the result of module loading up
+ * through the data argument, regardless of whether we used libkmod or insmod.
+ */
+static int do_insmod(Options *op, const char *module, char **data)
+{
+    int ret = 0, libkmod_failed = FALSE;
+    *data = NULL;
+
+    if (init_libkmod()) {
+        struct kmod_ctx *ctx = NULL;
+        struct kmod_module *mod = NULL;
+        const char *config_paths = NULL;
+
+        ctx = lkmod_new(NULL, &config_paths);
+        if (!ctx) {
+            libkmod_failed = TRUE;
+            goto kmod_done;
+        }
+
+        ret = lkmod_module_new_from_path(ctx, module, &mod);
+        if (ret < 0) {
+            libkmod_failed = TRUE;
+            goto kmod_done;
+        }
+
+        ret = lkmod_module_insert_module(mod, 0, "");
+        if (ret < 0) {
+            /* insmod ignores > 0 return codes of kmod_module_insert_module(),
+             * so we should do it too. On failure, strdup() the error string to
+             * *data to ensure that it can be freed later. */
+            *data = nvstrdup(strerror(-ret));
+        }
+
+kmod_done:
+        if (mod) {
+            lkmod_module_unref(mod);
+        }
+        if (ctx) {
+            lkmod_unref(ctx);
+        }
+    } else {
+        if (op->expert) {
+            ui_log(op, "Unable to load module with libkmod; "
+                   "falling back to insmod.");
+        }
+        libkmod_failed = TRUE;
+    }
+
+    if (!libkmod || libkmod_failed) {
+        char *cmd;
+
+        /* Fall back to insmod */
+
+        cmd = nvstrcat(op->utils[INSMOD], " ", module, NULL);
+
+        /* only output the result of the test if in expert mode */
+
+        ret = run_command(op, cmd, data, op->expert, 0, TRUE);
+        nvfree(cmd);
+    }
+
+    close_libkmod();
+
+    return ret;
+} /* do_insmod() */
+
+
+
+/*
  * test_kernel_module() - attempt to insmod the kernel module and then
  * rmmod it.  Return TRUE if the insmod succeeded, or FALSE otherwise.
  */
 
 int test_kernel_module(Options *op, Package *p)
 {
-    char *cmd = NULL, *data;
+    char *cmd = NULL, *data = NULL, *module_path;
     int old_loglevel = 0, new_loglevel = 0;
-    int fd, ret, name[] = { CTL_KERN, KERN_PRINTK };
+    int fd, ret, name[] = { CTL_KERN, KERN_PRINTK }, i;
     size_t len = sizeof(int);
+    const char *depmods[] = { "i2c-core", "drm" };
 
     /* 
      * If we're building/installing for a different kernel, then we
@@ -719,51 +1159,106 @@ int test_kernel_module(Options *op, Package *p)
     }
 
     /*
-     * On Linux 2.6+ we depend on the i2c-core.ko kernel module unless
-     * the kernel was configured without support for it.  Preload it here to
-     * satisfy the dependency, which isn't resolved by `insmod`.
+     * Attempt to load modules that nvidia.ko might depend on.  Silently ignore
+     * failures: if nvidia.ko doesn't depend on the module that failed, the test
+     * load below will succeed and it doesn't matter that the load here failed.
      */
-    if (strncmp(get_kernel_name(op), "2.4", 3) != 0) {
-        cmd = nvstrcat(op->utils[MODPROBE], " -q i2c-core", NULL);
+    for (i = 0; i < ARRAY_LEN(depmods); i++) {
+        cmd = nvstrcat(op->utils[MODPROBE], " -q ", depmods[i], NULL);
         run_command(op, cmd, NULL, FALSE, 0, TRUE);
         nvfree(cmd);
     }
 
-    cmd = nvstrcat(op->utils[INSMOD], " ",
-                   p->kernel_module_build_directory, "/",
-                   p->kernel_module_filename, NULL);
-    
-    /* only output the result of the test if in expert mode */
-
-    ret = run_command(op, cmd, &data, op->expert, 0, TRUE);
+    /* Load nvidia.ko */
+    module_path = nvstrcat(p->kernel_module_build_directory, "/",
+                           p->kernel_module_filename, NULL);
+    ret = do_insmod(op, module_path, &data);
+    nvfree(module_path);
 
     if (ret != 0) {
-        ui_error(op, "Unable to load the kernel module '%s'.  This "
-                 "happens most frequently when this kernel module was "
-                 "built against the wrong or improperly configured "
-                 "kernel sources, with a version of gcc that differs "
-                 "from the one used to build the target kernel, or "
-                 "if a driver such as rivafb, nvidiafb, or nouveau is present "
-                 "and prevents the NVIDIA kernel module from obtaining "
-                 "ownership of the NVIDIA graphics device(s), or "
-                 "NVIDIA GPU installed in this system is not supported "  
-                 "by this NVIDIA Linux graphics driver release.\n\n" 
-                 "Please see the log entries 'Kernel module load "
-                 "error' and 'Kernel messages' at the end of the file "
-                 "'%s' for more information.",
-                 p->kernel_module_filename, op->log_file_name);
+        int ignore_error;
 
-        /*
-         * if in expert mode, run_command() would have caused this to
-         * be written to the log file; so if not in expert mode, print
-         * the output now.
-         */
+        /* Handle cases where we might want to allow the kernel module to be
+         * installed, even though the test load failed. */
+        switch (-ret) {
+        case ENOKEY:
+            if (op->kernel_module_signed) {
+                ignore_error = ui_yes_no(op, TRUE,
+                                         "The signed kernel module failed to "
+                                         "load, because the kernel does not "
+                                         "trust any key which is capable of "
+                                         "verifying the module signature. "
+                                         "Would you like to install the signed "
+                                         "kernel module anyway?\n\nNote that "
+                                         "you will not be able to load the "
+                                         "installed module until after a key "
+                                         "that can verify the module signature "
+                                         "is added to a key database that is "
+                                         "trusted by the kernel. This will "
+                                         "likely require rebooting your "
+                                         "computer.");
+            } else {
+                char *secureboot_message, *dkms_message;
 
-        if (!op->expert) ui_log(op, "Kernel module load error: %s", data);
-        ret = FALSE;
+                secureboot_message = secure_boot_enabled() == 1 ?
+                                         "and sign the kernel module when "
+                                         "prompted to do so." :
+                                         "and set the --module-signing-secret-"
+                                         "key and --module-signing-public-key "
+                                         "options on the command line, or run "
+                                         "the installer in expert mode to "
+                                         "enable the interactive module "
+                                         "signing prompts.";
+
+                dkms_message = op->dkms ? " Module signing is incompatible "
+                                          "with DKMS, so please select the "
+                                          "non-DKMS option when building the "
+                                          "kernel module to be signed." : "";
+
+                ui_error(op, "The kernel module failed to load, because it "
+                         "was not signed by a key that is trusted by the "
+                         "kernel. Please try installing the driver again, %s%s",
+                         secureboot_message, dkms_message);
+                ignore_error = FALSE;
+            }
+        break;
+
+        default:
+            ignore_error = FALSE;
+        }
+
+        if (ignore_error) {
+            ui_log(op, "An error was encountered when loading the kernel "
+                   "module, but that error was ignored, and the kernel module "
+                   "will be installed, anyway. The error was: %s", data);
+            ret = TRUE;
+        } else {
+            ui_error(op, "Unable to load the kernel module '%s'.  This "
+                     "happens most frequently when this kernel module was "
+                     "built against the wrong or improperly configured "
+                     "kernel sources, with a version of gcc that differs "
+                     "from the one used to build the target kernel, or "
+                     "if a driver such as rivafb, nvidiafb, or nouveau is "
+                     "present and prevents the NVIDIA kernel module from "
+                     "obtaining ownership of the NVIDIA graphics device(s), "
+                     "or no NVIDIA GPU installed in this system is supported "
+                     "by this NVIDIA Linux graphics driver release.\n\n"
+                     "Please see the log entries 'Kernel module load "
+                     "error' and 'Kernel messages' at the end of the file "
+                     "'%s' for more information.",
+                     p->kernel_module_filename, op->log_file_name);
+
+            /*
+             * if in expert mode, run_command() would have caused this to
+             * be written to the log file; so if not in expert mode, print
+             * the output now.
+             */
+
+            if (!op->expert) ui_log(op, "Kernel module load error: %s", data);
+            ret = FALSE;
+        }
 
     } else {
-        nvfree(cmd);
 
         /*
          * check if the kernel module detected problems with this
@@ -781,9 +1276,9 @@ int test_kernel_module(Options *op, Package *p)
         cmd = nvstrcat(op->utils[RMMOD], " ", p->kernel_module_name, NULL);
         run_command(op, cmd, NULL, FALSE, 0, TRUE);
         ret = TRUE;
+        nvfree(cmd);
     }
-    
-    nvfree(cmd);
+
     nvfree(data);
     
     /*
@@ -807,6 +1302,15 @@ int test_kernel_module(Options *op, Package *p)
     } else {
         if (new_loglevel != 0)
             sysctl(name, 2, NULL, 0, &old_loglevel, len);
+    }
+
+    /*
+     * Unload dependencies that might have been loaded earlier.
+     */
+    for (i = 0; i < ARRAY_LEN(depmods); i++) {
+        cmd = nvstrcat(op->utils[MODPROBE], " -qr ", depmods[i], NULL);
+        run_command(op, cmd, NULL, FALSE, 0, TRUE);
+        nvfree(cmd);
     }
 
     return ret;
@@ -946,7 +1450,7 @@ int check_for_unloaded_kernel_module(Options *op, Package *p)
  * be installed for a kernel other than the currently running one.
  */
 
-int find_precompiled_kernel_interface(Options *op, Package *p)
+PrecompiledInfo *find_precompiled_kernel_interface(Options *op, Package *p)
 {
     char *proc_version_string, *output_filename, *tmp;
     PrecompiledInfo *info = NULL;
@@ -955,7 +1459,7 @@ int find_precompiled_kernel_interface(Options *op, Package *p)
     
     if (op->no_precompiled_interface) {
         ui_log(op, "Not probing for precompiled kernel interfaces.");
-        return FALSE;
+        return NULL;
     }
     
     /* retrieve the proc version string for the running kernel */
@@ -1022,7 +1526,7 @@ int find_precompiled_kernel_interface(Options *op, Package *p)
                        "found at '%s'; this means that the installer will need "
                        "to compile a kernel interface for your kernel.",
                        op->precompiled_kernel_interfaces_url);
-            return FALSE;
+            return NULL;
         }
     }
 
@@ -1034,14 +1538,13 @@ int find_precompiled_kernel_interface(Options *op, Package *p)
                        "use this? (answering 'no' will require the "
                        "installer to compile the interface)",
                        info->description)) {
-            /* XXX free info */
+            free_precompiled(info);
             info = NULL;
         }
     }
 
     if (info) {
-        /* XXX free info */
-        return TRUE;
+        return info;
     }
 
  failed:
@@ -1052,7 +1555,7 @@ int find_precompiled_kernel_interface(Options *op, Package *p)
                    "compile a new kernel interface.");
     }
 
-    return FALSE;
+    return NULL;
     
 } /* find_precompiled_kernel_interface() */
 
@@ -1082,6 +1585,31 @@ char *get_kernel_name(Options *op)
         }
     }
 } /* get_kernel_name() */
+
+
+
+/*
+ * test_kernel_config_option() - test to see if the given option is defined
+ * in the target kernel's configuration.
+ */
+
+KernelConfigOptionStatus test_kernel_config_option(Options* op, Package *p,
+                                                   const char *option)
+{
+    if (op->kernel_source_path && op->kernel_output_path) {
+        int ret;
+        char *conftest_cmd;
+
+        conftest_cmd = nvstrcat("test_configuration_option ", option, NULL);
+        ret = run_conftest(op, p, conftest_cmd, NULL);
+        nvfree(conftest_cmd);
+
+        return ret ? KERNEL_CONFIG_OPTION_DEFINED :
+                     KERNEL_CONFIG_OPTION_NOT_DEFINED;
+    }
+
+    return KERNEL_CONFIG_OPTION_UNKNOWN;
+}
 
 
 
@@ -1434,10 +1962,11 @@ download_updated_kernel_interface(Options *op, Package *p,
             
             if (info && (info->crc != crc)) {
                 ui_error(op, "The embedded checksum of the downloaded file "
-                         "'%s' (%d) does not match the computed checksum ",
-                         "(%d); not using.", buf, info->crc, crc);
+                         "'%s' (%" PRIu32 ") does not match the computed "
+                         "checksum (%" PRIu32 "); not using.", buf, info->crc,
+                         crc);
                 unlink(dstfile);
-                /* XXX free info */
+                free_precompiled(info);
                 info = NULL;
             }
             
@@ -1474,9 +2003,9 @@ download_updated_kernel_interface(Options *op, Package *p,
 
 int check_cc_version(Options *op, Package *p)
 {
-    char *cmd, *CC, *result;
-    char *arch;
+    char *result;
     int ret;
+    Options dummyop;
 
     /* 
      * If we're building/installing for a different kernel, then we
@@ -1491,25 +2020,15 @@ int check_cc_version(Options *op, Package *p)
         return TRUE;
     }
 
-    arch = get_machine_arch(op);
-    if (!arch)
-        return FALSE;
+    /* Kernel source/output paths may not be set yet; we don't need them
+     * for this test, anyway. */
+    dummyop = *op;
+    dummyop.kernel_source_path = "DUMMY_SOURCE_PATH";
+    dummyop.kernel_output_path = "DUMMY_OUTPUT_PATH";
 
-    CC = getenv("CC");
-    if (!CC) CC = "cc";
-    
-    ui_log(op, "Performing CC version check with CC=\"%s\".", CC);
+    ret = run_conftest(&dummyop, p, "cc_version_check just_msg", &result);
 
-    cmd = nvstrcat("sh ", p->kernel_module_build_directory,
-                   "/conftest.sh ", CC, " ", CC, " ", arch, " ",
-                   "DUMMY_SOURCE DUMMY_OUTPUT ",
-                   "cc_version_check just_msg", NULL);
-
-    ret = run_command(op, cmd, &result, FALSE, 0, TRUE);
-
-    nvfree(cmd);
-
-    if (ret == 0) return TRUE;
+    if (ret) return TRUE;
 
     ret = ui_yes_no(op, TRUE, "The CC version check failed:\n\n%s\n\n"
                     "If you know what you are doing and want to "
@@ -1536,30 +2055,14 @@ int check_cc_version(Options *op, Package *p)
 
 static int fbdev_check(Options *op, Package *p)
 {
-    char *CC, *cmd, *result;
-    char *arch;
+    char *result;
     int ret;
-    
-    arch = get_machine_arch(op);
-    if (!arch)
-        return FALSE;
-
-    CC = getenv("CC");
-    if (!CC) CC = "cc";
     
     ui_log(op, "Performing rivafb check.");
     
-    cmd = nvstrcat("sh ", p->kernel_module_build_directory,
-                   "/conftest.sh ", CC, " ", CC, " ", arch, " ",
-                   op->kernel_source_path, " ",
-                   op->kernel_output_path, " ",
-                   "rivafb_sanity_check just_msg", NULL);
+    ret = run_conftest(op, p,"rivafb_sanity_check just_msg", &result);
     
-    ret = run_command(op, cmd, &result, FALSE, 0, TRUE);
-    
-    nvfree(cmd);
-    
-    if (ret != 0) {
+    if (!ret) {
         ui_error(op, "%s", result);
         nvfree(result);
 
@@ -1568,17 +2071,9 @@ static int fbdev_check(Options *op, Package *p)
 
     ui_log(op, "Performing nvidiafb check.");
     
-    cmd = nvstrcat("sh ", p->kernel_module_build_directory,
-                   "/conftest.sh ", CC, " ", CC, " ", arch, " ",
-                   op->kernel_source_path, " ",
-                   op->kernel_output_path, " ",
-                   "nvidiafb_sanity_check just_msg", NULL);
+    ret = run_conftest(op, p,"nvidiafb_sanity_check just_msg", &result);
     
-    ret = run_command(op, cmd, &result, FALSE, 0, TRUE);
-    
-    nvfree(cmd);
-
-    if (ret != 0) {
+    if (!ret) {
         ui_error(op, "%s", result);
         nvfree(result);
 
@@ -1598,30 +2093,14 @@ static int fbdev_check(Options *op, Package *p)
 
 static int xen_check(Options *op, Package *p)
 {
-    char *CC, *cmd, *result;
-    char *arch;
+    char *result;
     int ret;
-    
-    arch = get_machine_arch(op);
-    if (!arch)
-        return FALSE;
-
-    CC = getenv("CC");
-    if (!CC) CC = "cc";
     
     ui_log(op, "Performing Xen check.");
     
-    cmd = nvstrcat("sh ", p->kernel_module_build_directory,
-                   "/conftest.sh ", CC, " ", CC, " ", arch, " ",
-                   op->kernel_source_path, " ",
-                   op->kernel_output_path, " ",
-                   "xen_sanity_check just_msg", NULL);
+    ret = run_conftest(op, p,"xen_sanity_check just_msg", &result);
     
-    ret = run_command(op, cmd, &result, FALSE, 0, TRUE);
-    
-    nvfree(cmd);
-    
-    if (ret != 0) {
+    if (!ret) {
         ui_error(op, "%s", result);
         nvfree(result);
 
@@ -1662,7 +2141,8 @@ static PrecompiledInfo *scan_dir(Options *op, Package *p,
     while ((ent = readdir(dir)) != NULL) {
             
         if (((strcmp(ent->d_name, ".")) == 0) ||
-            ((strcmp(ent->d_name, "..")) == 0)) continue;
+            ((strcmp(ent->d_name, "..")) == 0) ||
+            strstr(ent->d_name, DETACHED_SIGNATURE_FILENAME)) continue;
             
         filename = nvstrcat(directory_name, "/", ent->d_name, NULL);
         

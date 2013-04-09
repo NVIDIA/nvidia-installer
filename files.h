@@ -61,5 +61,8 @@ void process_libGL_la_files(Options *op, Package *p);
 void process_dot_desktop_files(Options *op, Package *p);
 int set_security_context(Options *op, const char *filename);
 void get_default_prefixes_and_paths(Options *op);
+char *nv_strreplace(char *src, char *orig, char *replace);
+char *get_filename(Options *op, const char *def, const char *fmt, ...) NV_ATTRIBUTE_PRINTF(3, 4);
+int secure_delete(Options *op, const char *file);
 
 #endif /* __NVIDIA_INSTALLER_FILES_H__ */

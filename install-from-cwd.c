@@ -45,6 +45,12 @@
 #include "files.h"
 #include "misc.h"
 #include "sanity.h"
+#include "manifest.h"
+
+/* default names for generated signing keys */
+
+#define SECKEY_NAME "tmp.key"
+#define PUBKEY_NAME "tmp.der"
 
 /* local prototypes */
 
@@ -52,6 +58,7 @@
 static Package *parse_manifest(Options *op);
 static int install_kernel_module(Options *op,  Package *p);
 static void free_package(Package *p);
+static int assisted_module_signing(Options *op, Package *p);
 
 
 /*
@@ -140,9 +147,11 @@ int install_from_cwd(Options *op)
     if (!op->no_kernel_module) {
 
         /* Offer the DKMS option if DKMS exists and the kernel module sources 
-         * will be installed somewhere */
+         * will be installed somewhere. Don't offer DKMS as an option if module
+         * signing was requested. */
 
-        if (find_system_util("dkms") && !op->no_kernel_module_source) {
+        if (find_system_util("dkms") && !op->no_kernel_module_source &&
+            !(op->module_signing_secret_key && op->module_signing_public_key)) {
             op->dkms = ui_yes_no(op, op->dkms,
                                 "Would you like to register the kernel module "
                                 "sources with DKMS? This will allow DKMS to "
@@ -378,6 +387,8 @@ int install_from_cwd(Options *op)
 
 static int install_kernel_module(Options *op,  Package *p)
 {
+    PrecompiledInfo *precompiled_info;
+
     /* determine where to install the kernel module */
     
     if (!determine_kernel_module_installation_path(op)) return FALSE;
@@ -399,10 +410,10 @@ static int install_kernel_module(Options *op,  Package *p)
      * headers installed, so it's better to catch that earlier on.
      */
     
-    if (find_precompiled_kernel_interface(op, p)) {
+    if ((precompiled_info = find_precompiled_kernel_interface(op, p))) {
 
         /*
-         * we have a prebuild kernel interface, so now link the kernel
+         * we have a prebuilt kernel interface, so now link the kernel
          * interface with the binary portion of the kernel module.
          *
          * XXX if linking fails, maybe we should fall through and
@@ -411,7 +422,8 @@ static int install_kernel_module(Options *op,  Package *p)
          * abort.
          */
         
-        if (!link_kernel_module(op, p)) return FALSE;
+        if (!link_kernel_module(op, p, p->kernel_module_build_directory,
+                                precompiled_info)) return FALSE;
 
     } else {
         /*
@@ -440,6 +452,9 @@ static int install_kernel_module(Options *op,  Package *p)
         
         if (!build_kernel_module(op, p)) return FALSE;
     }
+
+    /* Optionally sign the kernel module */
+    if (!assisted_module_signing(op, p)) return FALSE;
 
     /*
      * if we got this far, we have a complete kernel module; test it
@@ -692,84 +707,15 @@ static Package *parse_manifest (Options *op)
             
             /* every file has a type field */
 
-            p->entries[n].flags = 0x0;
+            p->entries[n].type = FILE_TYPE_NONE;
 
             flag = read_next_word(c, &c);
             if (!flag) goto invalid_manifest_file;
 
-            if (strcmp(flag, "KERNEL_MODULE_SRC") == 0)
-                p->entries[n].flags |= FILE_TYPE_KERNEL_MODULE_SRC;
-            else if (strcmp(flag, "KERNEL_MODULE_CMD") == 0)
-                p->entries[n].flags |= FILE_TYPE_KERNEL_MODULE_CMD;
-            else if (strcmp(flag, "OPENGL_HEADER") == 0)
-                p->entries[n].flags |= FILE_TYPE_OPENGL_HEADER;
-            else if (strcmp(flag, "CUDA_ICD") == 0)
-                p->entries[n].flags |= FILE_TYPE_CUDA_ICD;
-            else if (strcmp(flag, "OPENGL_LIB") == 0)
-                p->entries[n].flags |= FILE_TYPE_OPENGL_LIB;
-            else if (strcmp(flag, "CUDA_LIB") == 0)
-                p->entries[n].flags |= FILE_TYPE_CUDA_LIB;
-            else if (strcmp(flag, "LIBGL_LA") == 0)
-                p->entries[n].flags |= FILE_TYPE_LIBGL_LA;
-            else if (strcmp(flag, "XLIB_STATIC_LIB") == 0)
-                p->entries[n].flags |= FILE_TYPE_XLIB_STATIC_LIB;
-            else if (strcmp(flag, "XLIB_SHARED_LIB") == 0)
-                p->entries[n].flags |= FILE_TYPE_XLIB_SHARED_LIB;
-            else if (strcmp(flag, "TLS_LIB") == 0)
-                p->entries[n].flags |= FILE_TYPE_TLS_LIB;
-            else if (strcmp(flag, "UTILITY_LIB") == 0)
-                p->entries[n].flags |= FILE_TYPE_UTILITY_LIB;
-            else if (strcmp(flag, "DOCUMENTATION") == 0)
-                p->entries[n].flags |= FILE_TYPE_DOCUMENTATION;
-            else if (strcmp(flag, "MANPAGE") == 0)
-                p->entries[n].flags |= FILE_TYPE_MANPAGE;
-            else if (strcmp(flag, "EXPLICIT_PATH") == 0)
-                p->entries[n].flags |= FILE_TYPE_EXPLICIT_PATH;
-            else if (strcmp(flag, "OPENGL_SYMLINK") == 0)
-                p->entries[n].flags |= FILE_TYPE_OPENGL_SYMLINK;
-            else if (strcmp(flag, "CUDA_SYMLINK") == 0)
-                p->entries[n].flags |= FILE_TYPE_CUDA_SYMLINK;
-            else if (strcmp(flag, "XLIB_SYMLINK") == 0)
-                p->entries[n].flags |= FILE_TYPE_XLIB_SYMLINK;
-            else if (strcmp(flag, "TLS_SYMLINK") == 0)
-                p->entries[n].flags |= FILE_TYPE_TLS_SYMLINK;
-            else if (strcmp(flag, "UTILITY_LIB_SYMLINK") == 0)
-                p->entries[n].flags |= FILE_TYPE_UTILITY_LIB_SYMLINK;
-            else if (strcmp(flag, "INSTALLER_BINARY") == 0)
-                p->entries[n].flags |= FILE_TYPE_INSTALLER_BINARY;
-            else if (strcmp(flag, "UTILITY_BINARY") == 0)
-                p->entries[n].flags |= FILE_TYPE_UTILITY_BINARY;
-            else if (strcmp(flag, "UTILITY_BIN_SYMLINK") == 0)
-                p->entries[n].flags |= FILE_TYPE_UTILITY_BIN_SYMLINK;
-            else if (strcmp(flag, "DOT_DESKTOP") == 0)
-                p->entries[n].flags |= FILE_TYPE_DOT_DESKTOP;
-            else if (strcmp(flag, "XMODULE_SHARED_LIB") == 0)
-                p->entries[n].flags |= FILE_TYPE_XMODULE_SHARED_LIB;
-            else if (strcmp(flag, "XMODULE_SYMLINK") == 0)
-                p->entries[n].flags |= FILE_TYPE_XMODULE_SYMLINK;
-            else if (strcmp(flag, "GLX_MODULE_SHARED_LIB") == 0)
-                p->entries[n].flags |= FILE_TYPE_GLX_MODULE_SHARED_LIB;
-            else if (strcmp(flag, "GLX_MODULE_SYMLINK") == 0)
-                p->entries[n].flags |= FILE_TYPE_GLX_MODULE_SYMLINK;
-            else if (strcmp(flag, "XMODULE_NEWSYM") == 0)
-                p->entries[n].flags |= FILE_TYPE_XMODULE_NEWSYM;
-            else if (strcmp(flag, "VDPAU_LIB") == 0)
-                p->entries[n].flags |= FILE_TYPE_VDPAU_LIB;
-            else if (strcmp(flag, "VDPAU_SYMLINK") == 0)
-                p->entries[n].flags |= FILE_TYPE_VDPAU_SYMLINK;
-            else if (strcmp(flag, "NVCUVID_LIB") == 0)
-                p->entries[n].flags |= FILE_TYPE_NVCUVID_LIB;
-            else if (strcmp(flag, "NVCUVID_LIB_SYMLINK") == 0)
-                p->entries[n].flags |= FILE_TYPE_NVCUVID_SYMLINK;
-            else if (strcmp(flag, "ENCODEAPI_LIB") == 0)
-                p->entries[n].flags |= FILE_TYPE_ENCODEAPI_LIB;
-            else if (strcmp(flag, "ENCODEAPI_LIB_SYMLINK") == 0)
-                p->entries[n].flags |= FILE_TYPE_ENCODEAPI_SYMLINK;
-            else if (strcmp(flag, "VGX_LIB") == 0)
-                p->entries[n].flags |= FILE_TYPE_VGX_LIB;
-            else if (strcmp(flag, "VGX_LIB_SYMLINK") == 0)
-                p->entries[n].flags |= FILE_TYPE_VGX_SYMLINK;
-            else {
+            p->entries[n].type = parse_manifest_file_type(flag,
+                                                          &p->entries[n].caps);
+
+            if (p->entries[n].type == FILE_TYPE_NONE) {
                 nvfree(flag);
                 goto invalid_manifest_file;
             }
@@ -778,14 +724,16 @@ static Package *parse_manifest (Options *op)
 
             /* some libs/symlinks have an arch field */
 
-            if (p->entries[n].flags & FILE_TYPE_HAVE_ARCH) {
+            p->entries[n].compat_arch = FILE_COMPAT_ARCH_NONE;
+
+            if (p->entries[n].caps.has_arch) {
                 flag = read_next_word(c, &c);
                 if (!flag) goto invalid_manifest_file;
 
                 if (strcmp(flag, "COMPAT32") == 0)
-                    p->entries[n].flags |= FILE_CLASS_COMPAT32;
+                    p->entries[n].compat_arch = FILE_COMPAT_ARCH_COMPAT32;
                 else if (strcmp(flag, "NATIVE") == 0)
-                    p->entries[n].flags |= FILE_CLASS_NATIVE;
+                    p->entries[n].compat_arch = FILE_COMPAT_ARCH_NATIVE;
                 else {
                     nvfree(flag);
                     goto invalid_manifest_file;
@@ -796,14 +744,16 @@ static Package *parse_manifest (Options *op)
 
             /* some libs/symlinks have a class field */
 
-            if (p->entries[n].flags & FILE_TYPE_HAVE_CLASS) {
+            p->entries[n].tls_class = FILE_TLS_CLASS_NONE;
+
+            if (p->entries[n].caps.has_tls_class) {
                 flag = read_next_word(c, &c);
                 if (!flag) goto invalid_manifest_file;
 
                 if (strcmp(flag, "CLASSIC") == 0)
-                    p->entries[n].flags |= FILE_CLASS_CLASSIC_TLS;
+                    p->entries[n].tls_class = FILE_TLS_CLASS_CLASSIC;
                 else if (strcmp(flag, "NEW") == 0)
-                    p->entries[n].flags |= FILE_CLASS_NEW_TLS;
+                    p->entries[n].tls_class = FILE_TLS_CLASS_NEW;
                 else {
                     nvfree(flag);
                     goto invalid_manifest_file;
@@ -814,16 +764,16 @@ static Package *parse_manifest (Options *op)
 
             /* libs and documentation have a path field */
 
-            if (p->entries[n].flags & FILE_TYPE_HAVE_PATH) {
+            if (p->entries[n].caps.has_path) {
                 p->entries[n].path = read_next_word(c, &c);
                 if (!p->entries[n].path) goto invalid_manifest_file;
             } else {
                 p->entries[n].path = NULL;
             }
             
-            /* symlinks and newsyms have a target */
+            /* symlinks have a target */
 
-            if (p->entries[n].flags & FILE_TYPE_HAVE_TARGET) {
+            if (p->entries[n].caps.is_symlink) {
                 p->entries[n].target = read_next_word(c, &c);
                 if (!p->entries[n].target) goto invalid_manifest_file;
             } else {
@@ -900,7 +850,8 @@ void add_package_entry(Package *p,
                        char *name,
                        char *target,
                        char *dst,
-                       uint64_t flags,
+                       PackageEntryFileType type,
+                       PackageEntryFileTlsClass tls_class,
                        mode_t mode)
 {
     int n;
@@ -911,13 +862,17 @@ void add_package_entry(Package *p,
     p->entries =
         (PackageEntry *) nvrealloc(p->entries, (n + 1) * sizeof(PackageEntry));
 
-    p->entries[n].file   = file;
-    p->entries[n].path   = path;
-    p->entries[n].name   = name;
-    p->entries[n].target = target;
-    p->entries[n].dst    = dst;
-    p->entries[n].flags  = flags;
-    p->entries[n].mode   = mode;
+    memset(&p->entries[n], 0, sizeof(PackageEntry));
+
+    p->entries[n].file      = file;
+    p->entries[n].path      = path;
+    p->entries[n].name      = name;
+    p->entries[n].target    = target;
+    p->entries[n].dst       = dst;
+    p->entries[n].type      = type;
+    p->entries[n].tls_class = tls_class;
+    p->entries[n].mode      = mode;
+    p->entries[n].caps      = get_file_type_capabilities(type);
 
     if (stat(p->entries[n].file, &stat_buf) != -1) {
         p->entries[n].inode = stat_buf.st_ino;
@@ -984,3 +939,261 @@ static void free_package(Package *p)
     nvfree((char *) p);
     
 } /* free_package() */
+
+
+
+/*
+ * assisted_module_signing() - Guide the user through the module signing process
+ */
+
+static int assisted_module_signing(Options *op, Package *p)
+{
+    int generate_keys = FALSE, do_sign = FALSE, secureboot;
+
+    secureboot = secure_boot_enabled();
+
+    if (secureboot < 0) {
+        ui_log(op, "Unable to determine if Secure Boot is enabled: %s",
+               strerror(-secureboot));
+    }
+
+    if (op->kernel_module_signed) {
+        /* The kernel module is already signed, e.g. from linking a precompiled
+         * interface + appending a detached signature */
+        return TRUE;
+    }
+
+    if (test_kernel_config_option(op, p, "CONFIG_DUMMY_OPTION") ==
+        KERNEL_CONFIG_OPTION_UNKNOWN) {
+        /* Unable to test kernel configuration options, possibly due to
+         * missing kernel headers. Since we might be installing on a
+         * system that doesn't have the headers, bail out. */
+        return TRUE;
+    }
+
+    if (op->module_signing_secret_key && op->module_signing_public_key) {
+        /* If the user supplied signing keys, sign the module, regardless of
+         * whether or not we actually need to. */
+        do_sign = TRUE;
+    } else if (test_kernel_config_option(op, p, "CONFIG_MODULE_SIG_FORCE") ==
+               KERNEL_CONFIG_OPTION_DEFINED) {
+        /* If CONFIG_MODULE_SIG_FORCE is set, we must sign. */
+        ui_message(op, "The target kernel has CONFIG_MODULE_SIG_FORCE set, "
+                   "which means that it requires that kernel modules be "
+                   "cryptographically signed by a trusted key.");
+        do_sign = TRUE;
+    } else if (secureboot != 1 && !op->expert) {
+        /* If this is a non-UEFI system, or a UEFI system with secure boot
+         * disabled, or we are unable to determine whether the system has
+         * secure boot enabled, bail out unless in expert mode. */
+        return TRUE;
+    } else if (test_kernel_config_option(op, p, "CONFIG_MODULE_SIG") ==
+               KERNEL_CONFIG_OPTION_DEFINED){
+        /* The kernel may or may not enforce module signatures; ask the user
+         * whether to sign the module. */
+
+        const char* sb_message = (secureboot == 1) ?
+                                     "This system also has UEFI Secure Boot "
+                                     "enabled; many distributions enforce "
+                                     "module signature verification on UEFI "
+                                     "systems when Secure Boot is enabled. " :
+                                     "";
+
+        do_sign = ui_yes_no(op, FALSE, "The target kernel has "
+                            "CONFIG_MODULE_SIG set, which means that it "
+                            "supports cryptographic signatures on kernel "
+                            "modules. On some systems, the kernel may "
+                            "refuse to load modules without a valid "
+                            "signature from a trusted key. %sWould you like "
+                            "to sign the NVIDIA kernel module?", sb_message);
+    }
+
+    if (!do_sign) {
+        /* The user explicitly opted out of module signing, or the kernel does
+         * not support module signatures, and no signing keys were provided;
+         * there is nothing for us to do here. */
+        return TRUE;
+    }
+
+    /* If we're missing either key, we need to get both from the user. */
+    if (!op->module_signing_secret_key || !op->module_signing_public_key) {
+        generate_keys = !ui_yes_no(op, FALSE, "Do you already have a key pair "
+                                   "which can be used to sign the NVIDIA "
+                                   "kernel module? Answer 'Yes' to use an "
+                                   "existing key pair, or 'No' to generate a "
+                                   "new key pair.");
+        if (generate_keys) {
+            char *cmdline;
+            int ret;
+
+            if (!op->utils[OPENSSL]) {
+                ui_error(op, "Unable to generate key pair: openssl not "
+                         "found!");
+                return FALSE;
+            }
+
+            log_printf(op, NULL, "Generating key pair for module signing...");
+
+            /* Generate a key pair using openssl.
+             * XXX We assume that sign-file requires the X.509 certificate
+             * in DER format; if this changes in the future we will need
+             * to be able to accommodate the actual required format. */
+
+            cmdline = nvstrcat("cd ", p->kernel_module_build_directory, "; ",
+                               op->utils[OPENSSL], " req -new -x509 -newkey "
+                               "rsa:2048 -days 7300 -nodes -sha256 -subj "
+                               "\"/CN=nvidia-installer generated signing key/\""
+                               " -keyout " SECKEY_NAME " -outform DER -out "
+                               PUBKEY_NAME, NULL);
+
+            ret = run_command(op, cmdline, NULL, TRUE, 8, TRUE);
+
+            nvfree(cmdline);
+
+            if (ret != 0) {
+                ui_error(op, "Failed to generate key pair!");
+                return FALSE;
+            }
+
+            log_printf(op, NULL, "Signing keys generated successfully.");
+
+            /* Set the signing keys to the newly generated pair. The paths
+             * are relative to p->kernel_module_build_directory, since we
+             * cd to it before signing the module. */
+            op->module_signing_secret_key = SECKEY_NAME;
+            op->module_signing_public_key = PUBKEY_NAME;
+        } else {
+            /* The user already has keys; prompt for their locations. */
+            op->module_signing_secret_key =
+                get_filename(op, op->module_signing_secret_key,
+                             "Please provide the path to the private key");
+            op->module_signing_public_key =
+                get_filename(op, op->module_signing_public_key,
+                             "Please provide the path to the public key");
+        }
+    }
+
+    /* Now that we have keys (user-supplied or installer-generated),
+     * sign the kernel module which we built earlier. */
+    if (!sign_kernel_module(op, p->kernel_module_build_directory, TRUE)) {
+        return FALSE;
+    }
+
+    if (generate_keys) {
+
+        /* If keys were generated, we should install the verification cert
+         * so that the user can make the kernel trust it, and either delete
+         * or install the private signing key. */
+        char *file, *name, *result = NULL, *fingerprint, *cmdline;
+        char short_fingerprint[9];
+        int ret, delete_secret_key;
+
+        delete_secret_key = ui_yes_no(op, TRUE, "The NVIDIA kernel module was "
+                                      "successfully signed with a newly "
+                                      "generated key pair. Would you like to "
+                                      "delete the private signing key?");
+
+        /* Get the fingerprint of the X.509 certificate. We already used 
+           openssl to create a keypair at this point, so we know we have it;
+           otherwise, we would have already returned by now. */
+        cmdline = nvstrcat(op->utils[OPENSSL], " x509 -noout -fingerprint ",
+                           "-inform DER -in ", p->kernel_module_build_directory,
+                           "/"PUBKEY_NAME, NULL);
+        ret = run_command(op, cmdline, &result, FALSE, 0, FALSE);
+        nvfree(cmdline);
+
+        /* Format: "SHA1 Fingerprint=00:00:00:00:..." */
+        fingerprint = strchr(result, '=') + 1;
+
+        if (ret != 0 || !fingerprint || strlen(fingerprint) < 40) {
+            char *sha1sum = find_system_util("sha1sum");
+
+            if (sha1sum) {
+                /* the openssl command failed, or we parsed its output
+                 * incorrectly; try to get a sha1sum of the DER certificate */
+                cmdline = nvstrcat(sha1sum, p->kernel_module_build_directory,
+                                   "/"PUBKEY_NAME, NULL);
+                ret = run_command(op, cmdline, &result, FALSE, 0, FALSE);
+                nvfree(sha1sum);
+                nvfree(cmdline);
+
+                fingerprint = result;
+            }
+
+            if (!sha1sum || ret != 0 || !fingerprint ||
+                strlen(fingerprint) < 40) {
+                /* Unable to determine fingerprint */
+                fingerprint = "UNKNOWN";
+            } else {
+                char *end = strchr(fingerprint, ' ');
+                *end = '\0';
+            }
+        } else {
+            /* Remove any ':' characters from fingerprint and truncate */
+            char *tmp = nv_strreplace(fingerprint, ":", "");
+            strncpy(short_fingerprint, tmp, sizeof(fingerprint));
+            nvfree(tmp);
+        }
+        short_fingerprint[sizeof(short_fingerprint) - 1] = '\0';
+
+        /* Add the public key to the package */
+        file = nvstrcat(p->kernel_module_build_directory, "/"PUBKEY_NAME, NULL);
+
+        /* XXX name will be leaked when freeing package */
+        name = nvstrcat("nvidia-modsign-crt-", short_fingerprint, ".der", NULL);
+
+        add_package_entry(p,
+                          file,
+                          NULL, /* path */
+                          name,
+                          NULL, /* target */
+                          NULL, /* dst */
+                          FILE_TYPE_MODULE_SIGNING_KEY,
+                          FILE_TLS_CLASS_NONE,
+                          0444);
+
+        ui_message(op, "An X.509 certificate containing the public signing "
+                    "key will be installed to %s/%s. The SHA1 fingerprint of "
+                    "this certificate is: %s.\n\nThis certificate must be "
+                    "added to a key database which is trusted by your kernel "
+                    "in order for the kernel to be able to verify the module "
+                    "signature.", op->module_signing_key_path, name,
+                    fingerprint);
+
+        nvfree(result);
+
+        /* Delete or install the private key */
+        file = nvstrcat(p->kernel_module_build_directory, "/"SECKEY_NAME, NULL);
+
+        if (delete_secret_key) {
+            secure_delete(op, file);
+        } else {
+
+            /* Add the private key to the package */
+
+            name = nvstrcat("nvidia-modsign-key-", short_fingerprint, ".key",
+                            NULL);
+
+            add_package_entry(p,
+                              file,
+                              NULL, /* path */
+                              name,
+                              NULL, /* target */
+                              NULL, /* dst */
+                              FILE_TYPE_MODULE_SIGNING_KEY,
+                              FILE_TLS_CLASS_NONE,
+                              0400);
+
+            ui_message(op, "The private signing key will be installed to %s/%s. "
+                       "After the public key is added to a key database which "
+                       "is trusted by your kernel, you may reuse the saved "
+                       "public/private key pair to sign additional kernel "
+                       "modules, without needing to re-enroll the public key. "
+                       "Please take some reasonable precautions to secure the "
+                       "private key: see the README for suggestions.",
+                       op->module_signing_key_path, name);
+        }
+    } /* if (generate_keys) */
+
+    return TRUE;
+} /* assisted_module_signing() */

@@ -48,6 +48,7 @@
 #include "misc.h"
 #include "crc.h"
 #include "nvLegacy.h"
+#include "manifest.h"
 
 static int check_symlink(Options*, const char*, const char*, const char*);
 static int check_file(Options*, const char*, const mode_t, const uint32);
@@ -146,7 +147,7 @@ int check_runlevel(Options *op)
 
     if (ret != 2) {
         ui_warn(op, "Skipping the runlevel check (unrecognized output from "
-                "the `runlevel` utility: '%d').", data);
+                "the `runlevel` utility: '%s').", data);
         nvfree(data);
         return TRUE;
     }
@@ -200,7 +201,7 @@ int adjust_cwd(Options *op, const char *program_name)
         path = (char *) nvalloc(len + 1);
         strncpy(path, program_name, len);
         path[len] = '\0';
-        if (op->expert) log_printf(op, TRUE, NULL, "chdir(\"%s\")", path);
+        if (op->expert) log_printf(op, NULL, "chdir(\"%s\")", path);
         if (chdir(path)) {
             fprintf(stderr, "Unable to chdir to %s (%s)",
                     path, strerror(errno));
@@ -509,7 +510,8 @@ int find_system_utils(Options *op)
         { "getenforce",     "selinux" },
         { "execstack",      "selinux" },
         { "pkg-config",     "pkg-config" },
-        { "X",              "xserver" }
+        { "X",              "xserver" },
+        { "openssl",        "openssl" }
     };
     
     int i, j;
@@ -857,7 +859,7 @@ int do_install(Options *op, Package *p, CommandList *c)
     
     if (!ret) return FALSE;
     
-    ui_log(op, "Driver file installation is complete.", p->description);
+    ui_log(op, "Driver file installation is complete.");
 
     return TRUE;
 
@@ -1051,7 +1053,7 @@ void should_install_opengl_headers(Options *op, Package *p)
      */
 
     for (i = 0; i < p->num_entries; i++) {
-        if (p->entries[i].flags & FILE_TYPE_OPENGL_HEADER) {
+        if (p->entries[i].type == FILE_TYPE_OPENGL_HEADER) {
             have_headers = TRUE;
             break;
         }
@@ -1099,7 +1101,7 @@ void should_install_compat32_files(Options *op, Package *p)
      */
 
     for (i = 0; i < p->num_entries; i++) {
-        if (p->entries[i].flags & FILE_CLASS_COMPAT32) {
+        if (p->entries[i].compat_arch == FILE_COMPAT_ARCH_COMPAT32) {
             have_compat32_files = TRUE;
             break;
         }
@@ -1133,9 +1135,9 @@ void should_install_compat32_files(Options *op, Package *p)
     
     if (!install_compat32_files) {
         for (i = 0; i < p->num_entries; i++) {
-            if (p->entries[i].flags & FILE_CLASS_COMPAT32) {
+            if (p->entries[i].compat_arch == FILE_COMPAT_ARCH_COMPAT32) {
                 /* invalidate file */
-                p->entries[i].flags &= ~FILE_TYPE_MASK;
+                p->entries[i].type = FILE_TYPE_NONE;
                 p->entries[i].dst = NULL;
             }
         }
@@ -1154,26 +1156,28 @@ void check_installed_files_from_package(Options *op, Package *p)
 {
     int i, ret = TRUE;
     float percent;
-    uint64_t installable_files;
+    PackageEntryFileTypeList installable_files;
 
     ui_status_begin(op, "Running post-install sanity check:", "Checking");
 
-    installable_files = get_installable_file_mask(op);
-    
+    get_installable_file_type_list(op, &installable_files);
+
     for (i = 0; i < p->num_entries; i++) {
         
         percent = (float) i / (float) p->num_entries;
         ui_status_update(op, percent, p->entries[i].dst);
         
-        if (p->entries[i].flags & FILE_TYPE_SYMLINK) {
+        if (p->entries[i].caps.is_symlink &&
             /* Don't bother checking FILE_TYPE_NEWSYMs because we may not have
              * installed them. */
+            p->entries[i].type != FILE_TYPE_XMODULE_NEWSYM) {
+
             if (!check_symlink(op, p->entries[i].target,
                                p->entries[i].dst,
                                p->description)) {
                 ret = FALSE;
             }
-        } else if (p->entries[i].flags & installable_files) {
+        } else if (installable_files.types[p->entries[i].type]) {
             if (!check_file(op, p->entries[i].dst, p->entries[i].mode, 0)) {
                 ret = FALSE;
             }
@@ -1241,6 +1245,46 @@ static int check_symlink(Options *op, const char *target, const char *link,
 
 
 /*
+ * unprelink() - attempt to run `prelink -u` on a file to restore it to
+ * its pre-prelinked state.
+ */
+int unprelink(Options *op, const char *filename)
+{
+    char *cmd;
+    int ret = ENOENT;
+
+    cmd = find_system_util("prelink");
+    if (cmd) {
+        char *cmdline;
+        cmdline = nvstrcat(cmd, " -u ", filename, NULL);
+        ret = run_command(op, cmdline, NULL, FALSE, 0, TRUE);
+        nvfree(cmd);
+        nvfree(cmdline);
+    }
+    return ret;
+} /* unprelink() */
+
+
+
+/*
+ * verify_crc() - Compute the CRC of a file and compare it against an
+ * expected value. Returns TRUE if the values match, FALSE otherwise.
+ * 
+ */
+int verify_crc(Options *op, const char *filename, unsigned int crc,
+                      unsigned int *actual_crc)
+{
+    /* only check the crc if we were handed a non-emtpy crc */
+    if (crc == 0) {
+        return TRUE;
+    }
+    *actual_crc = compute_crc(op, filename);
+    return crc == *actual_crc;
+} /* verify_crc() */
+
+
+
+/*
  * check_file() - check that the specified installed file exists, has
  * the correct permissions, and has the correct crc.
  *
@@ -1274,13 +1318,27 @@ static int check_file(Options *op, const char *filename,
         return FALSE;
     }
 
-    /* only check the crc if we were handed a non-emtpy crc */
 
-    if (crc != 0) {
-        actual_crc = compute_crc(op, filename);
-        if (crc != actual_crc) {
+    if (!verify_crc(op, filename, crc, &actual_crc)) {
+        int ret;
+
+        ui_expert(op, "The installed file '%s' has a different checksum (%ul) "
+                  "than when it was installed (%ul). This may be due to "
+                  "prelinking; attemping `prelink -u %s` to restore the file.",
+                  filename, actual_crc, crc, filename);
+
+        ret = unprelink(op, filename);
+        if (ret != 0) {
+            ui_warn(op, "The installed file '%s' seems to have changed, but "
+                    "`prelink -u` failed; unable to restore '%s' to an "
+                    "un-prelinked state.", filename, filename);
+            return FALSE;
+        }
+
+        if (!verify_crc(op, filename, crc, &actual_crc)) {
             ui_warn(op, "The installed file '%s' has a different checksum "
-                    "(%ul) than when it was installed (%ul).",
+                    "(%ul) after running `prelink -u` than when it was "
+                    "installed (%ul).",
                     filename, actual_crc, crc);
             return FALSE;
         }
@@ -1289,23 +1347,6 @@ static int check_file(Options *op, const char *filename,
     return TRUE;
     
 } /* check_file() */
-
-
-
-/*
- * get_installable_file_mask() - return the mask of what file types
- * should be considered installable.
- */
-
-uint64_t get_installable_file_mask(Options *op)
-{
-    uint64_t installable_files = FILE_TYPE_INSTALLABLE_FILE;
-    if (!op->opengl_headers) installable_files &= ~FILE_TYPE_OPENGL_HEADER;
-    if (op->no_kernel_module_source)
-        installable_files &= ~FILE_TYPE_KERNEL_MODULE_SRC;
-    return installable_files;
-
-} /* get_installable_file_mask() */
 
 
 
@@ -1655,25 +1696,27 @@ static int rtld_test_internal(Options *op, Package *p,
     /* perform the test(s) */
 
     for (i = 0; i < p->num_entries; i++) {
-        if (!(p->entries[i].flags & FILE_TYPE_RTLD_CHECKED))
+        if ((p->entries[i].type != FILE_TYPE_OPENGL_LIB) &&
+            (p->entries[i].type != FILE_TYPE_TLS_LIB)) {
             continue;
-        else if ((which_tls & TLS_LIB_TYPE_FORCED) &&
-                 (p->entries[i].flags & FILE_TYPE_TLS_LIB))
+        } else if ((which_tls & TLS_LIB_TYPE_FORCED) &&
+                   (p->entries[i].type == FILE_TYPE_TLS_LIB)) {
             continue;
 #if defined(NV_X86_64)
-        else if ((p->entries[i].flags & FILE_CLASS_NATIVE)
-                 && compat_32_libs)
+        } else if ((p->entries[i].compat_arch == FILE_COMPAT_ARCH_NATIVE)
+                   && compat_32_libs) {
             continue;
-        else if ((p->entries[i].flags & FILE_CLASS_COMPAT32)
-                 && !compat_32_libs)
+        } else if ((p->entries[i].compat_arch == FILE_COMPAT_ARCH_COMPAT32)
+                   && !compat_32_libs) {
             continue;
 #endif /* NV_X86_64 */
-        else if ((which_tls == TLS_LIB_NEW_TLS) &&
-                 (p->entries[i].flags & FILE_CLASS_CLASSIC_TLS))
+        } else if ((which_tls == TLS_LIB_NEW_TLS) &&
+                   (p->entries[i].tls_class == FILE_TLS_CLASS_CLASSIC)) {
             continue;
-        else if ((which_tls == TLS_LIB_CLASSIC_TLS) &&
-                 (p->entries[i].flags & FILE_CLASS_NEW_TLS))
+        } else if ((which_tls == TLS_LIB_CLASSIC_TLS) &&
+                   (p->entries[i].tls_class == FILE_TLS_CLASS_NEW)) {
             continue;
+        }
 
         name = nvstrdup(p->entries[i].name);
         if (!name) continue;
@@ -1830,6 +1873,7 @@ Distribution get_distribution(Options *op)
     if (access("/etc/SuSE-release", F_OK) == 0) return SUSE;
     if (access("/etc/UnitedLinux-release", F_OK) == 0) return UNITED_LINUX;
     if (access("/etc/gentoo-release", F_OK) == 0) return GENTOO;
+    if (access("/etc/arch-release", F_OK) == 0) return ARCH;
 
     /*
      * Attempt to determine if the host system is 'Ubuntu Linux'
@@ -2710,4 +2754,63 @@ int dkms_install_module(Options *op, const char *version, const char *kernel)
 int dkms_remove_module(Options *op, const char *version)
 {
     return run_dkms(op, DKMS_REMOVE, version, NULL, NULL);
+}
+
+/*
+ * Test the last bit of the given file. Return 1 if the bit is set, 0 if it is
+ * not set, and < 0 on error.
+ *
+ */
+static int test_last_bit(const char *file) {
+    char buf;
+    int ret, data_read = FALSE;
+    FILE *fp = fopen(file, "r");
+
+    if (!fp) {
+        return -errno;
+    }
+
+    /* XXX Using fseek(3) could make this more efficient for larger files, but
+     * trying to read after an fseek(stream, -1, SEEK_END) call on a UEFI
+     * variable file in sysfs hits a premature EOF. */
+
+    while(fread(&buf, 1, 1, fp)) {
+        data_read = TRUE;
+    }
+
+    if (ferror(fp)) {
+        ret = -ferror(fp);
+    } else if (data_read) {
+        ret = buf & 1;
+    } else {
+        ret = -EIO;
+    }
+
+    fclose(fp);
+    return ret;
+}
+
+static const char* secure_boot_files[] = {
+    "/sys/firmware/efi/vars/SecureBoot-8be4df61-93ca-11d2-aa0d-00e098032b8c/data",
+    "/sys/firmware/efi/efivars/SecureBoot-8be4df61-93ca-11d2-aa0d-00e098032b8c",
+};
+
+/*
+ * secure_boot_enabled() - Check the known paths where secure boot status is
+ * exposed. If secure boot is enabled, return 1. If secure boot is disabled,
+ * return 0. On failure to detect whether secure boot is enabled, return < 0.
+ */
+int secure_boot_enabled(void) {
+    int i, ret = -ENOENT;
+
+    for (i = 0; i < ARRAY_LEN(secure_boot_files); i++) {
+        if (access(secure_boot_files[i], R_OK) == 0) {
+            ret = test_last_bit(secure_boot_files[i]);
+            if (ret >= 0) {
+                break;
+            }
+        }
+    }
+
+    return ret;
 }

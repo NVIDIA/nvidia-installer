@@ -88,25 +88,25 @@ void log_init(Options *op, int argc, char * const argv[])
         return;
     }
     
-    log_printf(op, TRUE, NULL, "%s log file '%s'",
+    log_printf(op, NULL, "%s log file '%s'",
                PROGRAM_NAME, op->log_file_name);
 
     now = time(NULL);
-    log_printf(op, TRUE, NULL, "creation time: %s", ctime(&now));
-    log_printf(op, TRUE, NULL, "installer version: %s",
+    log_printf(op, NULL, "creation time: %s", ctime(&now));
+    log_printf(op, NULL, "installer version: %s",
                NVIDIA_INSTALLER_VERSION);
-    log_printf(op, TRUE, NULL, "");
+    log_printf(op, NULL, "");
 
     path = getenv("PATH");
-    log_printf(op, TRUE, NULL, "PATH: %s", STRSTR(path));
-    log_printf(op, TRUE, NULL, "");
+    log_printf(op, NULL, "PATH: %s", STRSTR(path));
+    log_printf(op, NULL, "");
 
-    log_printf(op, TRUE, NULL, "nvidia-installer command line:");
+    log_printf(op, NULL, "nvidia-installer command line:");
     for (i = 0; i < argc; i++) {
-        log_printf(op, TRUE, "    ", "%s", argv[i]);
+        log_printf(op, "    ", "%s", argv[i]);
     }
 
-    log_printf(op, TRUE, NULL, "");
+    log_printf(op, NULL, "");
     
 } /* log_init() */
 
@@ -118,8 +118,7 @@ void log_init(Options *op, int argc, char * const argv[])
  * option is not set, then nothing is done here.
  */
 
-void log_printf(Options *op, const int wb,
-                const char *prefix, const char *fmt, ...)
+void log_printf(Options *op, const char *prefix, const char *fmt, ...)
 {
     char *buf;
     int append_newline = TRUE;
