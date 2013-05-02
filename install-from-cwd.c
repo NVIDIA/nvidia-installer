@@ -1023,13 +1023,68 @@ static int assisted_module_signing(Options *op, Package *p)
                                    "existing key pair, or 'No' to generate a "
                                    "new key pair.");
         if (generate_keys) {
-            char *cmdline;
+            char *cmdline, *x509_hash;
             int ret;
 
             if (!op->utils[OPENSSL]) {
                 ui_error(op, "Unable to generate key pair: openssl not "
                          "found!");
                 return FALSE;
+            }
+
+            /* Determine what hashing algorithm to use for the generated X.509
+             * certificate. XXX The default is to use the same hash that is
+             * used for signing modules; the two hashes are actually orthognal
+             * to each other, but by choosing the module signing hash we are
+             * guaranteed that the chosen hash will be built into the kernel.
+             */
+            if (op->module_signing_x509_hash) {
+                x509_hash = nvstrdup(op->module_signing_x509_hash);
+            } else {
+                char *guess, *guess_trimmed, *warn = NULL;
+
+                char *no_guess = "Unable to guess the module signing hash.";
+                char *common_warn = "The module signing certificate generated "
+                                    "by nvidia-installer will be signed with "
+                                    "sha256 as a fallback. If the resulting "
+                                    "certificate fails to import into your "
+                                    "kernel's trusted keyring, please run the "
+                                    "installer again, and either use a pre-"
+                                    "generated key pair, or set the "
+                                    "--module-signing-x509-hash option if you "
+                                    "plan to generate a new key pair with "
+                                    "nvidia-installer.";
+
+                guess = guess_module_signing_hash(op, p);
+
+                if (guess == NULL) {
+                    warn = no_guess;
+                    goto guess_fail;
+                }
+
+                guess_trimmed = nv_trim_space(guess);
+                guess_trimmed = nv_trim_char_strict(guess_trimmed, '"');
+
+                if (guess_trimmed) {
+                    if (strlen(guess_trimmed) == 0) {
+                        warn = no_guess;
+                        goto guess_fail;
+                    }
+
+                    x509_hash = nvstrdup(guess_trimmed);
+                } else {
+                    warn = "Error while parsing the detected module signing "
+                           "hash.";
+                    goto guess_fail;
+                }
+
+guess_fail:
+                nvfree(guess);
+
+                if (warn) {
+                    ui_warn(op, "%s %s", warn, common_warn);
+                    x509_hash = nvstrdup("sha256");
+                }
             }
 
             log_printf(op, NULL, "Generating key pair for module signing...");
@@ -1044,7 +1099,8 @@ static int assisted_module_signing(Options *op, Package *p)
                                "rsa:2048 -days 7300 -nodes -sha256 -subj "
                                "\"/CN=nvidia-installer generated signing key/\""
                                " -keyout " SECKEY_NAME " -outform DER -out "
-                               PUBKEY_NAME, NULL);
+                               PUBKEY_NAME, " -", x509_hash, NULL);
+            nvfree(x509_hash);
 
             ret = run_command(op, cmdline, NULL, TRUE, 8, TRUE);
 

@@ -202,6 +202,7 @@ typedef struct __options {
     char *module_signing_script;
     char *module_signing_key_path;
     char *module_signing_hash;
+    char *module_signing_x509_hash;
 
     int kernel_module_signed;
 

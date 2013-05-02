@@ -402,6 +402,9 @@ static void parse_commandline(int argc, char *argv[], Options *op)
         case MODULE_SIGNING_HASH_OPTION:
             op->module_signing_hash = strval;
             break;
+        case MODULE_SIGNING_X509_HASH_OPTION:
+            op->module_signing_x509_hash = strval;
+            break;
         default:
             goto fail;
         }

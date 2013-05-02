@@ -1176,31 +1176,55 @@ int test_kernel_module(Options *op, Package *p)
     nvfree(module_path);
 
     if (ret != 0) {
-        int ignore_error;
+        int ignore_error = FALSE, secureboot, module_sig_force, enokey;
+        const char *probable_reason, *signature_related;
 
-        /* Handle cases where we might want to allow the kernel module to be
-         * installed, even though the test load failed. */
-        switch (-ret) {
-        case ENOKEY:
+        enokey = (-ret == ENOKEY);
+        secureboot = (secure_boot_enabled() == 1);
+        module_sig_force =
+            (test_kernel_config_option(op, p, "CONFIG_MODULE_SIG_FORCE") ==
+            KERNEL_CONFIG_OPTION_DEFINED);
+
+        if (enokey) {
+            probable_reason = ",";
+            signature_related = "";
+        } else if (module_sig_force) {
+            probable_reason = ". CONFIG_MODULE_SIG_FORCE is set on the target "
+                              "kernel, so this is likely";
+        } else if (secureboot) {
+            probable_reason = ". Secure boot is enabled on this system, so "
+                              "this is likely";
+        } else {
+            probable_reason = ", possibly";
+        }
+
+        if (!enokey) {
+            signature_related = "if this module loading failure is due to the "
+                                "lack of a trusted signature, ";
+        }
+
+        if (enokey || secureboot || module_sig_force || op->expert) {
             if (op->kernel_module_signed) {
-                ignore_error = ui_yes_no(op, TRUE,
-                                         "The signed kernel module failed to "
-                                         "load, because the kernel does not "
-                                         "trust any key which is capable of "
-                                         "verifying the module signature. "
-                                         "Would you like to install the signed "
-                                         "kernel module anyway?\n\nNote that "
-                                         "you will not be able to load the "
-                                         "installed module until after a key "
-                                         "that can verify the module signature "
-                                         "is added to a key database that is "
-                                         "trusted by the kernel. This will "
-                                         "likely require rebooting your "
-                                         "computer.");
-            } else {
-                char *secureboot_message, *dkms_message;
 
-                secureboot_message = secure_boot_enabled() == 1 ?
+                ignore_error = ui_yes_no(op, TRUE,
+                                     "The signed kernel module failed to "
+                                     "load%s because the kernel does not "
+                                     "trust any key which is capable of "
+                                     "verifying the module signature. "
+                                     "Would you like to install the signed "
+                                     "kernel module anyway?\n\nNote that %s"
+                                     "you will not be able to load the "
+                                     "installed module until after a key "
+                                     "that can verify the module signature "
+                                     "is added to a key database that is "
+                                     "trusted by the kernel. This will "
+                                     "likely require rebooting your "
+                                     "computer.", probable_reason,
+                                     signature_related);
+            } else {
+                const char *secureboot_message, *dkms_message;
+
+                secureboot_message = secureboot == 1 ?
                                          "and sign the kernel module when "
                                          "prompted to do so." :
                                          "and set the --module-signing-secret-"
@@ -1214,17 +1238,12 @@ int test_kernel_module(Options *op, Package *p)
                                           "with DKMS, so please select the "
                                           "non-DKMS option when building the "
                                           "kernel module to be signed." : "";
-
-                ui_error(op, "The kernel module failed to load, because it "
+                ui_error(op, "The kernel module failed to load%s because it "
                          "was not signed by a key that is trusted by the "
                          "kernel. Please try installing the driver again, %s%s",
-                         secureboot_message, dkms_message);
+                         probable_reason, secureboot_message, dkms_message);
                 ignore_error = FALSE;
             }
-        break;
-
-        default:
-            ignore_error = FALSE;
         }
 
         if (ignore_error) {
@@ -1612,6 +1631,22 @@ KernelConfigOptionStatus test_kernel_config_option(Options* op, Package *p,
 }
 
 
+
+/*
+ * guess_module_signing_hash() - return the hash algorithm used for
+ * signing kernel modules, or NULL if it can't be determined.
+ */
+
+char *guess_module_signing_hash(Options *op, Package *p)
+{
+    char *ret;
+
+    if (run_conftest(op, p, "guess_module_signing_hash", &ret)) {
+        return ret;
+    }
+
+    return NULL;
+}
 
 /*
  ***************************************************************************

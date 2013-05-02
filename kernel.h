@@ -46,6 +46,7 @@ char *get_kernel_name                              (Options*);
 KernelConfigOptionStatus test_kernel_config_option (Options*, Package*,
                                                     const char*);
 int sign_kernel_module                             (Options*, const char*, int);
+char *guess_module_signing_hash                    (Options*, Package*);
 
 #ifndef ENOKEY
 #define	ENOKEY		126	/* Required key not available */
