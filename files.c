@@ -395,15 +395,7 @@ void select_tls_class(Options *op, Package *p)
         for (i = 0; i < p->num_entries; i++) {
             if ((p->entries[i].tls_class == FILE_TLS_CLASS_NEW) &&
                 (p->entries[i].compat_arch == FILE_COMPAT_ARCH_NATIVE)) {
-                /*
-                 * XXX don't try to free the destination string for
-                 * these invalidated TLS libraries; this prevents
-                 * a crash on some Slackware 10.0 installations that
-                 * I've been unable to reproduce/root cause.
-                 */
-                /* nvfree(p->entries[i].dst); */
-                p->entries[i].type = FILE_TYPE_NONE;
-                p->entries[i].dst = NULL;
+                invalidate_package_entry(&(p->entries[i]));
             }
         }
     } else {
@@ -440,15 +432,7 @@ void select_tls_class(Options *op, Package *p)
         for (i = 0; i < p->num_entries; i++) {
             if ((p->entries[i].tls_class == FILE_TLS_CLASS_NEW) &&
                 (p->entries[i].compat_arch == FILE_COMPAT_ARCH_COMPAT32)) {
-                /*
-                 * XXX don't try to free the destination string for
-                 * these invalidated TLS libraries; this prevents
-                 * a crash on some Slackware 10.0 installations that
-                 * I've been unable to reproduce/root cause.
-                 */
-                /* nvfree(p->entries[i].dst); */
-                p->entries[i].type = FILE_TYPE_NONE;
-                p->entries[i].dst = NULL;
+                invalidate_package_entry(&(p->entries[i]));
             }
         }
     } else {
@@ -1029,15 +1013,14 @@ void remove_non_kernel_module_files_from_package(Options *op, Package *p)
         if ((p->entries[i].type != FILE_TYPE_KERNEL_MODULE) &&
             (p->entries[i].type != FILE_TYPE_KERNEL_MODULE_CMD) &&
             (p->entries[i].type != FILE_TYPE_KERNEL_MODULE_SRC)) {
-            p->entries[i].type = FILE_TYPE_NONE;
+            invalidate_package_entry(&(p->entries[i]));
         }
     }
 }
 
 
 /*
- * Clear the file type for each package entry that is not type
- * FILE_TYPE_OPENGL_FILE.
+ * Clear the file type for each package entry that is an OpenGL File
  */
 void remove_opengl_files_from_package(Options *op, Package *p)
 {
@@ -1045,7 +1028,7 @@ void remove_opengl_files_from_package(Options *op, Package *p)
 
     for (i = 0; i < p->num_entries; i++) {
         if (p->entries[i].caps.is_opengl) {
-            p->entries[i].type = FILE_TYPE_NONE;
+            invalidate_package_entry(&(p->entries[i]));
         }
     }
 }
@@ -1286,6 +1269,38 @@ char *get_symlink_target(Options *op, const char *filename)
     return buf;
 
 } /* get_symlink_target() */
+
+
+
+/*
+ * get_resolved_symlink_target() - same as get_symlink_target, except that
+ * relative links get resolved to an absolute path.
+ */
+char * get_resolved_symlink_target(Options *op, const char *filename)
+{
+    char *target = get_symlink_target(op, filename);
+    if (target[0] != '/') {
+        /* target is relative; canonicalize */
+        char *filename_copy, *target_dir, *full_target_path;
+
+        /* dirname(3) may modify the string passed into it; make a copy */
+        filename_copy = nvstrdup(filename);
+        target_dir = dirname(filename_copy);
+
+        full_target_path = nvstrcat(target_dir, "/", target, NULL);
+
+        nvfree(filename_copy);
+        nvfree(target);
+
+        target = nvalloc(PATH_MAX);
+        target = realpath(full_target_path, target);
+
+        nvfree(full_target_path);
+    }
+
+    return target;
+
+} /* get_resolved_symlink_target() */
 
 
 
@@ -1935,8 +1950,7 @@ void process_libGL_la_files(Options *op, Package *p)
 
             /* invalidate the template file */
 
-            p->entries[i].type = FILE_TYPE_NONE;
-            p->entries[i].dst = NULL;
+            invalidate_package_entry(&(p->entries[i]));
 
             tmpfile = process_template_file(op, &p->entries[i], tokens,
                                             replacements);
@@ -2002,8 +2016,7 @@ void process_dot_desktop_files(Options *op, Package *p)
     
             /* invalidate the template file */
 
-            p->entries[i].type = FILE_TYPE_NONE;
-            p->entries[i].dst = NULL;
+            invalidate_package_entry(&(p->entries[i]));
 
             nvfree(replacements[1]);
 
@@ -2533,3 +2546,19 @@ int secure_delete(Options *op, const char *file)
         return FALSE;
     }
 } /* secure_delete() */
+
+
+/* invalidate_package_entry() - clear a package entry */
+
+void invalidate_package_entry(PackageEntry *entry)
+{
+    entry->type = FILE_TYPE_NONE;
+    /*
+     * XXX don't try to free the destination string for
+     * these invalidated package entries; this prevents
+     * a crash on some Slackware 10.0 installations that
+     * we've been unable to reproduce/root cause.
+     */
+    entry->dst = NULL;
+    memset(&(entry->caps), 0, sizeof(entry->caps));
+}

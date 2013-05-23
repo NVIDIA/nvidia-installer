@@ -627,36 +627,63 @@ int find_module_utils(Options *op)
 int check_proc_modprobe_path(Options *op)
 {
     FILE *fp;
-    char *buf = NULL;
+    char *proc_modprobe = NULL, *found_modprobe;
+    struct stat st;
+    int ret, success = FALSE;
+
+    found_modprobe = op->utils[MODPROBE];
 
     fp = fopen(PROC_MODPROBE_PATH_FILE, "r");
     if (fp) {
-        buf = fget_next_line(fp, NULL);
+        proc_modprobe = fget_next_line(fp, NULL);
         fclose(fp);
     }
 
-    if (buf && strcmp(buf, op->utils[MODPROBE])) {
-        if (access(buf, F_OK | X_OK) == 0) {
+    /* If either the modprobe utility reported at /proc/sys/kernel/modprobe or
+     * the one found by find_system_utils() is a symlink, resolve its target. */
+
+    ret = lstat(found_modprobe, &st);
+
+    if (ret == 0 && S_ISLNK(st.st_mode)) {
+        char *target = get_resolved_symlink_target(op, found_modprobe);
+        if (target && access(target, F_OK | X_OK) == 0) {
+            found_modprobe = target;
+        }
+    }
+
+    if (proc_modprobe) {
+        ret = lstat(proc_modprobe, &st);
+
+        if (ret == 0 && S_ISLNK(st.st_mode)) {
+            char *target = get_resolved_symlink_target(op, proc_modprobe);
+            if (target && access(target, F_OK | X_OK) == 0) {
+                nvfree(proc_modprobe);
+                proc_modprobe = target;
+            }
+        }
+    }
+
+    if (proc_modprobe && strcmp(proc_modprobe, found_modprobe)) {
+        if (access(proc_modprobe, F_OK | X_OK) == 0) {
             ui_warn(op, "The path to the `modprobe` utility reported by "
                     "'%s', `%s`, differs from the path determined by "
                     "`nvidia-installer`, `%s`.  Please verify that `%s` "
                     "works correctly and correct the path in '%s' if "
                     "it does not.",
-                    PROC_MODPROBE_PATH_FILE, buf, op->utils[MODPROBE],
-                    buf, PROC_MODPROBE_PATH_FILE);
-            return TRUE;
+                    PROC_MODPROBE_PATH_FILE, proc_modprobe, found_modprobe,
+                    proc_modprobe, PROC_MODPROBE_PATH_FILE);
+            success = TRUE;
         } else {
            ui_error(op, "The path to the `modprobe` utility reported by "
                     "'%s', `%s`, differs from the path determined by "
                     "`nvidia-installer`, `%s`, and does not appear to "
                     "point to a valid `modprobe` binary.  Please correct "
                     "the path in '%s'.",
-                    PROC_MODPROBE_PATH_FILE, buf, op->utils[MODPROBE],
+                    PROC_MODPROBE_PATH_FILE, proc_modprobe, found_modprobe,
                     PROC_MODPROBE_PATH_FILE);
-           return FALSE;
         }
-    } else if (!buf && strcmp("/sbin/modprobe", op->utils[MODPROBE])) {
-        if (access(buf, F_OK | X_OK) == 0) {
+    } else if (!proc_modprobe && strcmp("/sbin/modprobe", found_modprobe)) {
+        if (access(proc_modprobe, F_OK | X_OK) == 0) {
             ui_warn(op, "The file '%s' is unavailable, the X server will "
                     "use `/sbin/modprobe` as the path to the `modprobe` "
                     "utility.  This path differs from the one determined "
@@ -664,9 +691,9 @@ int check_proc_modprobe_path(Options *op)
                     "`/sbin/modprobe` works correctly or mount the /proc "
                     "file system and verify that '%s' reports the "
                     "correct path.",
-                    PROC_MODPROBE_PATH_FILE, op->utils[MODPROBE],
+                    PROC_MODPROBE_PATH_FILE, found_modprobe,
                     PROC_MODPROBE_PATH_FILE);
-            return TRUE;
+            success = TRUE;
         } else {
            ui_error(op, "The file '%s' is unavailable, the X server will "
                     "use `/sbin/modprobe` as the path to the `modprobe` "
@@ -676,14 +703,19 @@ int check_proc_modprobe_path(Options *op)
                     "a symbolic link from `/sbin/modprobe` to `%s` or "
                     "mount the /proc file system and verify that '%s' "
                     "reports the correct path.",
-                    PROC_MODPROBE_PATH_FILE, op->utils[MODPROBE],
-                    op->utils[MODPROBE], PROC_MODPROBE_PATH_FILE);
-           return FALSE;
+                    PROC_MODPROBE_PATH_FILE, found_modprobe,
+                    found_modprobe, PROC_MODPROBE_PATH_FILE);
         }
+    } else if (strcmp(proc_modprobe, found_modprobe) == 0) {
+        success = TRUE;
     }
-    nvfree(buf);
 
-    return TRUE;
+    nvfree(proc_modprobe);
+    if (found_modprobe != op->utils[MODPROBE]) {
+        nvfree(found_modprobe);
+    }
+
+    return success;
 
 } /* check_proc_modprobe_path() */
 
@@ -1137,8 +1169,7 @@ void should_install_compat32_files(Options *op, Package *p)
         for (i = 0; i < p->num_entries; i++) {
             if (p->entries[i].compat_arch == FILE_COMPAT_ARCH_COMPAT32) {
                 /* invalidate file */
-                p->entries[i].type = FILE_TYPE_NONE;
-                p->entries[i].dst = NULL;
+                invalidate_package_entry(&(p->entries[i]));
             }
         }
     }

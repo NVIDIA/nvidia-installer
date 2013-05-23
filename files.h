@@ -43,6 +43,7 @@ int confirm_path(Options *op, const char *path);
 int mkdir_with_log(Options *op, const char *path, const mode_t mode, int log);
 int mkdir_recursive(Options *op, const char *path, const mode_t mode);
 char *get_symlink_target(Options *op, const char *filename);
+char *get_resolved_symlink_target(Options *op, const char *filename);
 int install_file(Options *op, const char *srcfile,
                  const char *dstfile, mode_t mode);
 int install_symlink(Options *op, const char *linkname, const char *dstfile);
@@ -64,5 +65,6 @@ void get_default_prefixes_and_paths(Options *op);
 char *nv_strreplace(char *src, char *orig, char *replace);
 char *get_filename(Options *op, const char *def, const char *fmt, ...) NV_ATTRIBUTE_PRINTF(3, 4);
 int secure_delete(Options *op, const char *file);
+void invalidate_package_entry(PackageEntry *entry);
 
 #endif /* __NVIDIA_INSTALLER_FILES_H__ */
