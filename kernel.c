@@ -177,11 +177,10 @@ static int run_conftest(Options *op, Package *p, const char *args, char **result
     CC = getenv("CC");
     if (!CC) CC = "cc";
 
-    cmd = nvstrcat("sh ", p->kernel_module_build_directory,
-                   "/conftest.sh ", CC, " ", CC, " ", arch, " ",
-                   op->kernel_source_path, " ",
-                   op->kernel_output_path, " ",
-                   args, NULL);
+    cmd = nvstrcat("sh \"", p->kernel_module_build_directory,
+                   "/conftest.sh\" \"", CC, "\" \"", CC, "\" \"", arch, "\" \"",
+                   op->kernel_source_path, "\" \"", op->kernel_output_path,
+                   "\" ", args, NULL);
 
     ret = run_command(op, cmd, result, FALSE, 0, TRUE);
     nvfree(cmd);

@@ -2640,7 +2640,8 @@ static char *nouveau_blacklist_file_is_present(Options *op)
  *
  * Returns FALSE if the nouveau kernel driver is in use (cause
  * installation to abort); returns TRUE if the nouveau driver is not
- * in use.
+ * in use and the user has not explicitly requested that the blacklist
+ * file be written.
  */
 
 int check_for_nouveau(Options *op)
@@ -2655,12 +2656,16 @@ int check_for_nouveau(Options *op)
 
     if (op->no_nouveau_check) return TRUE;
 
-    if (!nouveau_is_present()) return TRUE;
-
-    ui_error(op, "The Nouveau kernel driver is currently in use "
-             "by your system.  This driver is incompatible with the NVIDIA "
-             "driver, and must be disabled before proceeding.  "
-             NOUVEAU_POINTER_MESSAGE);
+    if (nouveau_is_present()) {
+        ui_error(op, "The Nouveau kernel driver is currently in use "
+                 "by your system.  This driver is incompatible with the NVIDIA "
+                 "driver, and must be disabled before proceeding.  "
+                 NOUVEAU_POINTER_MESSAGE);
+    } else if (!op->disable_nouveau) {
+        /* If novueau isn't loaded, we can return early, unless the user
+         * explicitly requested for the blacklist file to be written. */
+        return TRUE;
+    }
 
     blacklist_files = nouveau_blacklist_file_is_present(op);
 
@@ -2673,7 +2678,13 @@ int check_for_nouveau(Options *op)
                 "initial ramdisk or in your X configuration file.  "
                 NOUVEAU_POINTER_MESSAGE, blacklist_files);
         nvfree(blacklist_files);
-        return FALSE;
+        if (!op->disable_nouveau) {
+            /* If the user explicitly requested that the blacklist files be
+             * written, don't return early, so that the files can be written
+             * again, e.g. in case a file is present, but not in the right
+             * place for this particular system. */
+            return FALSE;
+        }
     }
 
     ret = ui_yes_no(op, op->disable_nouveau, "For some distributions, Nouveau "
@@ -2686,7 +2697,7 @@ int check_for_nouveau(Options *op)
 
         if (blacklist_files) {
             ui_message(op, "One or more modprobe configuration files to "
-                       "disable Nouveau, have been written.  "
+                       "disable Nouveau have been written.  "
                        "For some distributions, this may be sufficient to "
                        "disable Nouveau; other distributions may require "
                        "modification of the initial ramdisk.  Please reboot "
