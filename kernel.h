@@ -33,11 +33,12 @@ int determine_kernel_module_installation_path      (Options*);
 int determine_kernel_source_path                   (Options*, Package*);
 int determine_kernel_output_path                   (Options*);
 int link_kernel_module                             (Options*, Package*,
-                                                    const char*,
-                                                    const PrecompiledInfo *);
+                                                    const char *,
+                                                    const PrecompiledFileInfo *);
 int check_cc_version                               (Options*, Package*);
 int build_kernel_module                            (Options*, Package*);
-int build_kernel_interface                         (Options*, Package*);
+int build_kernel_interface                         (Options*, Package*,
+                                                    PrecompiledFileInfo **);
 int test_kernel_module                             (Options*, Package*);
 int load_kernel_module                             (Options*, Package*);
 int check_for_unloaded_kernel_module               (Options*, Package*);

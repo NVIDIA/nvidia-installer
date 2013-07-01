@@ -599,6 +599,7 @@ static ConflictingFileInfo __xfree86_non_opengl_libs[] = {
     { "libnvidia-ml.",       13, /* strlen("libnvidia-ml.") */       NULL            },
     { "libnvidia-encode.",   17, /* strlen("libnvidia-encode.") */   NULL            },
     { "libnvidia-vgx.",      14, /* strlen("libnvidia-vgx.") */      NULL            },
+    { "libnvidia-vgxcfg.",   17, /* strlen("libnvidia-vgxcfg.") */   NULL            },
     { NULL,                  0,                                      NULL            }
 };
 

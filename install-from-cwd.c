@@ -127,6 +127,14 @@ int install_from_cwd(Options *op)
 
     if (!check_for_existing_driver(op, p)) goto exit_install;
 
+    /*
+     * check to see if an alternate method of installation is already installed
+     * or is available, but not installed; ask the user if they really want to
+     * install anyway despite the presence/availability of an alternate install.
+     */
+
+    if (!check_for_alternate_install(op)) goto exit_install;
+
     /* run the distro preinstall hook */
 
     if (!run_distro_hook(op, "pre-install")) {
@@ -421,9 +429,15 @@ static int install_kernel_module(Options *op,  Package *p)
          * then there is something pretty seriously wrong... better to
          * abort.
          */
-        
-        if (!link_kernel_module(op, p, p->kernel_module_build_directory,
-                                precompiled_info)) return FALSE;
+
+        int i;
+
+        for (i = 0; i < precompiled_info->num_files; i++) {
+            if (!link_kernel_module(op, p, p->kernel_module_build_directory,
+                                    &(precompiled_info->files[i]))) {
+                return FALSE;
+            }
+        }
 
     } else {
         /*
@@ -480,6 +494,8 @@ static int install_kernel_module(Options *op,  Package *p)
 int add_this_kernel(Options *op)
 {
     Package *p;
+    PrecompiledFileInfo *fileInfos;
+    int num_files;
     
     /* parse the manifest */
 
@@ -489,13 +505,15 @@ int add_this_kernel(Options *op)
 
     if (!determine_kernel_source_path(op, p)) goto failed;
 
-    /* build the precompiled kernel interface */
+    /* build the precompiled files */
 
-    if (!build_kernel_interface(op, p)) goto failed;
+    num_files = build_kernel_interface(op, p, &fileInfos);
+    if (!num_files) goto failed;
     
-    /* pack the precompiled kernel interface */
+    /* pack the precompiled files */
 
-    if (!pack_precompiled_kernel_interface(op, p)) goto failed;
+    if (!pack_precompiled_files(op, p, num_files, fileInfos))
+        goto failed;
     
     free_package(p);
 
@@ -1096,7 +1114,7 @@ guess_fail:
 
             cmdline = nvstrcat("cd ", p->kernel_module_build_directory, "; ",
                                op->utils[OPENSSL], " req -new -x509 -newkey "
-                               "rsa:2048 -days 7300 -nodes -sha256 -subj "
+                               "rsa:2048 -days 7300 -nodes -subj "
                                "\"/CN=nvidia-installer generated signing key/\""
                                " -keyout " SECKEY_NAME " -outform DER -out "
                                PUBKEY_NAME, " -", x509_hash, NULL);

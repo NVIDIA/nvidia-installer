@@ -61,6 +61,7 @@ int check_for_modular_xorg(Options *op);
 int check_for_nvidia_graphics_devices(Options *op, Package *p);
 int run_nvidia_xconfig(Options *op, int restore);
 int run_distro_hook(Options *op, const char *hook);
+int check_for_alternate_install(Options *op);
 int check_for_nouveau(Options *op);
 int dkms_module_installed(Options *op, const char *version);
 int dkms_install_module(Options *op, const char *version, const char *kernel);

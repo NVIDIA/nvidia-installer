@@ -447,8 +447,7 @@ int read_text_file(const char *filename, char **buf)
     if (!fp)
         return FALSE;
 
-    while (((line = fget_next_line(fp, &eof))
-                != NULL) && !eof) {
+    while (((line = fget_next_line(fp, &eof)) != NULL)) {
         if ((index + strlen(line) + 1) > buflen) {
             buflen += 2 * strlen(line);
             tmpbuf = (char *)nvalloc(buflen);
@@ -466,6 +465,10 @@ int read_text_file(const char *filename, char **buf)
 
         index += sprintf(*buf + index, "%s\n", line);
         nvfree(line);
+
+        if (eof) {
+            break;
+        }
     }
 
     fclose(fp);
@@ -2391,6 +2394,9 @@ int run_nvidia_xconfig(Options *op, int restore)
 } /* run_nvidia_xconfig() */
 
 
+
+#define DISTRO_HOOK_DIRECTORY "/usr/lib/nvidia/"
+
 /*
  * run_distro_hook() - run a distribution-provided hook script
  */
@@ -2398,7 +2404,7 @@ int run_nvidia_xconfig(Options *op, int restore)
 int run_distro_hook(Options *op, const char *hook)
 {
     int ret, status, shouldrun = op->run_distro_scripts;
-    char *cmd = nvstrcat("/usr/lib/nvidia/", hook, NULL);
+    char *cmd = nvstrcat(DISTRO_HOOK_DIRECTORY, hook, NULL);
 
     if (op->kernel_module_only) {
         ui_expert(op,
@@ -2440,6 +2446,92 @@ int run_distro_hook(Options *op, const char *hook)
 done:
     nvfree(cmd);
     return ret;
+}
+
+
+/*
+ * prompt_for_user_cancel() - print a caller-supplied message and ask the
+ * user whether to cancel the installation. If the file at the caller-supplied
+ * path is readable, include any text from that file as additional detail for
+ * the message. Returns TRUE if the user decides to cancel the installation;
+ * returns FALSE if the user decides not to cancel.
+ */
+static int prompt_for_user_cancel(Options *op, const char *file,
+                                  int default_cancel, const char *text)
+{
+    int ret, file_read;
+    char *message = NULL;
+
+    file_read = read_text_file(file, &message);
+
+    if (!file_read || !message) {
+        message = nvstrdup("");
+    }
+
+    ret = ui_yes_no(op, default_cancel,
+                    "%s\n\n%s\nWould you like to cancel this installation?",
+                    text, message);
+    nvfree(message);
+
+    return ret;
+}
+
+#define INSTALL_PRESENT_FILE "alternate-install-present"
+#define INSTALL_AVAILABLE_FILE "alternate-install-available"
+
+/*
+ * check_for_alternate_install() - check to see if an alternate install is
+ * available or present. If present, recommend updating via the alternate
+ * mechanism or uninstalling first before proceeding with an nvidia-installer
+ * installation; if available, but not present, inform the user about it.
+ * Returns TRUE if no alternate installation is available or present, or if
+ * checking for alternate installs is skipped, or if the user decides not to
+ * cancel the installation. Returns FALSE if the user decides to cancel the
+ * installation.
+ */
+
+int check_for_alternate_install(Options *op)
+{
+    int shouldcheck = op->check_for_alternate_installs;
+    const char *alt_inst_present = DISTRO_HOOK_DIRECTORY INSTALL_PRESENT_FILE;
+    const char *alt_inst_avail = DISTRO_HOOK_DIRECTORY INSTALL_AVAILABLE_FILE;
+
+    if (op->expert) {
+        shouldcheck = ui_yes_no(op, shouldcheck,
+                                "Check for the availability or presence of "
+                                "alternate driver installs?");
+    }
+
+    if (!shouldcheck) {
+        return TRUE;
+    }
+
+    if (access(alt_inst_present, F_OK) == 0) {
+        const char *msg;
+
+        msg = "The NVIDIA driver appears to have been installed previously "
+              "using a different installer. To prevent potential conflicts, it "
+              "is recommended either to update the existing installation using "
+              "the same mechanism by which it was originally installed, or to "
+              "uninstall the existing installation before installing this "
+              "driver.";
+
+        return !prompt_for_user_cancel(op, alt_inst_present, TRUE, msg);
+    }
+
+    if (access(alt_inst_avail, F_OK) == 0) {
+        const char *msg;
+
+        msg = "An alternate method of installing the NVIDIA driver was "
+              "detected. (This is usually a package provided by your "
+              "distributor.) A driver installed via that method may integrate "
+              "better with your system than a driver installed by "
+              "nvidia-installer.";
+
+        return !prompt_for_user_cancel(op, alt_inst_avail, FALSE, msg);
+    }
+
+    return TRUE;
 }
 
 

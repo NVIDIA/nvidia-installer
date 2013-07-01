@@ -145,6 +145,7 @@ typedef struct __options {
     int no_opengl_files;
     int no_kernel_module_source;
     int dkms;
+    int check_for_alternate_installs;
 
     char *opengl_prefix;
     char *opengl_libdir;
@@ -385,10 +386,7 @@ typedef struct __package {
 
 #define PERM_MASK (S_IRWXU|S_IRWXG|S_IRWXO)
 
-#define PRECOMPILED_KERNEL_INTERFACE_FILENAME "precompiled-nv-linux.o"
-#define KERNEL_MODULE_CHECKSUM_FILENAME "nvidia-module-checksum"
-#define DETACHED_SIGNATURE_FILENAME "nvidia-detached-module-signature"
-
+#define PRECOMPILED_PACKAGE_FILENAME "nvidia-precompiled"
 
 /*
  * These are the default installation prefixes and the default

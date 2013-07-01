@@ -21,6 +21,7 @@
 #define __NVIDIA_INSTALLER_FILES_H__
 
 #include "nvidia-installer.h"
+#include "precompiled.h"
 
 int remove_directory(Options *op, const char *victim);
 int touch_directory(Options *op, const char *victim);
@@ -54,7 +55,8 @@ char *make_tmpdir(Options *op);
 int nvrename(Options *op, const char *src, const char *dst);
 int check_for_existing_rpms(Options *op);
 int copy_directory_contents(Options *op, const char *src, const char *dst);
-int pack_precompiled_kernel_interface(Options *op, Package *p);
+int pack_precompiled_files(Options *op, Package *p, int num_files,
+                           PrecompiledFileInfo *files);
 
 char *process_template_file(Options *op, PackageEntry *pe,
                             char **tokens, char **replacements);

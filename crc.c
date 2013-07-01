@@ -69,21 +69,35 @@ static uint32 crc_init(uint32 crc)
 
 
 
-uint32 compute_crc(Options *op, const char *filename)
+uint32 compute_crc_from_buffer(const uint8 *buf, int len)
 {
     uint32 cword = ~0;
     static uint32 *crctab = NULL;
-    uint8 *buf;
-    int i, fd;
-    struct stat stat_buf;
-    size_t len;
-    
+    int i;
+
     if (!crctab) {
         crctab = (uint32 *) nvalloc(sizeof(uint32) * 256);
         for (i=0; i < 256; i++) {
             crctab[i] = crc_init(i << 24);
         }
     }
+
+    for (i = 0; i < len; i++) {
+        cword = crctab[buf[i] ^ (cword >> 24)] ^ (cword << 8);
+    }
+
+    return cword;
+}
+
+
+
+uint32 compute_crc(Options *op, const char *filename)
+{
+    uint32 cword = ~0;
+    uint8 *buf;
+    int fd;
+    struct stat stat_buf;
+    size_t len;
 
     if ((fd = open(filename, O_RDONLY)) == -1) goto fail;
     if (fstat(fd, &stat_buf) == -1) goto fail;
@@ -94,9 +108,7 @@ uint32 compute_crc(Options *op, const char *filename)
     buf = mmap(0, len, PROT_READ, MAP_FILE | MAP_SHARED, fd, 0);
     if (buf == (void *) -1) goto fail;
 
-    for (i = 0; i < len; i++) {
-        cword = crctab[buf[i] ^ (cword >> 24)] ^ (cword << 8);
-    }
+    cword = compute_crc_from_buffer(buf, len);
 
     if (munmap(buf, len) == -1) goto fail;
     if (close(fd) == -1) goto fail;

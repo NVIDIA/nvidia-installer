@@ -21,6 +21,7 @@
 #ifndef __NVIDIA_INSTALLER_CRC_H__
 #define __NVIDIA_INSTALLER_CRC_H__
 
+uint32 compute_crc_from_buffer(const uint8 *buf, int len);
 uint32 compute_crc(Options *op, const char *filename);
 
 #endif /* __NVIDIA_INSTALLER_CRC_H__ */

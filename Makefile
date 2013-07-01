@@ -151,7 +151,8 @@ HOST_CFLAGS += $(common_cflags)
 LDFLAGS += -L.
 LIBS += -ldl
 
-MKPRECOMPILED_SRC = crc.c mkprecompiled.c
+MKPRECOMPILED_SRC = crc.c mkprecompiled.c $(COMMON_UTILS_DIR)/common-utils.c \
+                    precompiled.c $(COMMON_UTILS_DIR)/nvgetopt.c
 MKPRECOMPILED_OBJS = $(call BUILD_OBJECT_LIST,$(MKPRECOMPILED_SRC))
 
 MAKESELF_HELP_SCRIPT_SRC  = makeself-help-script.c

@@ -1592,16 +1592,19 @@ int copy_directory_contents(Options *op, const char *src, const char *dst)
 
 
 /*
- * pack_precompiled_kernel_interface() - 
+ * pack_precompiled_files() - Create a new precompiled files package for the
+ * given PrecompiledFileInfo array and save it to disk.
  */
 
-int pack_precompiled_kernel_interface(Options *op, Package *p)
+int pack_precompiled_files(Options *op, Package *p, int num_files,
+                           PrecompiledFileInfo *files)
 {
-    char *cmd, time_str[256], *proc_version_string, *suffix, *file, *newfile;
-    char *result, *descr;
+    char time_str[256], *proc_version_string;
+    char *outfile, *descr;
     time_t t;
     struct utsname buf;
     int ret;
+    PrecompiledInfo *info;
 
     ui_log(op, "Packaging precompiled kernel interface.");
 
@@ -1616,7 +1619,7 @@ int pack_precompiled_kernel_interface(Options *op, Package *p)
     
     /* read the proc version string */
 
-    proc_version_string = read_proc_version(op);
+    proc_version_string = read_proc_version(op, op->proc_mount_point);
 
     /* use the uname string as the description */
 
@@ -1625,74 +1628,36 @@ int pack_precompiled_kernel_interface(Options *op, Package *p)
                      buf.release, " ",
                      buf.version, " ",
                      buf.machine, NULL);
+
+    /* build the PrecompiledInfo struct */
+
+    info = nvalloc(sizeof(PrecompiledInfo));
+
+    outfile = nvstrcat(p->precompiled_kernel_interface_directory, "/",
+                       PRECOMPILED_PACKAGE_FILENAME, "-", p->version,
+                       ".", time_str, NULL);
+
+    info->version = nvstrdup(p->version);
+    info->proc_version_string = proc_version_string;
+    info->description = descr;
+    info->num_files = num_files;
+    info->files = files;
+
+    ret = precompiled_pack(info, outfile);
+
+    nvfree(outfile);
+    free_precompiled(info);
     
-    /* build the mkprecompiled command */
-
-    suffix = nvstrcat("-", p->version, ".", time_str, NULL);
-
-    cmd = nvstrcat("./mkprecompiled --interface=",
-                   p->kernel_module_build_directory, "/",
-                   PRECOMPILED_KERNEL_INTERFACE_FILENAME,
-                   " --output=", p->precompiled_kernel_interface_directory,
-                   "/", PRECOMPILED_KERNEL_INTERFACE_FILENAME, suffix,
-                   " --description=\"", descr, "\"",
-                   " --proc-version=\"", proc_version_string, "\"",
-                   " --version=", p->version, NULL);
-
-    /* execute the command */
-    
-    ret = run_command(op, cmd, &result, FALSE, 0, TRUE);
-    
-    nvfree(cmd);
-    nvfree(proc_version_string);
-    nvfree(descr);
-
-    /* pack the detached signature and checksum, if they exist */
-
-    file = nvstrcat(p->kernel_module_build_directory, "/",
-                    DETACHED_SIGNATURE_FILENAME, NULL);
-
-    if (access(file, R_OK) == 0) {
-        newfile = nvstrcat(p->precompiled_kernel_interface_directory, "/",
-                           DETACHED_SIGNATURE_FILENAME, suffix, NULL);
-        rename(file, newfile);
-        nvfree(newfile);
+    if (ret) {
+        return TRUE;
+    }
+    else {
+        /* XXX precompiled_pack() never fails */
+        ui_error(op, "Unable to package precompiled kernel interface.");
+        return FALSE;
     }
 
-    nvfree(file);
-
-    file = nvstrcat(p->kernel_module_build_directory, "/",
-                    KERNEL_MODULE_CHECKSUM_FILENAME, NULL);
-
-    if (access(file, R_OK) == 0) {
-        newfile = nvstrcat(p->precompiled_kernel_interface_directory, "/",
-                           KERNEL_MODULE_CHECKSUM_FILENAME, suffix, NULL);
-        rename(file, newfile);
-        nvfree(newfile);
-    }
-
-    nvfree(file);
-    
-    /* remove the old kernel interface file */
-
-    file = nvstrcat(p->kernel_module_build_directory, "/",
-                    PRECOMPILED_KERNEL_INTERFACE_FILENAME, NULL);
-    
-    unlink(file); /* XXX what to do if this fails? */
-
-    nvfree(file);
-    
-    if (ret != 0) {
-        ui_error(op, "Unable to package precompiled kernel interface: %s",
-                 result);
-    }
-
-    nvfree(result);
-
-    if (ret == 0) return TRUE;
-    else return FALSE;
-    
-} /* pack_kernel_interface() */
+}
 
 
 

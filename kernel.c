@@ -48,6 +48,7 @@
 
 static char *default_kernel_module_installation_path(Options *op);
 static char *default_kernel_source_path(Options *op);
+static char *find_module_substring(char *string, const char *substring);
 static int check_for_loaded_kernel_module(Options *op, const char *);
 static void check_for_warning_messages(Options *op);
 static int rmmod_kernel_module(Options *op, const char *);
@@ -55,10 +56,10 @@ static PrecompiledInfo *download_updated_kernel_interface(Options*, Package*,
                                                           const char*);
 static int fbdev_check(Options *op, Package *p);
 static int xen_check(Options *op, Package *p);
+static int preempt_rt_check(Options *op, Package *p);
 
 static PrecompiledInfo *scan_dir(Options *op, Package *p,
                                  const char *directory_name,
-                                 const char *output_filename,
                                  const char *proc_version_string);
 
 static char *build_distro_precompiled_kernel_interface_dir(Options *op);
@@ -170,6 +171,9 @@ static int run_conftest(Options *op, Package *p, const char *args, char **result
     char *CC, *cmd, *arch;
     int ret;
 
+    if (result)
+        *result = NULL;
+
     arch = get_machine_arch(op);
     if (!arch)
         return FALSE;
@@ -186,6 +190,7 @@ static int run_conftest(Options *op, Package *p, const char *args, char **result
     nvfree(cmd);
 
     return ret == 0;
+
 } /* run_conftest() */
 
 
@@ -418,7 +423,7 @@ int determine_kernel_output_path(Options *op)
  * the linked module and append the signature.
  */
 static int attach_signature(Options *op, Package *p,
-                            const PrecompiledInfo *info) {
+                            const PrecompiledFileInfo *fileInfo) {
     uint32 actual_crc;
     char *module_filename;
     int ret = FALSE, command_ret;
@@ -428,33 +433,24 @@ static int attach_signature(Options *op, Package *p,
     module_filename = nvstrcat(p->kernel_module_build_directory, "/",
                                p->kernel_module_filename, NULL);
 
-    command_ret = verify_crc(op, module_filename, info->linked_module_crc,
-                     &actual_crc);
+    command_ret = verify_crc(op, module_filename, fileInfo->linked_module_crc,
+                             &actual_crc);
 
     if (command_ret) {
-        FILE *module_file, *signature_file;
+        FILE *module_file;
 
         module_file = fopen(module_filename, "a+");
-        signature_file = fopen(info->detached_signature, "r");
 
-        if (module_file && signature_file) {
-            char buf;
-
-            while(fread(&buf, 1, 1, signature_file)) {
-                command_ret = fwrite(&buf, 1, 1, module_file);
-                if (command_ret != 1) {
-                    goto attach_done;
-                }
+        if (module_file && fileInfo->signature_size) {
+            command_ret = fwrite(fileInfo->signature, 1,
+                                 fileInfo->signature_size, module_file);
+            if (command_ret != fileInfo->signature_size) {
+                goto attach_done;
             }
 
-            ret = feof(signature_file) &&
-                         !ferror(signature_file) &&
-                         !ferror(module_file);
-
-            op->kernel_module_signed = ret;
+            op->kernel_module_signed = ret = !ferror(module_file);
 attach_done:
             fclose(module_file);
-            fclose(signature_file);
         } else {
             ret = ui_yes_no(op, FALSE,
                             "A detached signature was included with the "
@@ -475,7 +471,8 @@ attach_done:
                         "the linker on the system that built the precompiled "
                         "interface.\n\nThe detached signature will not be "
                         "added; would you still like to install the unsigned "
-                        "kernel module?", actual_crc, info->linked_module_crc);
+                        "kernel module?", actual_crc,
+                        fileInfo->linked_module_crc);
     }
 
     if (ret) {
@@ -504,18 +501,29 @@ attach_done:
  */
 
 int link_kernel_module(Options *op, Package *p, const char *build_directory,
-                       const PrecompiledInfo *info)
+                       const PrecompiledFileInfo *fileInfo)
 {
     char *cmd, *result;
     int ret;
-    
+    uint32 attrmask;
+
+    if (fileInfo->type != PRECOMPILED_FILE_TYPE_INTERFACE) {
+        ui_error(op, "The file does not appear to be a valid precompiled "
+                 "kernel interface.");
+        return FALSE;
+    }
+
+    ret = precompiled_file_unpack(op, fileInfo, build_directory);
+    if (!ret) {
+        ui_error(op, "Failed to unpack the precompiled interface.");
+        return FALSE;
+    }
+
     p->kernel_module_filename = guess_kernel_module_filename(op);
 
-    cmd = nvstrcat("cd ", build_directory, "; ", op->utils[LD],
-                   " ", LD_OPTIONS,
-                   " -o ", p->kernel_module_filename,
-                   " ", PRECOMPILED_KERNEL_INTERFACE_FILENAME,
-                   " nv-kernel.o", NULL);
+    cmd = nvstrcat("cd ", build_directory, "; ", op->utils[LD], " ",
+                   LD_OPTIONS, " -o ", fileInfo->linked_module_name, " ",
+                   fileInfo->name, " ", fileInfo->core_object_name, NULL);
     
     ret = run_command(op, cmd, &result, TRUE, 0, TRUE);
     
@@ -528,8 +536,11 @@ int link_kernel_module(Options *op, Package *p, const char *build_directory,
 
     ui_log(op, "Kernel module linked successfully.");
 
-    if (info && info->detached_signature) {
-        return attach_signature(op, p, info);
+    attrmask = PRECOMPILED_ATTR(DETACHED_SIGNATURE) |
+               PRECOMPILED_ATTR(LINKED_MODULE_CRC);
+
+    if ((fileInfo->attributes & attrmask) == attrmask) {
+        return attach_signature(op, p, fileInfo);
     }
 
     return TRUE;
@@ -562,13 +573,15 @@ int build_kernel_module(Options *op, Package *p)
     ret = run_conftest(op, p, "select_makefile just_msg", &result);
 
     if (!ret) {
-        ui_error(op, "%s", result); /* display conftest.sh's error message */
+        if (result)
+            ui_error(op, "%s", result); /* display conftest.sh's error message */
         nvfree(result);
         return FALSE;
     }
 
     if (!fbdev_check(op, p)) return FALSE;
     if (!xen_check(op, p)) return FALSE;
+    if (!preempt_rt_check(op, p)) return FALSE;
 
     cmd = nvstrcat("cd ", p->kernel_module_build_directory,
                    "; make print-module-filename",
@@ -687,67 +700,22 @@ int sign_kernel_module(Options *op, const char *build_directory, int status) {
 
 
 /*
- * byte_tail() - write to outfile from infile, starting at the specified byte
- * offset, and going until the end of infile. This is needed because `tail -c`
- * is unreliable in some implementations.
- */
-static int byte_tail(const char *infile, const char *outfile, int start)
-{
-    FILE *in = NULL, *out = NULL;
-    int success = FALSE, ret;
-    char buf;
-
-    in = fopen(infile, "r");
-    out = fopen(outfile, "w");
-
-    if (!in || !out) {
-        goto done;
-    }
-
-    ret = fseek(in, start, SEEK_SET);
-    if (ret != 0) {
-        goto done;
-    }
-
-    while(fread(&buf, 1, 1, in)) {
-        ret = fwrite(&buf, 1, 1, out);
-        if (ret != 1) {
-            goto done;
-        }
-    }
-
-    success = feof(in) && !ferror(in) && !ferror(out);
-
-done:
-    fclose(in);
-    fclose(out);
-    return success;
-}
-
-
-
-/*
- * create_detached_signature() - Link the precompiled interface with nv-kernel.o,
- * sign the resulting linked nvidia.ko, and split the signature off into a separate
- * file. Copy a checksum and detached signature for the linked module to the kernel
- * module build directory on success.
+ * create_detached_signature() - Link a precompiled interface into a module,
+ * sign the resulting linked module, and store a CRC for the linked, unsigned
+ * module and the detached signature in the provided PrecompiledFileInfo record.
  */
 static int create_detached_signature(Options *op, Package *p,
-                                 const char *build_dir)
+                                     const char *build_dir,
+                                     PrecompiledFileInfo *fileInfo)
 {
     int ret, command_ret;
     struct stat st;
-    FILE *checksum_file;
-    char *module_path = NULL, *tmp_path = NULL, *error = NULL, *dstfile = NULL;
+    char *module_path = NULL, *error = NULL;
 
     ui_status_begin(op, "Creating a detached signature for the linked "
                     "kernel module:", "Linking module");
 
-    tmp_path = nvstrcat(build_dir, "/", PRECOMPILED_KERNEL_INTERFACE_FILENAME,
-                        NULL);
-    symlink(p->kernel_interface_filename, tmp_path);
-
-    ret = link_kernel_module(op, p, build_dir, NULL);
+    ret = link_kernel_module(op, p, build_dir, fileInfo);
 
     if (!ret) {
         ui_error(op, "Failed to link a kernel module for signing.");
@@ -765,33 +733,8 @@ static int create_detached_signature(Options *op, Package *p,
 
     ui_status_update(op, .25, "Generating module checksum");
 
-    nvfree(tmp_path);
-    tmp_path = nvstrcat(build_dir, "/", KERNEL_MODULE_CHECKSUM_FILENAME, NULL);
-    checksum_file = fopen(tmp_path, "w");
-
-    if(checksum_file) {
-        uint32 crc = compute_crc(op, module_path);
-        command_ret = fwrite(&crc, sizeof(crc), 1, checksum_file);
-        fclose(checksum_file);
-        if (command_ret != 1) {
-            ret = FALSE;
-            error = "Failed to write the module checksum.";
-            goto done;
-        }
-    } else {
-        ret = FALSE;
-        error = "Failed to open the checksum file for writing.";
-        goto done;
-    }
-
-    dstfile = nvstrcat(p->kernel_module_build_directory, "/",
-                       KERNEL_MODULE_CHECKSUM_FILENAME, NULL);
-
-    if (!copy_file(op, tmp_path, dstfile, 0644)) {
-        ret = FALSE;
-        error = "Failed to copy the kernel module checksum file.";
-        goto done;
-    }
+    fileInfo->linked_module_crc = compute_crc(op, module_path);
+    fileInfo->attributes |= PRECOMPILED_ATTR(LINKED_MODULE_CRC);
 
     ui_status_update(op, .50, "Signing linked module");
 
@@ -804,24 +747,15 @@ static int create_detached_signature(Options *op, Package *p,
 
     ui_status_update(op, .75, "Detaching module signature");
 
-    nvfree(tmp_path);
-    tmp_path = nvstrcat(build_dir, "/", DETACHED_SIGNATURE_FILENAME, NULL);
-    ret = byte_tail(module_path, tmp_path, st.st_size);
+    fileInfo->signature_size = byte_tail(module_path, st.st_size,
+                                         &(fileInfo->signature));
 
-    if (!ret) {
+    if (!(fileInfo->signature) || fileInfo->signature_size == 0) {
         error = "Failed to detach the module signature";
         goto done;
     }
 
-    nvfree(dstfile);
-    dstfile = nvstrcat(p->kernel_module_build_directory, "/",
-                       DETACHED_SIGNATURE_FILENAME, NULL);
-
-    if (!copy_file(op, tmp_path, dstfile, 0644)) {
-        ret = FALSE;
-        error = "Failed to copy the detached signature file.";
-        goto done;
-    }
+    fileInfo->attributes |= PRECOMPILED_ATTR(DETACHED_SIGNATURE);
 
 done:
     if (ret) {
@@ -833,8 +767,6 @@ done:
         }
     }
 
-    nvfree(dstfile);
-    nvfree(tmp_path);
     nvfree(module_path);
     return ret;
 } /* create_detached_signature() */
@@ -842,28 +774,30 @@ done:
 
 
 /*
- * build_kernel_interface() - build the kernel interface, and place it
- * here:
- *
- * "%s/%s", p->kernel_module_build_directory,
- * PRECOMPILED_KERNEL_INTERFACE_FILENAME
+ * build_kernel_interface() - build the kernel interface(s), and store any
+ * built interfaces in a newly allocated PrecompiledFileInfo array, a pointer
+ * to which is passed back to the caller. Return the number of packaged
+ * interface files, or 0 on error.
  *
  * This is done by copying the sources to a temporary working
- * directory, building, and copying the kernel interface back to the
- * kernel module source directory.  The tmpdir is removed when
- * complete.
+ * directory and building the kernel interface in that directory.
+ * The tmpdir is removed when complete.
  *
  * XXX this and build_kernel_module() should be merged.
+ * XXX for multi-RM the dispatch module should be compiled separately, then
+ * packaged whole with file type PRECOMPILED_FILE_TYPE_MODULE.
  */
 
-int build_kernel_interface(Options *op, Package *p)
+int build_kernel_interface(Options *op, Package *p,
+                           PrecompiledFileInfo ** fileInfos)
 {
     char *tmpdir = NULL;
     char *cmd = NULL;
-    char *kernel_interface = NULL;
     char *dstfile = NULL;
-    int ret = FALSE;
-    int command_ret;
+    int files_packaged = 0, command_ret, i;
+    const int num_files = 1; /* XXX multi-RM */
+
+    *fileInfos = NULL;
 
     /* create a temporary directory */
 
@@ -892,60 +826,81 @@ int build_kernel_interface(Options *op, Package *p)
 
     touch_directory(op, p->kernel_module_build_directory);
 
-    /* build the kernel interface */
+    *fileInfos = nvalloc(sizeof(PrecompiledFileInfo) * num_files);
 
-    ui_status_begin(op, "Building kernel interface:", "Building");
-    
-    cmd = nvstrcat("cd ", tmpdir, "; make ", p->kernel_interface_filename,
-                   " SYSSRC=", op->kernel_source_path, NULL);
-    
-    command_ret = run_command(op, cmd, NULL, TRUE, 25 /* XXX */, TRUE);
+    for (i = 0; i < num_files; i++) {
+        char *kernel_interface, *kernel_module_filename;
+        PrecompiledFileInfo *fileInfo = *fileInfos + i;
 
-    if (command_ret != 0) {
-        ui_status_end(op, "Error.");
-        ui_error(op, "Unable to build the NVIDIA kernel module interface.");
-        /* XXX need more descriptive error message */
-        goto failed;
+        /* build the kernel interface */
+
+        ui_status_begin(op, "Building kernel interface:", "Building (%d/%d)",
+                        i + 1, num_files);
+
+        cmd = nvstrcat("cd ", tmpdir, "; make ", p->kernel_interface_filename,
+                       " SYSSRC=", op->kernel_source_path, NULL);
+
+        command_ret = run_command(op, cmd, NULL, TRUE, 25 /* XXX */, TRUE);
+
+        if (command_ret != 0) {
+            ui_status_end(op, "Error.");
+            ui_error(op, "Unable to build the NVIDIA kernel module interface.");
+            /* XXX need more descriptive error message */
+            goto failed;
+        }
+
+        /* check that the file exists */
+
+        kernel_interface = nvstrcat(tmpdir, "/",
+                                    p->kernel_interface_filename, NULL);
+
+        if (access(kernel_interface, F_OK) == -1) {
+            ui_status_end(op, "Error.");
+            ui_error(op, "The NVIDIA kernel module interface was not created.");
+            nvfree(kernel_interface);
+            goto failed;
+        }
+
+        ui_status_end(op, "done.");
+
+        ui_log(op, "Kernel module interface compilation complete.");
+
+        /* add the kernel interface to the list of files to be packaged */
+
+        kernel_module_filename = guess_kernel_module_filename(op);
+        command_ret = precompiled_read_interface(fileInfo, kernel_interface,
+                                                 kernel_module_filename,
+                                                 "nv-kernel.o");
+        nvfree(kernel_interface);
+        nvfree(kernel_module_filename);
+
+        if (command_ret) {
+            if (op->module_signing_secret_key && op->module_signing_public_key) {
+                if (!create_detached_signature(op, p, tmpdir, fileInfo)) {
+                    goto failed;
+                }
+            }
+            files_packaged++;
+        } else {
+            goto failed;
+        }
     }
-    
-    /* check that the file exists */
 
-    kernel_interface = nvstrcat(tmpdir, "/",
-                                p->kernel_interface_filename, NULL);
-    
-    if (access(kernel_interface, F_OK) == -1) {
-        ui_status_end(op, "Error.");
-        ui_error(op, "The NVIDIA kernel module interface was not created.");
-        goto failed;
+failed:
+
+    if (files_packaged == 0) {
+        nvfree(*fileInfos);
+        *fileInfos = NULL;
     }
 
-    ui_status_end(op, "done.");
-
-    ui_log(op, "Kernel module interface compilation complete.");
-
-    /* copy the kernel interface from the tmpdir back to the srcdir */
-    
-    dstfile = nvstrcat(p->kernel_module_build_directory, "/",
-                       PRECOMPILED_KERNEL_INTERFACE_FILENAME, NULL);
-
-    if (!copy_file(op, kernel_interface, dstfile, 0644)) goto failed;
-
-    if (op->module_signing_secret_key && op->module_signing_public_key) {
-        ret = create_detached_signature(op, p, tmpdir);
-    } else {
-        ret = TRUE;
+    if (tmpdir) {
+        remove_directory(op, tmpdir);
+        nvfree(tmpdir);
     }
-    
- failed:
-    
-    remove_directory(op, tmpdir);
-
-    if (tmpdir) nvfree(tmpdir);
     if (cmd) nvfree(cmd);
-    if (kernel_interface) nvfree(kernel_interface);
     if (dstfile) nvfree(dstfile);
 
-    return ret;
+    return files_packaged;
 
 } /* build_kernel_interface() */
 
@@ -1470,7 +1425,7 @@ int check_for_unloaded_kernel_module(Options *op, Package *p)
 
 PrecompiledInfo *find_precompiled_kernel_interface(Options *op, Package *p)
 {
-    char *proc_version_string, *output_filename, *tmp;
+    char *proc_version_string, *tmp;
     PrecompiledInfo *info = NULL;
 
     /* allow the user to completely skip this search */
@@ -1482,7 +1437,7 @@ PrecompiledInfo *find_precompiled_kernel_interface(Options *op, Package *p)
     
     /* retrieve the proc version string for the running kernel */
 
-    proc_version_string = read_proc_version(op);
+    proc_version_string = read_proc_version(op, op->proc_mount_point);
     
     if (!proc_version_string) goto failed;
     
@@ -1491,11 +1446,6 @@ PrecompiledInfo *find_precompiled_kernel_interface(Options *op, Package *p)
     if (!mkdir_recursive(op, p->kernel_module_build_directory, 0755))
         goto failed;
     
-    /* build the output filename */
-    
-    output_filename = nvstrcat(p->kernel_module_build_directory, "/",
-                               PRECOMPILED_KERNEL_INTERFACE_FILENAME, NULL);
-    
     /*
      * if the --precompiled-kernel-interfaces-path option was
      * specified, search that directory, first
@@ -1503,7 +1453,7 @@ PrecompiledInfo *find_precompiled_kernel_interface(Options *op, Package *p)
     
     if (op->precompiled_kernel_interfaces_path) {
         info = scan_dir(op, p, op->precompiled_kernel_interfaces_path,
-                        output_filename, proc_version_string);
+                        proc_version_string);
     }
     
     /*
@@ -1514,7 +1464,7 @@ PrecompiledInfo *find_precompiled_kernel_interface(Options *op, Package *p)
     if (!info) {
         tmp = build_distro_precompiled_kernel_interface_dir(op);
         if (tmp) {
-            info = scan_dir(op, p, tmp, output_filename, proc_version_string);
+            info = scan_dir(op, p, tmp, proc_version_string);
             nvfree(tmp);
         }
     }
@@ -1528,7 +1478,7 @@ PrecompiledInfo *find_precompiled_kernel_interface(Options *op, Package *p)
 
     if (!info) {
         info = scan_dir(op, p, p->precompiled_kernel_interface_directory,
-                        output_filename, proc_version_string);
+                        proc_version_string);
     }
     
     /*
@@ -1807,6 +1757,74 @@ static char *default_kernel_source_path(Options *op)
 
 
 /*
+ * find_module_substring() - find substring in a given string where differences
+ * between hyphens and underscores are ignored. Returns a pointer to the
+ * beginning of the substring, or NULL if the string/substring is NULL, or if
+ * length of substring is greater than length of string, or substring is not
+ * found.
+ */
+
+static char *find_module_substring(char *string, const char *substring)
+{
+    int string_len, substring_len, len;
+    char *tstr;
+    const char *tsubstr;
+
+    if ((string == NULL) || (substring == NULL))
+        return NULL;
+
+    string_len = strlen(string);
+    substring_len = strlen(substring);
+
+    for (len = 0; len <= string_len - substring_len; len++, string++) {
+        if (*string != *substring) {
+            continue;
+        }
+
+        for (tstr = string, tsubstr = substring;
+             *tsubstr != '\0';
+             tstr++, tsubstr++) {
+            if (*tstr != *tsubstr) {
+                if (((*tstr == '-') || (*tstr == '_')) &&
+                    ((*tsubstr == '-') || (*tsubstr == '_')))
+                    continue;
+                break;
+            }
+        }
+
+        if (*tsubstr == '\0')
+            return string;
+    }
+
+    return NULL;
+} /* find_module_substring */
+
+
+/*
+ * substring_is_isolated() - given the string 'substring' with length 'len',
+ * which points to a location inside the string 'string', check to see if
+ * 'substring' is surrounded by either whitespace or the start/end of 'string'
+ * on both ends.
+ */
+
+static int substring_is_isolated(const char *substring, const char *string,
+                                 int len)
+{
+    if (substring != string) {
+        if (!isspace(substring[-1])) {
+            return FALSE;
+        }
+    }
+
+    if (substring[len] && !isspace(substring[len])) {
+        return FALSE;
+    }
+
+    return TRUE;
+}
+
+
+/*
  * check_for_loaded_kernel_module() - check if the specified kernel
  * module is currently loaded using `lsmod`.  Returns TRUE if the
  * kernel module is loaded; FALSE if it is not.
@@ -1818,24 +1836,28 @@ static char *default_kernel_source_path(Options *op)
 
 static int check_for_loaded_kernel_module(Options *op, const char *module_name)
 {
-    char *ptr, *result = NULL;
-    int ret;
+    char *result = NULL;
+    int ret, found = FALSE;
 
     ret = run_command(op, op->utils[LSMOD], &result, FALSE, 0, TRUE);
     
     if ((ret == 0) && (result) && (result[0] != '\0')) {
-        ptr = strstr(result, module_name);
-        if (ptr) {
-            ptr += strlen(module_name);
-            if(!isspace(*ptr)) ret = 1;
-        } else {
-            ret = 1;
+        char *ptr;
+        int len = strlen(module_name);
+
+        for (ptr = result;
+             (ptr = find_module_substring(ptr, module_name));
+             ptr += len) {
+            if (substring_is_isolated(ptr, result, len)) {
+                found = TRUE;
+                break;
+            }
         }
     }
     
     if (result) free(result);
     
-    return ret ? FALSE : TRUE;
+    return found;
     
 } /* check_for_loaded_kernel_module() */
 
@@ -1875,17 +1897,15 @@ download_updated_kernel_interface(Options *op, Package *p,
 {
     int fd = -1;
     int dst_fd = -1;
-    int length;
+    int length, i;
     char *url = NULL;
     char *tmpfile = NULL;
     char *dstfile = NULL;
     char *buf = NULL;
-    char *output_filename = NULL;
     char *str = (void *) -1;
     char *ptr, *s;
     struct stat stat_buf;
     PrecompiledInfo *info = NULL;
-    uint32 crc;
     
     /* initialize the tmpfile and url strings */
     
@@ -1939,7 +1959,7 @@ download_updated_kernel_interface(Options *op, Package *p,
         s += 3; /* skip past the ":::" separator */
         
         if (strcmp(proc_version_string, s) == 0) {
-            
+
             /* proc versions strings match */
             
             /*
@@ -1978,33 +1998,34 @@ download_updated_kernel_interface(Options *op, Package *p,
             
             /* XXX once we have gpg setup, should check the file here */
 
-            /* build the output filename string */
-            
-            output_filename = nvstrcat(p->kernel_module_build_directory, "/",
-                                       PRECOMPILED_KERNEL_INTERFACE_FILENAME,
-                                       NULL);
-            
-            /* unpack the downloaded file */
-            
-            info = precompiled_unpack(op, dstfile, output_filename,
-                                      proc_version_string,
-                                      p->version);
-            
-            /* compare checksums */
-            
-            crc = compute_crc(op, output_filename);
-            
-            if (info && (info->crc != crc)) {
-                ui_error(op, "The embedded checksum of the downloaded file "
-                         "'%s' (%" PRIu32 ") does not match the computed "
-                         "checksum (%" PRIu32 "); not using.", buf, info->crc,
-                         crc);
-                unlink(dstfile);
+            info = get_precompiled_info(op, dstfile, proc_version_string,
+                                        p->version);
+
+            if (!info) {
+                ui_error(op, "The format of the downloaded precompiled package "
+                         "is invalid!");
                 free_precompiled(info);
                 info = NULL;
             }
             
+            /* compare checksums */
+
+            for (i = 0; info && i < info->num_files; i++) {
+                uint32 crc = compute_crc_from_buffer(info->files[i].data,
+                                                     info->files[i].size);
+                if (info->files[i].crc != crc) {
+                    ui_error(op, "The embedded checksum of the file %s in the "
+                             "downloaded precompiled pacakge '%s' (%" PRIu32
+                             ") does not match the computed checksum (%"
+                             PRIu32 "); not using.", info->files[i].name,
+                             buf, info->files[i].crc, crc);
+                    free_precompiled(info);
+                    info = NULL;
+                }
+            }
+
             goto done;
+
         }
 
         nvfree(buf);
@@ -2097,7 +2118,8 @@ static int fbdev_check(Options *op, Package *p)
     ret = run_conftest(op, p,"rivafb_sanity_check just_msg", &result);
     
     if (!ret) {
-        ui_error(op, "%s", result);
+        if (result)
+            ui_error(op, "%s", result);
         nvfree(result);
 
         return FALSE;
@@ -2108,7 +2130,8 @@ static int fbdev_check(Options *op, Package *p)
     ret = run_conftest(op, p,"nvidiafb_sanity_check just_msg", &result);
     
     if (!ret) {
-        ui_error(op, "%s", result);
+        if (result)
+            ui_error(op, "%s", result);
         nvfree(result);
 
         return FALSE;
@@ -2135,7 +2158,8 @@ static int xen_check(Options *op, Package *p)
     ret = run_conftest(op, p,"xen_sanity_check just_msg", &result);
     
     if (!ret) {
-        ui_error(op, "%s", result);
+        if (result)
+            ui_error(op, "%s", result);
         nvfree(result);
 
         return FALSE;
@@ -2148,13 +2172,41 @@ static int xen_check(Options *op, Package *p)
 
 
 /*
+ * preempt_rt_check() - run the preempt_rt_sanity_check conftest; if this
+ * test fails, print the test's error message and abort the driver
+ * installation.
+ */
+
+static int preempt_rt_check(Options *op, Package *p)
+{
+    char *result;
+    int ret;
+
+    ui_log(op, "Performing PREEMPT_RT check.");
+
+    ret = run_conftest(op, p, "preempt_rt_sanity_check just_msg", &result);
+
+    if (!ret) {
+        if (result)
+            ui_error(op, "%s", result);
+        nvfree(result);
+
+        return FALSE;
+    }
+
+    return TRUE;
+
+} /* preempt_rt_check() */
+
+
+
+/*
  * scan_dir() - scan through the specified directory for a matching
  * precompiled kernel interface.
  */
 
 static PrecompiledInfo *scan_dir(Options *op, Package *p,
                                  const char *directory_name,
-                                 const char *output_filename,
                                  const char *proc_version_string)
 {
     DIR *dir;
@@ -2173,21 +2225,18 @@ static PrecompiledInfo *scan_dir(Options *op, Package *p,
      */
 
     while ((ent = readdir(dir)) != NULL) {
-            
+
         if (((strcmp(ent->d_name, ".")) == 0) ||
-            ((strcmp(ent->d_name, "..")) == 0) ||
-            strstr(ent->d_name, DETACHED_SIGNATURE_FILENAME)) continue;
+            ((strcmp(ent->d_name, "..")) == 0)) continue;
             
         filename = nvstrcat(directory_name, "/", ent->d_name, NULL);
         
-        info = precompiled_unpack(op, filename, output_filename,
-                                  proc_version_string,
-                                  p->version);
-            
-        if (info) break;
-            
+        info = get_precompiled_info(op, filename, proc_version_string,
+                                    p->version);
+
         free(filename);
-        filename = NULL;
+
+        if (info) break;
     }
         
     if (closedir(dir) != 0) {

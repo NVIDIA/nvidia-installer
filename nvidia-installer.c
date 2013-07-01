@@ -146,6 +146,7 @@ static Options *load_default_options(void)
     op->run_distro_scripts = TRUE;
     op->no_kernel_module_source = FALSE;
     op->dkms = FALSE;
+    op->check_for_alternate_installs = TRUE;
 
     return op;
 

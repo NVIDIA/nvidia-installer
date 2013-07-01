@@ -122,6 +122,16 @@ These scripts should not require user interaction.
 Use the
 .B \-\-no\-distro\-scripts
 option to disable execution of these scripts.
+.PP
+In addition to the distribution hook scripts, distributors or other producers of driver packages may report the presence an already installed driver, or the availability of driver packages. Installing a text file to
+.B /usr/lib/nvidia/alternate-install-present
+will alert nvidia-installer that an existing driver is already installed. Installing a text file to
+.B /usr/lib/nvidia/alternate-install-available
+will alert nvidia-installer that an alternate installation option is available. The contents of
+.B /usr/lib/nvidia/alternate-install-present
+or
+.B /usr/lib/nvidia/alternate-install-available
+will be printed in a message informing the user of the presence/availability of the alternate driver installation, and asking the user whether to continue with the installation.
 .SH EXAMPLES
 .TP
 .B nvidia\-installer \-\-latest
