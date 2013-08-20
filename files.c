@@ -680,6 +680,18 @@ int set_destinations(Options *op, Package *p)
             dir = path = "";
             break;
 
+        case FILE_TYPE_NVIFR_LIB:
+        case FILE_TYPE_NVIFR_LIB_SYMLINK:
+            if (p->entries[i].compat_arch == FILE_COMPAT_ARCH_COMPAT32) {
+                prefix = op->compat32_prefix;
+                dir = op->compat32_libdir;
+            } else {
+                prefix = op->opengl_prefix;
+                dir = op->opengl_libdir;
+            }
+            path = "";
+            break;
+
         default:
             
             /* 

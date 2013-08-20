@@ -2640,13 +2640,12 @@ static char *nouveau_blacklist_file_is_present(Options *op)
  *
  * Returns FALSE if the nouveau kernel driver is in use (cause
  * installation to abort); returns TRUE if the nouveau driver is not
- * in use and the user has not explicitly requested that the blacklist
- * file be written.
+ * in use, or if the nouveau check is to be skipped.
  */
 
 int check_for_nouveau(Options *op)
 {
-    int ret;
+    int ret, nouveau_detected;
     char *blacklist_files;
 
 #define NOUVEAU_POINTER_MESSAGE                                         \
@@ -2656,15 +2655,17 @@ int check_for_nouveau(Options *op)
 
     if (op->no_nouveau_check) return TRUE;
 
-    if (nouveau_is_present()) {
+    nouveau_detected = nouveau_is_present();
+
+    if (nouveau_detected) {
         ui_error(op, "The Nouveau kernel driver is currently in use "
                  "by your system.  This driver is incompatible with the NVIDIA "
                  "driver, and must be disabled before proceeding.  "
                  NOUVEAU_POINTER_MESSAGE);
     } else if (!op->disable_nouveau) {
-        /* If novueau isn't loaded, we can return early, unless the user
+        /* If nouveau isn't loaded, we can return early, unless the user
          * explicitly requested for the blacklist file to be written. */
-        return TRUE;
+        return !nouveau_detected;
     }
 
     blacklist_files = nouveau_blacklist_file_is_present(op);
@@ -2683,7 +2684,7 @@ int check_for_nouveau(Options *op)
              * written, don't return early, so that the files can be written
              * again, e.g. in case a file is present, but not in the right
              * place for this particular system. */
-            return FALSE;
+            return !nouveau_detected;
         }
     }
 
@@ -2712,7 +2713,8 @@ int check_for_nouveau(Options *op)
         }
     }
 
-    return FALSE;
+    /* Allow installation to continue if nouveau was not detected. */
+    return !nouveau_detected;
 }
 
 #define DKMS_STATUS  " status"
