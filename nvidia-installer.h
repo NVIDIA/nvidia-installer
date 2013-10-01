@@ -497,6 +497,7 @@ void add_package_entry(Package *p,
                        char *dst,
                        PackageEntryFileType type,
                        PackageEntryFileTlsClass tls_class,
+                       PackageEntryFileCompatArch compat_arch,
                        mode_t mode);
 /* XXX */
 

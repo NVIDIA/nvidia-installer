@@ -852,6 +852,7 @@ void add_package_entry(Package *p,
                        char *dst,
                        PackageEntryFileType type,
                        PackageEntryFileTlsClass tls_class,
+                       PackageEntryFileCompatArch compat_arch,
                        mode_t mode)
 {
     int n;
@@ -864,15 +865,16 @@ void add_package_entry(Package *p,
 
     memset(&p->entries[n], 0, sizeof(PackageEntry));
 
-    p->entries[n].file      = file;
-    p->entries[n].path      = path;
-    p->entries[n].name      = name;
-    p->entries[n].target    = target;
-    p->entries[n].dst       = dst;
-    p->entries[n].type      = type;
-    p->entries[n].tls_class = tls_class;
-    p->entries[n].mode      = mode;
-    p->entries[n].caps      = get_file_type_capabilities(type);
+    p->entries[n].file        = file;
+    p->entries[n].path        = path;
+    p->entries[n].name        = name;
+    p->entries[n].target      = target;
+    p->entries[n].dst         = dst;
+    p->entries[n].type        = type;
+    p->entries[n].tls_class   = tls_class;
+    p->entries[n].mode        = mode;
+    p->entries[n].caps        = get_file_type_capabilities(type);
+    p->entries[n].compat_arch = compat_arch;
 
     if (stat(p->entries[n].file, &stat_buf) != -1) {
         p->entries[n].inode = stat_buf.st_ino;
@@ -1206,6 +1208,7 @@ guess_fail:
                           NULL, /* dst */
                           FILE_TYPE_MODULE_SIGNING_KEY,
                           FILE_TLS_CLASS_NONE,
+                          FILE_COMPAT_ARCH_NONE,
                           0444);
 
         ui_message(op, "An X.509 certificate containing the public signing "
@@ -1238,6 +1241,7 @@ guess_fail:
                               NULL, /* dst */
                               FILE_TYPE_MODULE_SIGNING_KEY,
                               FILE_TLS_CLASS_NONE,
+                              FILE_COMPAT_ARCH_NONE,
                               0400);
 
             ui_message(op, "The private signing key will be installed to %s/%s. "

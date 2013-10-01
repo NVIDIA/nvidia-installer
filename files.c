@@ -1004,6 +1004,7 @@ int add_kernel_module_to_package(Options *op, Package *p)
                       dst,
                       FILE_TYPE_KERNEL_MODULE,
                       FILE_TLS_CLASS_NONE,
+                      FILE_COMPAT_ARCH_NONE,
                       0644);
 
     return TRUE;
@@ -1987,6 +1988,7 @@ void process_libGL_la_files(Options *op, Package *p)
                                   NULL, /* dst */
                                   FILE_TYPE_LIBGL_LA,
                                   p->entries[i].tls_class,
+                                  p->entries[i].compat_arch,
                                   p->entries[i].mode);
             }
 
@@ -2062,6 +2064,7 @@ void process_dot_desktop_files(Options *op, Package *p)
                                   NULL, /* dst */
                                   FILE_TYPE_DOT_DESKTOP,
                                   p->entries[i].tls_class,
+                                  p->entries[i].compat_arch,
                                   p->entries[i].mode);
             }
         }
