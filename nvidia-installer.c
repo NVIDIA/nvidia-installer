@@ -61,7 +61,7 @@ extern const char *pNV_ID;
 static void print_version(void)
 {
     fmtout("");
-    fmtout(pNV_ID);
+    fmtout("%s", pNV_ID);
     fmtoutp(TAB, "The NVIDIA Software Installer for Unix/Linux.");
     fmtout("");
     fmtoutp(TAB, "This program is used to install, upgrade and uninstall "
@@ -79,8 +79,8 @@ static void print_version(void)
 
 static void print_help_helper(const char *name, const char *description)
 {
-    fmtoutp(TAB, name);
-    fmtoutp(BIGTAB, description);
+    fmtoutp(TAB, "%s", name);
+    fmtoutp(BIGTAB, "%s", description);
     fmtout("");
 }
 
@@ -146,7 +146,9 @@ static Options *load_default_options(void)
     op->run_distro_scripts = TRUE;
     op->no_kernel_module_source = FALSE;
     op->dkms = FALSE;
+    op->install_vdpau_wrapper = NV_OPTIONAL_BOOL_DEFAULT;
     op->check_for_alternate_installs = TRUE;
+    op->num_kernel_modules = 1;
 
     return op;
 
@@ -170,6 +172,8 @@ static void parse_commandline(int argc, char *argv[], Options *op)
     int print_help_args_only_after = FALSE;
     int print_advanced_help = FALSE;
     char *strval = NULL, *program_name = NULL;
+    int boolval;
+    int intval = 0;
 
     /*
      * if the installer was invoked as "nvidia-uninstall", perform an
@@ -183,9 +187,7 @@ static void parse_commandline(int argc, char *argv[], Options *op)
 
     while (1) {
 
-        c = nvgetopt(argc, argv, __options, &strval,
-                     NULL,  /* boolval */
-                     NULL,  /* intval */
+        c = nvgetopt(argc, argv, __options, &strval, &boolval, &intval,
                      NULL,  /* doubleval */
                      NULL); /* disable_val */
 
@@ -406,6 +408,24 @@ static void parse_commandline(int argc, char *argv[], Options *op)
         case MODULE_SIGNING_X509_HASH_OPTION:
             op->module_signing_x509_hash = strval;
             break;
+        case INSTALL_VDPAU_WRAPPER_OPTION:
+            op->install_vdpau_wrapper = boolval ? NV_OPTIONAL_BOOL_TRUE :
+                                                  NV_OPTIONAL_BOOL_FALSE;
+            break;
+        case MULTIPLE_KERNEL_MODULES_OPTION:
+            if (intval < 0) {
+                fmterr("Invalid parameter for '--multiple-kernel-modules'");
+                goto fail;
+            }
+            op->multiple_kernel_modules = TRUE;
+            if (intval > NV_MAX_MODULE_INSTANCES)
+                op->num_kernel_modules = NV_MAX_MODULE_INSTANCES;
+            else
+                op->num_kernel_modules = intval;
+            break;
+        case NO_CHECK_FOR_ALTERNATE_INSTALLS_OPTION:
+            op->check_for_alternate_installs = FALSE;
+        break;
         default:
             goto fail;
         }

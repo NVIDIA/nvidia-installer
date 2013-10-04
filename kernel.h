@@ -46,8 +46,11 @@ PrecompiledInfo *find_precompiled_kernel_interface (Options*, Package*);
 char *get_kernel_name                              (Options*);
 KernelConfigOptionStatus test_kernel_config_option (Options*, Package*,
                                                     const char*);
-int sign_kernel_module                             (Options*, const char*, int);
+int sign_kernel_module                             (Options*, const char*, 
+                                                    const char*, int);
 char *guess_module_signing_hash                    (Options*, Package*);
+
+#define SEARCH_FILELIST_MAX_ENTRIES       32
 
 #ifndef ENOKEY
 #define	ENOKEY		126	/* Required key not available */

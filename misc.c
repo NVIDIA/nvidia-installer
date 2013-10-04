@@ -36,6 +36,9 @@
 #include <dirent.h>
 #include <libgen.h>
 #include <pci/pci.h>
+#include <dlfcn.h>
+#include <elf.h>
+#include <link.h>
 
 #ifndef PCI_CLASS_DISPLAY_3D
 #define PCI_CLASS_DISPLAY_3D 0x302
@@ -448,8 +451,8 @@ int read_text_file(const char *filename, char **buf)
         return FALSE;
 
     while (((line = fget_next_line(fp, &eof)) != NULL)) {
-        if ((index + strlen(line) + 1) > buflen) {
-            buflen += 2 * strlen(line);
+        if ((index + strlen(line) + 2) > buflen) {
+            buflen = 2 * (index + strlen(line) + 2);
             tmpbuf = (char *)nvalloc(buflen);
             if (!tmpbuf) {
                 if (*buf) nvfree(*buf);
@@ -505,7 +508,7 @@ int find_system_utils(Options *op)
         { "tr",       "coreutils" },
         { "sed",      "sed" }
     };
-    
+
     /* keep in sync with the SystemOptionalUtils enum type */
     const struct { const char *util, *package; } optional_utils[] = {
         { "chcon",          "selinux" },
@@ -534,22 +537,35 @@ int find_system_utils(Options *op)
                      needed_utils[i].package, needed_utils[i].util);
             return FALSE;
         }
-        
+
         ui_expert(op, "found `%s` : `%s`",
                   needed_utils[i].util, op->utils[i]);
     }
-    
+
     for (j = 0, i = MAX_SYSTEM_UTILS; i < MAX_SYSTEM_OPTIONAL_UTILS; i++, j++) {
         
         op->utils[i] = find_system_util(optional_utils[j].util);
         if (op->utils[i]) {     
             ui_expert(op, "found `%s` : `%s`",
-                  optional_utils[j].util, op->utils[i]);
-        } else {
-            op->utils[i] = NULL;
+                      optional_utils[j].util, op->utils[i]);
         }
     }
-    
+
+    /* If no program called `X` is found; try searching for known X servers */
+    if (op->utils[XSERVER] == NULL) {
+        static const char* xservers[] = { "Xorg", "XFree86" };
+        int i;
+
+        for (i = 0; i < ARRAY_LEN(xservers); i++) {
+            op->utils[XSERVER] = find_system_util(xservers[i]);
+            if (op->utils[XSERVER]) {
+                ui_expert(op, "found `%s` : `%s`",
+                          xservers[i], op->utils[XSERVER]);
+                break;
+            }
+        }
+    }
+
     return TRUE;
 
 } /* find_system_utils() */
@@ -1152,22 +1168,21 @@ void should_install_compat32_files(Options *op, Package *p)
      * files are to be installed anyway.
      */
     install_compat32_files = ui_yes_no(op, TRUE,
-                "Install NVIDIA's 32-bit compatibility OpenGL "
-                "libraries?");
+                "Install NVIDIA's 32-bit compatibility libraries?");
 
     if (install_compat32_files && (op->compat32_chroot != NULL) &&
           access(op->compat32_chroot, F_OK) < 0) {
         install_compat32_files = ui_yes_no(op, FALSE,
-            "The NVIDIA 32-bit compatibility OpenGL libraries are "
+            "The NVIDIA 32-bit compatibility libraries are "
             "to be installed relative to the top-level prefix (chroot) "
             "'%s'; however, this directory does not exist.  Please "
             "consult your distribution's documentation to confirm the "
             "correct top-level installation prefix for 32-bit "
             "compatiblity libraries.\n\nDo you wish to install the "
-            "32-bit NVIDIA OpenGL compatibility libraries anyway?",
+            "NVIDIA 32-bit compatibility libraries anyway?",
             op->compat32_chroot);
     }
-    
+
     if (!install_compat32_files) {
         for (i = 0; i < p->num_entries; i++) {
             if (p->entries[i].compat_arch == FILE_COMPAT_ARCH_COMPAT32) {
@@ -1177,6 +1192,79 @@ void should_install_compat32_files(Options *op, Package *p)
         }
     }
 #endif /* NV_X86_64 */
+}
+
+
+/*
+ * detect_library() - attempt to dlopen(3) a DSO, to detect its availability.
+ */
+static int detect_library(const char *library)
+{
+    void *handle = dlopen(library, RTLD_NOW);
+
+    if (handle) {
+        dlclose(handle);
+        return TRUE;
+    }
+
+    return FALSE;
+}
+
+
+/*
+ * should_install_vdpau_wrapper() - ask the user if he/she wishes to
+ * install the VDPAU wrapper library.
+ */
+
+void should_install_vdpau_wrapper(Options *op, Package *p)
+{
+    /*
+     * If the user did not specifically request installation or non-installation
+     * of the VDPAU wrapper, default to installing only if the wrapper was not
+     * detected.
+     */
+    if (op->install_vdpau_wrapper == NV_OPTIONAL_BOOL_DEFAULT) {
+        if (detect_library("libvdpau.so.1")) {
+            op->install_vdpau_wrapper = NV_OPTIONAL_BOOL_FALSE;
+        } else {
+            op->install_vdpau_wrapper = NV_OPTIONAL_BOOL_TRUE;
+        }
+    }
+
+    /* give expert users an opportunity to override the default behavior and/or
+     * change their minds about any explicit command line setting */
+    if (op->expert) {
+        if (ui_yes_no(op, op->install_vdpau_wrapper,
+                      "Install the libvdpau wrapper library?")) {
+            op->install_vdpau_wrapper = NV_OPTIONAL_BOOL_TRUE;
+        } else {
+            op->install_vdpau_wrapper = NV_OPTIONAL_BOOL_FALSE;
+        }
+    }
+
+    if (op->install_vdpau_wrapper == NV_OPTIONAL_BOOL_TRUE) {
+        ui_message(op, "nvidia-installer will install the libvdpau and "
+                       "libvdpau_trace libraries that were included with this "
+                       "installer package. These libraries are available "
+                       "separately through the libvdpau project and will be "
+                       "removed from the NVIDIA Linux driver installer package "
+                       "in the future, so it is recommended that VDPAU users "
+                       "install libvdpau separately, e.g. by using packages "
+                       "available from their distributions, or by building "
+                       "from the sources available at:\n\n"
+                       "http://people.freedesktop.org/~aplattner/vdpau");
+    } else {
+        int i;
+
+        ui_log(op, "Skipping installation of the libvdpau wrapper library.");
+
+        for (i = 0; i < p->num_entries; i++) {
+            if (p->entries[i].type == FILE_TYPE_VDPAU_WRAPPER_LIB ||
+                p->entries[i].type == FILE_TYPE_VDPAU_WRAPPER_SYMLINK) {
+                invalidate_package_entry(&(p->entries[i]));
+            }
+        }
+    }
 }
 
 
@@ -1199,7 +1287,7 @@ void check_installed_files_from_package(Options *op, Package *p)
     for (i = 0; i < p->num_entries; i++) {
         
         percent = (float) i / (float) p->num_entries;
-        ui_status_update(op, percent, p->entries[i].dst);
+        ui_status_update(op, percent, "%s", p->entries[i].dst);
         
         if (p->entries[i].caps.is_symlink &&
             /* Don't bother checking FILE_TYPE_NEWSYMs because we may not have
@@ -2459,8 +2547,10 @@ done:
 static int prompt_for_user_cancel(Options *op, const char *file,
                                   int default_cancel, const char *text)
 {
-    int ret, file_read;
-    char *message = NULL;
+    int ret, file_read, msglen;
+    char *message = NULL, *prompt;
+
+    const char *buttons[2] = {"Continue Installation", "Cancel Installation"};
 
     file_read = read_text_file(file, &message);
 
@@ -2468,12 +2558,21 @@ static int prompt_for_user_cancel(Options *op, const char *file,
         message = nvstrdup("");
     }
 
-    ret = ui_yes_no(op, default_cancel,
-                    "%s\n\n%s\nWould you like to cancel this installation?",
-                    text, message);
-    nvfree(message);
+    msglen = strlen(message);
 
-    return ret;
+    prompt = nvstrcat(text, msglen > 0 ? "\n\nPlease review the message "
+                      "provided by the maintainer of this alternate "
+                      "installation method and decide how to proceed:" : NULL,
+                      NULL);
+
+    ret = ui_paged_prompt(op, prompt, msglen > 0 ? "Information about the "
+                          "alternate information method" : "", message,
+                          buttons, 2, default_cancel);
+
+    nvfree(message);
+    nvfree(prompt);
+
+    return ret == 1;
 }
 
 #define INSTALL_PRESENT_FILE "alternate-install-present"
@@ -2516,7 +2615,7 @@ int check_for_alternate_install(Options *op)
               "uninstall the existing installation before installing this "
               "driver.";
 
-        return !prompt_for_user_cancel(op, alt_inst_present, TRUE, msg);
+        return !prompt_for_user_cancel(op, alt_inst_present, 1, msg);
     }
 
     if (access(alt_inst_avail, F_OK) == 0) {
@@ -2528,7 +2627,7 @@ int check_for_alternate_install(Options *op)
               "better with your system than a driver installed by "
               "nvidia-installer.";
 
-        return !prompt_for_user_cancel(op, alt_inst_avail, FALSE, msg);
+        return !prompt_for_user_cancel(op, alt_inst_avail, 0, msg);
     }
 
     return TRUE;
@@ -2994,4 +3093,48 @@ int secure_boot_enabled(void) {
     }
 
     return ret;
+}
+
+
+
+/*
+ * get_elf_architecture() - attempt to read an ELF header from the given file;
+ * returns ELF_ARCHITECTURE_{32,64,UNKNOWN} if the architecture could be parsed,
+ * ELF_INVALID_FILE on error, or if the file is not valid ELF.
+ */
+
+ElfFileType get_elf_architecture(const char *filename)
+{
+    FILE *fp;
+    ElfW(Ehdr) header;
+
+    fp = fopen(filename, "r");
+
+    /* Read the ELF header */
+
+    if (fp) {
+        int ret = fread(&header, sizeof(header), 1, fp);
+        fclose(fp);
+
+        if (ret != 1) {
+            return ELF_INVALID_FILE;
+        }
+    } else {
+        return ELF_INVALID_FILE;
+    }
+
+    /* Verify the magic number */
+
+    if (strncmp((char *) header.e_ident, "\177ELF", 4) != 0) {
+        return ELF_INVALID_FILE;
+    }
+
+    /* Parse the architecture from the ELF header */
+
+    switch(header.e_ident[EI_CLASS]) {
+        case ELFCLASS32:   return ELF_ARCHITECTURE_32;
+        case ELFCLASS64:   return ELF_ARCHITECTURE_64;
+        case ELFCLASSNONE: return ELF_ARCHITECTURE_UNKNOWN;
+        default:           return ELF_INVALID_FILE;
+    }
 }

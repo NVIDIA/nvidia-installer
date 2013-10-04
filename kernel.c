@@ -53,23 +53,25 @@ static int check_for_loaded_kernel_module(Options *op, const char *);
 static void check_for_warning_messages(Options *op);
 static int rmmod_kernel_module(Options *op, const char *);
 static PrecompiledInfo *download_updated_kernel_interface(Options*, Package*,
-                                                          const char*);
+                                                          const char*, 
+                                                          char* const*);
 static int fbdev_check(Options *op, Package *p);
 static int xen_check(Options *op, Package *p);
 static int preempt_rt_check(Options *op, Package *p);
 
 static PrecompiledInfo *scan_dir(Options *op, Package *p,
                                  const char *directory_name,
-                                 const char *proc_version_string);
+                                 const char *proc_version_string,
+                                 char *const *search_filelist);
 
 static char *build_distro_precompiled_kernel_interface_dir(Options *op);
 static char *convert_include_path_to_source_path(const char *inc);
-static char *guess_kernel_module_filename(Options *op);
 static char *get_machine_arch(Options *op);
 static int init_libkmod(void);
 static void close_libkmod(void);
 static int run_conftest(Options *op, Package *p, const char *args,
                         char **result);
+static void replace_zero(char* filename, int i);
 
 /* libkmod handle and function pointers */
 static void *libkmod = NULL;
@@ -80,6 +82,7 @@ static int (*lkmod_module_new_from_path)(struct kmod_ctx*, const char*,
              struct kmod_module**) = NULL;
 static int (*lkmod_module_insert_module)(struct kmod_module*, unsigned int,
              const char*) = NULL;
+static void free_search_filelist(char **);
 
 /*
  * Message text that is used by several error messages.
@@ -423,23 +426,24 @@ int determine_kernel_output_path(Options *op)
  * the linked module and append the signature.
  */
 static int attach_signature(Options *op, Package *p,
-                            const PrecompiledFileInfo *fileInfo) {
+                            const PrecompiledFileInfo *fileInfo,
+                            const char *module_name) {
     uint32 actual_crc;
-    char *module_filename;
+    char *module_path;
     int ret = FALSE, command_ret;
 
     ui_log(op, "Attaching module signature to linked kernel module.");
 
-    module_filename = nvstrcat(p->kernel_module_build_directory, "/",
-                               p->kernel_module_filename, NULL);
+    module_path = nvstrcat(p->kernel_module_build_directory, "/",
+                           module_name, NULL);
 
-    command_ret = verify_crc(op, module_filename, fileInfo->linked_module_crc,
+    command_ret = verify_crc(op, module_path, fileInfo->linked_module_crc,
                              &actual_crc);
 
     if (command_ret) {
         FILE *module_file;
 
-        module_file = fopen(module_filename, "a+");
+        module_file = fopen(module_path, "a+");
 
         if (module_file && fileInfo->signature_size) {
             command_ret = fwrite(fileInfo->signature, 1,
@@ -485,10 +489,26 @@ attach_done:
         ui_error(op, "Failed to attach signature.");
     }
 
-    nvfree(module_filename);
+    nvfree(module_path);
     return ret;
 } /* attach_signature() */
 
+
+/*
+ * Look for the presence of char '0' in filename and replace
+ * it with the integer value passed as input. This is used
+ * especially for multiple kernel module builds.
+ */
+
+static void replace_zero(char *filename, int i)
+{
+    char *name;
+
+    if (i < 0 || i > 9) return;
+
+    name = strrchr(filename, '0');
+    if (name) *name = *name + i;
+}
 
 
 /*
@@ -519,14 +539,12 @@ int link_kernel_module(Options *op, Package *p, const char *build_directory,
         return FALSE;
     }
 
-    p->kernel_module_filename = guess_kernel_module_filename(op);
-
     cmd = nvstrcat("cd ", build_directory, "; ", op->utils[LD], " ",
                    LD_OPTIONS, " -o ", fileInfo->linked_module_name, " ",
                    fileInfo->name, " ", fileInfo->core_object_name, NULL);
-    
+
     ret = run_command(op, cmd, &result, TRUE, 0, TRUE);
-    
+
     free(cmd);
 
     if (ret != 0) {
@@ -540,12 +558,69 @@ int link_kernel_module(Options *op, Package *p, const char *build_directory,
                PRECOMPILED_ATTR(LINKED_MODULE_CRC);
 
     if ((fileInfo->attributes & attrmask) == attrmask) {
-        return attach_signature(op, p, fileInfo);
+        return attach_signature(op, p, fileInfo,
+                                fileInfo->linked_module_name);
     }
 
     return TRUE;
    
 } /* link_kernel_module() */
+
+
+
+static int build_kernel_module_helper(Options *op, const char *dir,
+                                      const char *module, int num_instances)
+{
+    int ret;
+    char *instances = NULL, *cmd, *tmp;
+
+    tmp = op->multiple_kernel_modules && num_instances ?
+              nvasprintf("%d", num_instances) : NULL;
+    instances = nvstrcat(" NV_BUILD_MODULE_INSTANCES=", tmp, NULL);
+    nvfree(tmp);
+
+    tmp = nvasprintf("Building %s kernel module:", module);
+    ui_status_begin(op, tmp, "Building");
+    nvfree(tmp);
+
+    cmd = nvstrcat("cd ", dir, "; make module",
+                   " SYSSRC=", op->kernel_source_path,
+                   " SYSOUT=", op->kernel_output_path,
+                   instances, NULL);
+    nvfree(instances);
+
+    ret = run_command(op, cmd, NULL, TRUE, 25, TRUE);
+
+    nvfree(cmd);
+
+    if (ret != 0) {
+        ui_status_end(op, "Error.");
+        ui_error(op, "Unable to build the %s kernel module.", module);
+        /* XXX need more descriptive error message */
+    }
+
+    ui_status_end(op, "done.");
+
+    return ret == 0;
+}
+
+
+static int check_file(Options *op, Package *p, const char *filename,
+                      const char *modname)
+{
+    int ret;
+    char *path;
+
+    path = nvstrcat(p->kernel_module_build_directory, "/", filename, NULL);
+    ret = access(path, F_OK);
+    nvfree(path);
+
+    if (ret == -1) {
+        ui_error(op, "The NVIDIA %s module was not created.", modname);
+    }
+
+    return ret != -1;
+}
 
 
 /*
@@ -556,7 +631,7 @@ int link_kernel_module(Options *op, Package *p, const char *build_directory,
 
 int build_kernel_module(Options *op, Package *p)
 {
-    char *result, *cmd, *tmp;
+    char *result, *cmd;
     int len, ret;
 
     /*
@@ -583,63 +658,35 @@ int build_kernel_module(Options *op, Package *p)
     if (!xen_check(op, p)) return FALSE;
     if (!preempt_rt_check(op, p)) return FALSE;
 
-    cmd = nvstrcat("cd ", p->kernel_module_build_directory,
-                   "; make print-module-filename",
-                   " SYSSRC=", op->kernel_source_path,
-                   " SYSOUT=", op->kernel_output_path, NULL);
-    
-    ret = run_command(op, cmd, &p->kernel_module_filename, FALSE, 0, FALSE);
-    
-    free(cmd);
-
-    if (ret != 0) {
-        ui_error(op, "Unable to determine the NVIDIA kernel module filename.");
-        nvfree(result);
-        return FALSE;
-    }
-    
     ui_log(op, "Cleaning kernel module build directory.");
     
     len = strlen(p->kernel_module_build_directory) + 32;
     cmd = nvalloc(len);
-    
+
     snprintf(cmd, len, "cd %s; make clean", p->kernel_module_build_directory);
 
     ret = run_command(op, cmd, &result, TRUE, 0, TRUE);
     free(result);
     free(cmd);
-    
-    ui_status_begin(op, "Building kernel module:", "Building");
 
-    cmd = nvstrcat("cd ", p->kernel_module_build_directory,
-                   "; make module",
-                   " SYSSRC=", op->kernel_source_path,
-                   " SYSOUT=", op->kernel_output_path, NULL);
-    
-    ret = run_command(op, cmd, &result, TRUE, 25, TRUE);
+    ret = build_kernel_module_helper(op, p->kernel_module_build_directory,
+                                     "NVIDIA", op->num_kernel_modules);
 
-    free(cmd);
-
-    if (ret != 0) {
-        ui_status_end(op, "Error.");
-        ui_error(op, "Unable to build the NVIDIA kernel module.");
-        /* XXX need more descriptive error message */
+    if (!ret) {
         return FALSE;
     }
     
+    /* check that the frontend file actually exists */
+    if (op->multiple_kernel_modules) {
+        if (!check_file(op, p, p->kernel_frontend_module_filename, "frontend")) {
+            return FALSE;
+        }
+    }
+
     /* check that the file actually exists */
-
-    tmp = nvstrcat(p->kernel_module_build_directory, "/",
-                   p->kernel_module_filename, NULL);
-    if (access(tmp, F_OK) == -1) {
-        free(tmp);
-        ui_status_end(op, "Error.");
-        ui_error(op, "The NVIDIA kernel module was not created.");
+    if (!check_file(op, p, p->kernel_module_filename, "kernel")) {
         return FALSE;
     }
-    free(tmp);
-    
-    ui_status_end(op, "done.");
 
     ui_log(op, "Kernel module compilation complete.");
 
@@ -654,9 +701,11 @@ int build_kernel_module(Options *op, Package *p)
  * for ensuring that the kernel module is already built successfully and that
  * op->module_signing_{secret,public}_key are set.
  */
-int sign_kernel_module(Options *op, const char *build_directory, int status) {
+int sign_kernel_module(Options *op, const char *build_directory, 
+                       const char *module_suffix, int status) {
     char *cmd, *mod_sign_cmd, *mod_sign_hash;
     int ret, success;
+    char *build_module_instances_parameter;
 
     /* if module_signing_script isn't set, then set mod_sign_cmd below to end
      * the nvstrcat() that builds cmd early. */
@@ -673,11 +722,22 @@ int sign_kernel_module(Options *op, const char *build_directory, int status) {
         ui_status_begin(op, "Signing kernel module:", "Signing");
     }
 
+    if (op->multiple_kernel_modules) {
+        build_module_instances_parameter = 
+                                 nvasprintf(" NV_BUILD_MODULE_INSTANCES=%d",
+                                            NV_MAX_MODULE_INSTANCES);
+    }
+    else {
+        build_module_instances_parameter = nvstrdup("");
+    }
+
     cmd = nvstrcat("cd ", build_directory, "; make module-sign"
                    " SYSSRC=", op->kernel_source_path,
                    " SYSOUT=", op->kernel_output_path,
                    " MODSECKEY=", op->module_signing_secret_key,
                    " MODPUBKEY=", op->module_signing_public_key,
+                   " NV_MODULE_SUFFIX=", module_suffix,
+                   build_module_instances_parameter,
                    mod_sign_cmd ? mod_sign_cmd : "",
                    mod_sign_hash ? mod_sign_hash : "", NULL);
 
@@ -687,6 +747,7 @@ int sign_kernel_module(Options *op, const char *build_directory, int status) {
     nvfree(mod_sign_hash);
     nvfree(mod_sign_cmd);
     nvfree(cmd);
+    nvfree(build_module_instances_parameter);
 
     if (status) {
         ui_status_end(op, success ? "done." : "Failed to sign kernel module.");
@@ -706,7 +767,9 @@ int sign_kernel_module(Options *op, const char *build_directory, int status) {
  */
 static int create_detached_signature(Options *op, Package *p,
                                      const char *build_dir,
-                                     PrecompiledFileInfo *fileInfo)
+                                     PrecompiledFileInfo *fileInfo,
+                                     const char *module_suffix,
+                                     const char *module_filename)
 {
     int ret, command_ret;
     struct stat st;
@@ -722,7 +785,7 @@ static int create_detached_signature(Options *op, Package *p,
         goto done;
     }
 
-    module_path = nvstrcat(build_dir, "/", p->kernel_module_filename, NULL);
+    module_path = nvstrcat(build_dir, "/", module_filename, NULL);
     command_ret = stat(module_path, &st);
 
     if (command_ret != 0) {
@@ -738,7 +801,7 @@ static int create_detached_signature(Options *op, Package *p,
 
     ui_status_update(op, .50, "Signing linked module");
 
-    ret = sign_kernel_module(op, build_dir, FALSE);
+    ret = sign_kernel_module(op, build_dir, module_suffix, FALSE);
 
     if (!ret) {
         error = "Failed to sign the linked kernel module.";
@@ -763,7 +826,7 @@ done:
     } else {
         ui_status_end(op, "Error.");
         if (error) {
-            ui_error(op, error);
+            ui_error(op, "%s", error);
         }
     }
 
@@ -772,30 +835,115 @@ done:
 } /* create_detached_signature() */
 
 
-
 /*
- * build_kernel_interface() - build the kernel interface(s), and store any
- * built interfaces in a newly allocated PrecompiledFileInfo array, a pointer
- * to which is passed back to the caller. Return the number of packaged
- * interface files, or 0 on error.
+ * build_kernel_interface_file() - build the kernel interface(s).
+ * Returns true if the build was successful, or false on error.
  *
  * This is done by copying the sources to a temporary working
  * directory and building the kernel interface in that directory.
- * The tmpdir is removed when complete.
+ */
+
+static int build_kernel_interface_file(Options *op, const char *tmpdir,
+                                       PrecompiledFileInfo *fileInfo,
+                                       const char *kernel_interface_filename,
+                                       const char *module_suffix,
+                                       const char *build_module_instances_parameter)
+{
+    char *cmd;
+    char *kernel_interface;
+    int command_ret;
+
+    cmd = nvstrcat("cd ", tmpdir, "; make ",
+                   kernel_interface_filename,
+                   " SYSSRC=", op->kernel_source_path,
+                   " SYSOUT=", op->kernel_output_path,
+                   " NV_MODULE_SUFFIX=", module_suffix,
+                   build_module_instances_parameter, NULL);
+
+    command_ret = run_command(op, cmd, NULL, TRUE, 25 /* XXX */, TRUE);
+
+    free(cmd);
+
+    if (command_ret != 0) {
+        ui_status_end(op, "Error.");
+        ui_error(op, "Unable to build the NVIDIA kernel module interface.");
+        /* XXX need more descriptive error message */
+        return FALSE;
+    }
+
+    /* check that the file exists */
+
+    kernel_interface = nvstrcat(tmpdir, "/",
+                                kernel_interface_filename, NULL);
+
+    if (access(kernel_interface, F_OK) == -1) {
+        ui_status_end(op, "Error.");
+        ui_error(op, "The NVIDIA kernel module interface was not created.");
+        nvfree(kernel_interface);
+        return FALSE;
+    }
+
+    nvfree(kernel_interface);
+    return TRUE;
+}
+
+/*
+ * pack_kernel_interface() - Store the input built interfaces in the
+ * PrecompiledFileInfo array.
+ *
+ * Returns true if the packing was successful, or false on error.
+ */
+
+static int pack_kernel_interface(Options *op, Package *p,
+                                 const char *build_dir,
+                                 PrecompiledFileInfo *fileInfo,
+                                 const char *module_suffix,
+                                 const char *kernel_interface,
+                                 const char *module_filename,
+                                 const char *core_file)
+{
+    int command_ret;
+
+    command_ret = precompiled_read_interface(fileInfo, kernel_interface,
+                                             module_filename,
+                                             core_file);
+
+    if (command_ret) {
+        if (op->module_signing_secret_key && op->module_signing_public_key) {
+            if (!create_detached_signature(op, p, build_dir, fileInfo,
+                                           module_suffix,
+                                           module_filename)) {
+                return FALSE;
+            }
+        }
+        return TRUE;
+    }
+
+    return FALSE;
+}
+
+/*
+ * build_kernel_interface() - build the kernel interface(s), and store any
+ * built interfaces in a newly allocated PrecompiledFileInfo array. Return
+ * the number of packaged interface files, or 0 on error.
+ *
+ * The tmpdir created to build the kernel interface is removed before exit.
+ *
+ * For multi-RM, the frontend module interface should be compiled and
+ * packaged too.
  *
  * XXX this and build_kernel_module() should be merged.
- * XXX for multi-RM the dispatch module should be compiled separately, then
- * packaged whole with file type PRECOMPILED_FILE_TYPE_MODULE.
  */
 
 int build_kernel_interface(Options *op, Package *p,
                            PrecompiledFileInfo ** fileInfos)
 {
     char *tmpdir = NULL;
-    char *cmd = NULL;
     char *dstfile = NULL;
-    int files_packaged = 0, command_ret, i;
-    const int num_files = 1; /* XXX multi-RM */
+    int files_packaged = 0, i;
+    int num_files = 1;
+    int ret_status;
+    char *build_module_instances_parameter = NULL;
 
     *fileInfos = NULL;
 
@@ -826,38 +974,44 @@ int build_kernel_interface(Options *op, Package *p,
 
     touch_directory(op, p->kernel_module_build_directory);
 
-    *fileInfos = nvalloc(sizeof(PrecompiledFileInfo) * num_files);
+    if (op->multiple_kernel_modules) {
+        num_files = op->num_kernel_modules;
+        build_module_instances_parameter = 
+                                 nvasprintf(" NV_BUILD_MODULE_INSTANCES=%d",
+                                            NV_MAX_MODULE_INSTANCES);
+    }
+    else {
+        build_module_instances_parameter = nvstrdup("");
+    }
+
+    *fileInfos = nvalloc(sizeof(PrecompiledFileInfo) * (num_files + 1));
 
     for (i = 0; i < num_files; i++) {
         char *kernel_interface, *kernel_module_filename;
+        char *kernel_interface_filename;
         PrecompiledFileInfo *fileInfo = *fileInfos + i;
+        char module_instance_str[5];
+
+        memset(module_instance_str, 0, sizeof(module_instance_str));
+        if (op->multiple_kernel_modules) {
+            snprintf(module_instance_str, sizeof(module_instance_str), "%d", i);
+        }
+
+        kernel_interface_filename = nvstrdup(p->kernel_interface_filename);
+
+        replace_zero(kernel_interface_filename, i);
 
         /* build the kernel interface */
 
         ui_status_begin(op, "Building kernel interface:", "Building (%d/%d)",
                         i + 1, num_files);
 
-        cmd = nvstrcat("cd ", tmpdir, "; make ", p->kernel_interface_filename,
-                       " SYSSRC=", op->kernel_source_path, NULL);
+        ret_status = build_kernel_interface_file(op, tmpdir, fileInfo,
+                        kernel_interface_filename, module_instance_str,
+                        build_module_instances_parameter);
 
-        command_ret = run_command(op, cmd, NULL, TRUE, 25 /* XXX */, TRUE);
-
-        if (command_ret != 0) {
-            ui_status_end(op, "Error.");
-            ui_error(op, "Unable to build the NVIDIA kernel module interface.");
-            /* XXX need more descriptive error message */
-            goto failed;
-        }
-
-        /* check that the file exists */
-
-        kernel_interface = nvstrcat(tmpdir, "/",
-                                    p->kernel_interface_filename, NULL);
-
-        if (access(kernel_interface, F_OK) == -1) {
-            ui_status_end(op, "Error.");
-            ui_error(op, "The NVIDIA kernel module interface was not created.");
-            nvfree(kernel_interface);
+        if (!ret_status) {
+            nvfree(kernel_interface_filename);
             goto failed;
         }
 
@@ -865,28 +1019,68 @@ int build_kernel_interface(Options *op, Package *p,
 
         ui_log(op, "Kernel module interface compilation complete.");
 
-        /* add the kernel interface to the list of files to be packaged */
+        kernel_interface = nvstrcat(tmpdir, "/",
+                                    kernel_interface_filename, NULL);
 
-        kernel_module_filename = guess_kernel_module_filename(op);
-        command_ret = precompiled_read_interface(fileInfo, kernel_interface,
-                                                 kernel_module_filename,
-                                                 "nv-kernel.o");
+        kernel_module_filename = nvstrdup(p->kernel_module_filename);
+
+        replace_zero(kernel_module_filename, i);
+
+        /* add the kernel interface to the list of files to be packaged */
+        ret_status = pack_kernel_interface(op, p, tmpdir, fileInfo,
+                                           module_instance_str,
+                                           kernel_interface,
+                                           kernel_module_filename,
+                                           "nv-kernel.o");
+
         nvfree(kernel_interface);
+        nvfree(kernel_interface_filename);
         nvfree(kernel_module_filename);
 
-        if (command_ret) {
-            if (op->module_signing_secret_key && op->module_signing_public_key) {
-                if (!create_detached_signature(op, p, tmpdir, fileInfo)) {
-                    goto failed;
-                }
-            }
-            files_packaged++;
-        } else {
+        if (!ret_status)
             goto failed;
-        }
+
+        files_packaged++;
+    }
+
+    if (op->multiple_kernel_modules) {
+        char *frontend_interface_filename;
+        PrecompiledFileInfo *fileInfo = *fileInfos + num_files;
+
+        ui_status_begin(op, "Building frontend interface: ", "Building");
+
+        ret_status = build_kernel_interface_file(op, tmpdir, fileInfo,
+                        p->kernel_frontend_interface_filename, "frontend",
+                        build_module_instances_parameter);
+
+        if (!ret_status)
+            goto failed;
+
+        ui_status_end(op, "done.");
+
+        ui_log(op, "Frontend kernel module interface compilation complete.");
+
+        frontend_interface_filename = nvstrcat(tmpdir, "/",
+                                       p->kernel_frontend_interface_filename,
+                                       NULL);
+
+        /* add the kernel interface to the list of files to be packaged */
+        ret_status = pack_kernel_interface(op, p, tmpdir, fileInfo,
+                                           "frontend",
+                                           frontend_interface_filename,
+                                           p->kernel_frontend_module_filename,
+                                           "");
+
+        nvfree(frontend_interface_filename);
+
+        if (!ret_status)
+            goto failed;
+
+        files_packaged++;
     }
 
 failed:
+    nvfree(build_module_instances_parameter);
 
     if (files_packaged == 0) {
         nvfree(*fileInfos);
@@ -897,7 +1091,7 @@ failed:
         remove_directory(op, tmpdir);
         nvfree(tmpdir);
     }
-    if (cmd) nvfree(cmd);
+
     if (dstfile) nvfree(dstfile);
 
     return files_packaged;
@@ -1072,6 +1266,118 @@ kmod_done:
 } /* do_insmod() */
 
 
+/*
+ * Determine if the load error be ignored or not. Also print detailed 
+ * error messages corresponding to the return status from do_install(). 
+ *
+ * Returns true if user chooses to ignore the load error, else, false.
+ */
+
+static int ignore_load_error(Options *op, Package *p, 
+                             const char *module_filename,
+                             const char* data, int insmod_status)
+{
+    int ignore_error = FALSE, secureboot, module_sig_force, enokey;
+    const char *probable_reason, *signature_related;
+
+    enokey = (-insmod_status == ENOKEY);
+    secureboot = (secure_boot_enabled() == 1);
+    module_sig_force =
+        (test_kernel_config_option(op, p, "CONFIG_MODULE_SIG_FORCE") ==
+         KERNEL_CONFIG_OPTION_DEFINED);
+
+    if (enokey) {
+        probable_reason = ",";
+        signature_related = "";
+    } else if (module_sig_force) {
+        probable_reason = ". CONFIG_MODULE_SIG_FORCE is set on the target "
+                          "kernel, so this is likely";
+    } else if (secureboot) {
+        probable_reason = ". Secure boot is enabled on this system, so "
+                          "this is likely";
+    } else {
+        probable_reason = ", possibly";
+    }
+
+    if (!enokey) {
+        signature_related = "if this module loading failure is due to the "
+                            "lack of a trusted signature, ";
+    }
+
+    if (enokey || secureboot || module_sig_force || op->expert) {
+        if (op->kernel_module_signed) {
+
+            ignore_error = ui_yes_no(op, TRUE,
+                                     "The signed kernel module failed to "
+                                     "load%s because the kernel does not "
+                                     "trust any key which is capable of "
+                                     "verifying the module signature. "
+                                     "Would you like to install the signed "
+                                     "kernel module anyway?\n\nNote that %s"
+                                     "you will not be able to load the "
+                                     "installed module until after a key "
+                                     "that can verify the module signature "
+                                     "is added to a key database that is "
+                                     "trusted by the kernel. This will "
+                                     "likely require rebooting your "
+                                     "computer.", probable_reason,
+                                     signature_related);
+        } else {
+            const char *secureboot_message, *dkms_message;
+
+            secureboot_message = secureboot == 1 ?
+                                     "and sign the kernel module when "
+                                     "prompted to do so." :
+                                     "and set the --module-signing-secret-"
+                                     "key and --module-signing-public-key "
+                                     "options on the command line, or run "
+                                     "the installer in expert mode to "
+                                     "enable the interactive module "
+                                     "signing prompts.";
+
+            dkms_message = op->dkms ? " Module signing is incompatible "
+                                      "with DKMS, so please select the "
+                                      "non-DKMS option when building the "
+                                      "kernel module to be signed." : "";
+            ui_error(op, "The kernel module failed to load%s because it "
+                     "was not signed by a key that is trusted by the "
+                     "kernel. Please try installing the driver again, %s%s",
+                     probable_reason, secureboot_message, dkms_message);
+        }
+    }
+
+    if (ignore_error) {
+        ui_log(op, "An error was encountered when loading the kernel "
+               "module, but that error was ignored, and the kernel module "
+               "will be installed, anyway. The error was: %s", data);
+    } else {
+        ui_error(op, "Unable to load the kernel module '%s'.  This "
+                 "happens most frequently when this kernel module was "
+                 "built against the wrong or improperly configured "
+                 "kernel sources, with a version of gcc that differs "
+                 "from the one used to build the target kernel, or "
+                 "if a driver such as rivafb, nvidiafb, or nouveau is "
+                 "present and prevents the NVIDIA kernel module from "
+                 "obtaining ownership of the NVIDIA graphics device(s), "
+                 "or no NVIDIA GPU installed in this system is supported "
+                 "by this NVIDIA Linux graphics driver release.\n\n"
+                 "Please see the log entries 'Kernel module load "
+                 "error' and 'Kernel messages' at the end of the file "
+                 "'%s' for more information.",
+                 module_filename, op->log_file_name);
+
+        /*
+         * if in expert mode, run_command() would have caused this to
+         * be written to the log file; so if not in expert mode, print
+         * the output now.
+         */
+
+        if (!op->expert) ui_log(op, "Kernel module load error: %s", data);
+    }
+
+    return ignore_error; 
+} /* ignore_load_error() */
+
 
 /*
  * test_kernel_module() - attempt to insmod the kernel module and then
@@ -1123,114 +1429,36 @@ int test_kernel_module(Options *op, Package *p)
         nvfree(cmd);
     }
 
-    /* Load nvidia.ko */
+    if (op->multiple_kernel_modules) {
+        /* Load nvidia-frontend.ko */
+        
+        module_path = nvstrcat(p->kernel_module_build_directory, "/",
+                               p->kernel_frontend_module_filename, NULL);
+        ret = do_insmod(op, module_path, &data);
+        nvfree(module_path);
+
+        if (ret != 0) {
+            ret = ignore_load_error(op, p, p->kernel_frontend_module_filename, 
+                                    data, ret);
+            goto test_exit;
+        }
+
+        nvfree(data);
+    }
+
+    /* 
+     * Load nvidia0.ko while building multiple kernel modules or
+     * load nvidia.ko for non-multiple-kernel-module/simple builds.
+     */
+
     module_path = nvstrcat(p->kernel_module_build_directory, "/",
                            p->kernel_module_filename, NULL);
     ret = do_insmod(op, module_path, &data);
     nvfree(module_path);
 
     if (ret != 0) {
-        int ignore_error = FALSE, secureboot, module_sig_force, enokey;
-        const char *probable_reason, *signature_related;
-
-        enokey = (-ret == ENOKEY);
-        secureboot = (secure_boot_enabled() == 1);
-        module_sig_force =
-            (test_kernel_config_option(op, p, "CONFIG_MODULE_SIG_FORCE") ==
-            KERNEL_CONFIG_OPTION_DEFINED);
-
-        if (enokey) {
-            probable_reason = ",";
-            signature_related = "";
-        } else if (module_sig_force) {
-            probable_reason = ". CONFIG_MODULE_SIG_FORCE is set on the target "
-                              "kernel, so this is likely";
-        } else if (secureboot) {
-            probable_reason = ". Secure boot is enabled on this system, so "
-                              "this is likely";
-        } else {
-            probable_reason = ", possibly";
-        }
-
-        if (!enokey) {
-            signature_related = "if this module loading failure is due to the "
-                                "lack of a trusted signature, ";
-        }
-
-        if (enokey || secureboot || module_sig_force || op->expert) {
-            if (op->kernel_module_signed) {
-
-                ignore_error = ui_yes_no(op, TRUE,
-                                     "The signed kernel module failed to "
-                                     "load%s because the kernel does not "
-                                     "trust any key which is capable of "
-                                     "verifying the module signature. "
-                                     "Would you like to install the signed "
-                                     "kernel module anyway?\n\nNote that %s"
-                                     "you will not be able to load the "
-                                     "installed module until after a key "
-                                     "that can verify the module signature "
-                                     "is added to a key database that is "
-                                     "trusted by the kernel. This will "
-                                     "likely require rebooting your "
-                                     "computer.", probable_reason,
-                                     signature_related);
-            } else {
-                const char *secureboot_message, *dkms_message;
-
-                secureboot_message = secureboot == 1 ?
-                                         "and sign the kernel module when "
-                                         "prompted to do so." :
-                                         "and set the --module-signing-secret-"
-                                         "key and --module-signing-public-key "
-                                         "options on the command line, or run "
-                                         "the installer in expert mode to "
-                                         "enable the interactive module "
-                                         "signing prompts.";
-
-                dkms_message = op->dkms ? " Module signing is incompatible "
-                                          "with DKMS, so please select the "
-                                          "non-DKMS option when building the "
-                                          "kernel module to be signed." : "";
-                ui_error(op, "The kernel module failed to load%s because it "
-                         "was not signed by a key that is trusted by the "
-                         "kernel. Please try installing the driver again, %s%s",
-                         probable_reason, secureboot_message, dkms_message);
-                ignore_error = FALSE;
-            }
-        }
-
-        if (ignore_error) {
-            ui_log(op, "An error was encountered when loading the kernel "
-                   "module, but that error was ignored, and the kernel module "
-                   "will be installed, anyway. The error was: %s", data);
-            ret = TRUE;
-        } else {
-            ui_error(op, "Unable to load the kernel module '%s'.  This "
-                     "happens most frequently when this kernel module was "
-                     "built against the wrong or improperly configured "
-                     "kernel sources, with a version of gcc that differs "
-                     "from the one used to build the target kernel, or "
-                     "if a driver such as rivafb, nvidiafb, or nouveau is "
-                     "present and prevents the NVIDIA kernel module from "
-                     "obtaining ownership of the NVIDIA graphics device(s), "
-                     "or no NVIDIA GPU installed in this system is supported "
-                     "by this NVIDIA Linux graphics driver release.\n\n"
-                     "Please see the log entries 'Kernel module load "
-                     "error' and 'Kernel messages' at the end of the file "
-                     "'%s' for more information.",
-                     p->kernel_module_filename, op->log_file_name);
-
-            /*
-             * if in expert mode, run_command() would have caused this to
-             * be written to the log file; so if not in expert mode, print
-             * the output now.
-             */
-
-            if (!op->expert) ui_log(op, "Kernel module load error: %s", data);
-            ret = FALSE;
-        }
-
+        ret = ignore_load_error(op, p, p->kernel_module_filename,
+                                data, ret);
     } else {
 
         /*
@@ -1248,10 +1476,19 @@ int test_kernel_module(Options *op, Package *p)
          */
         cmd = nvstrcat(op->utils[RMMOD], " ", p->kernel_module_name, NULL);
         run_command(op, cmd, NULL, FALSE, 0, TRUE);
+
+        if (op->multiple_kernel_modules) {
+            nvfree(cmd);
+            cmd = nvstrcat(op->utils[RMMOD], " ",
+                           p->kernel_frontend_module_name, NULL);
+            run_command(op, cmd, NULL, FALSE, 0, TRUE);
+        }
+
         ret = TRUE;
         nvfree(cmd);
     }
 
+test_exit:
     nvfree(data);
     
     /*
@@ -1411,7 +1648,42 @@ int check_for_unloaded_kernel_module(Options *op, Package *p)
 } /* check_for_unloaded_kernel_module() */
 
 
+/*
+ * add_file_to_search_filelist() - Add file to build a list
+ * of files expected to be unpacked.
+ */
 
+static void add_file_to_search_filelist(char **search_filelist, char *filename)
+{
+    int index = 0;
+
+    while(search_filelist[index]) {
+        index++;
+    }
+
+    if (index == SEARCH_FILELIST_MAX_ENTRIES)
+        return;
+ 
+    search_filelist[index] = nvstrdup(filename);
+
+} /* add_file_to_search_filelist() */
+
+
+/* 
+ * free_search_filelist() - frees the list of files expected
+ * to unpack
+ */
+
+static void free_search_filelist(char **search_filelist)
+{
+    int index = 0;
+
+    while (search_filelist[index]) {
+        free(search_filelist[index]);
+        index++;
+    }
+
+} /*free_search_filelist() */
 
 
 /*
@@ -1427,7 +1699,9 @@ PrecompiledInfo *find_precompiled_kernel_interface(Options *op, Package *p)
 {
     char *proc_version_string, *tmp;
     PrecompiledInfo *info = NULL;
-
+    char *search_filelist[SEARCH_FILELIST_MAX_ENTRIES+1];
+    int index;
+  
     /* allow the user to completely skip this search */
     
     if (op->no_precompiled_interface) {
@@ -1445,7 +1719,22 @@ PrecompiledInfo *find_precompiled_kernel_interface(Options *op, Package *p)
     
     if (!mkdir_recursive(op, p->kernel_module_build_directory, 0755))
         goto failed;
-    
+
+    memset(search_filelist, 0, sizeof(search_filelist));
+
+    if (op->multiple_kernel_modules) {
+        add_file_to_search_filelist(search_filelist, 
+                                    p->kernel_frontend_interface_filename);
+    }
+
+    for (index = 0; index < op->num_kernel_modules; index++) {
+        char *tmp;
+        tmp = nvstrdup(p->kernel_interface_filename);
+        replace_zero(tmp, index);
+        add_file_to_search_filelist(search_filelist, tmp);
+        free(tmp);
+    }
+
     /*
      * if the --precompiled-kernel-interfaces-path option was
      * specified, search that directory, first
@@ -1453,7 +1742,7 @@ PrecompiledInfo *find_precompiled_kernel_interface(Options *op, Package *p)
     
     if (op->precompiled_kernel_interfaces_path) {
         info = scan_dir(op, p, op->precompiled_kernel_interfaces_path,
-                        proc_version_string);
+                        proc_version_string, search_filelist);
     }
     
     /*
@@ -1464,11 +1753,11 @@ PrecompiledInfo *find_precompiled_kernel_interface(Options *op, Package *p)
     if (!info) {
         tmp = build_distro_precompiled_kernel_interface_dir(op);
         if (tmp) {
-            info = scan_dir(op, p, tmp, proc_version_string);
+            info = scan_dir(op, p, tmp, proc_version_string, search_filelist);
             nvfree(tmp);
         }
     }
-    
+
     /*
      * if we still haven't found a match, search in
      * p->precompiled_kernel_interface_directory (the directory
@@ -1478,7 +1767,7 @@ PrecompiledInfo *find_precompiled_kernel_interface(Options *op, Package *p)
 
     if (!info) {
         info = scan_dir(op, p, p->precompiled_kernel_interface_directory,
-                        proc_version_string);
+                        proc_version_string, search_filelist);
     }
     
     /*
@@ -1488,15 +1777,19 @@ PrecompiledInfo *find_precompiled_kernel_interface(Options *op, Package *p)
 
     if (!info && !op->no_network && op->precompiled_kernel_interfaces_url) {
         info = download_updated_kernel_interface(op, p,
-                                                 proc_version_string);
+                                                 proc_version_string,
+                                                 search_filelist);
         if (!info) {
             ui_message(op, "No matching precompiled kernel interface was "
                        "found at '%s'; this means that the installer will need "
                        "to compile a kernel interface for your kernel.",
                        op->precompiled_kernel_interfaces_url);
+            free_search_filelist(search_filelist);
             return NULL;
         }
     }
+
+    free_search_filelist(search_filelist);
 
     /* If we found one, ask expert users if they really want to use it */
 
@@ -1893,7 +2186,8 @@ static int rmmod_kernel_module(Options *op, const char *module_name)
 
 static PrecompiledInfo *
 download_updated_kernel_interface(Options *op, Package *p,
-                                  const char *proc_version_string)
+                                  const char *proc_version_string,
+                                  char *const *search_filelist)
 {
     int fd = -1;
     int dst_fd = -1;
@@ -1999,7 +2293,7 @@ download_updated_kernel_interface(Options *op, Package *p,
             /* XXX once we have gpg setup, should check the file here */
 
             info = get_precompiled_info(op, dstfile, proc_version_string,
-                                        p->version);
+                                        p->version, search_filelist);
 
             if (!info) {
                 ui_error(op, "The format of the downloaded precompiled package "
@@ -2207,7 +2501,8 @@ static int preempt_rt_check(Options *op, Package *p)
 
 static PrecompiledInfo *scan_dir(Options *op, Package *p,
                                  const char *directory_name,
-                                 const char *proc_version_string)
+                                 const char *proc_version_string,
+                                 char *const *search_filelist)
 {
     DIR *dir;
     struct dirent *ent;
@@ -2232,7 +2527,7 @@ static PrecompiledInfo *scan_dir(Options *op, Package *p,
         filename = nvstrcat(directory_name, "/", ent->d_name, NULL);
         
         info = get_precompiled_info(op, filename, proc_version_string,
-                                    p->version);
+                                    p->version, search_filelist);
 
         free(filename);
 
@@ -2311,62 +2606,6 @@ static char *convert_include_path_to_source_path(const char *inc)
     return str;
 
 } /* convert_include_path_to_source_path() */
-
-
-
-/*
- * guess_kernel_module_filename() - parse uname to decide if the
- * kernel module filename is "nvidia.o" or "nvidia.ko".
- */
-
-static char *guess_kernel_module_filename(Options *op)
-{
-    struct utsname uname_buf;
-    char *tmp, *str, *dot0, *dot1;
-    int major, minor;
-    
-    if (op->kernel_name) {
-        str = op->kernel_name;
-    } else {
-        if (uname(&uname_buf) == -1) {
-            ui_error (op, "Unable to determine kernel version (%s)",
-                      strerror (errno));
-            return NULL;
-        }
-        str = uname_buf.release;
-    }
-    
-    tmp = nvstrdup(str);
-    
-    dot0 = strchr(tmp, '.');
-    if (!dot0) goto fail;
-    
-    *dot0 = '\0';
-    
-    major = atoi(tmp);
-    
-    dot0++;
-    dot1 = strchr(dot0, '.');
-    if (!dot1) goto fail;
-    
-    *dot1 = '\0';
-    
-    minor = atoi(dot0);
-    
-    if ((major > 2) || ((major == 2) && (minor > 4))) {
-        return nvstrdup("nvidia.ko");
-    } else {
-        return nvstrdup("nvidia.o");
-    }
-
- fail:
-    ui_error (op, "Unable to determine if kernel is 2.6.0 or greater from "
-              "uname string '%s'; assuming the kernel module filename is "
-              "'nvidia.o'.", str);
-    return nvstrdup("nvidia.o");
-    
-} /* guess_kernel_module_filename() */
-
 
 
 /*

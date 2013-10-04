@@ -33,7 +33,7 @@ void select_tls_class(Options *op, Package *p); /* XXX move? */
 int set_destinations(Options *op, Package *p); /* XXX move? */
 int get_license_acceptance(Options *op); /* XXX move? */
 int get_prefixes(Options *op); /* XXX move? */
-int add_kernel_module_to_package(Options *op, Package *p);
+int add_kernel_modules_to_package(Options *op, Package *p);
 void remove_non_kernel_module_files_from_package(Options *op, Package *p);
 void remove_opengl_files_from_package(Options *op, Package *p);
 void remove_trailing_slashes(char *s);
@@ -65,7 +65,7 @@ void process_dot_desktop_files(Options *op, Package *p);
 int set_security_context(Options *op, const char *filename);
 void get_default_prefixes_and_paths(Options *op);
 char *nv_strreplace(char *src, char *orig, char *replace);
-char *get_filename(Options *op, const char *def, const char *fmt, ...) NV_ATTRIBUTE_PRINTF(3, 4);
+char *get_filename(Options *op, const char *def, const char *msg);
 int secure_delete(Options *op, const char *file);
 void invalidate_package_entry(PackageEntry *entry);
 

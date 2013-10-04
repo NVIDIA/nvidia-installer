@@ -708,7 +708,7 @@ static int do_uninstall(Options *op, const char *version)
                        e->filename, strerror(errno));
                 removal_failed = TRUE;
             }
-            ui_status_update(op, percent, e->filename);
+            ui_status_update(op, percent, "%s", e->filename);
             break;
 
         case INSTALLED_SYMLINK:
@@ -717,7 +717,7 @@ static int do_uninstall(Options *op, const char *version)
                        e->filename, strerror(errno));
                 removal_failed = TRUE;
             }
-            ui_status_update(op, percent, e->filename);
+            ui_status_update(op, percent, "%s", e->filename);
             break;
         }
     }
@@ -763,7 +763,7 @@ static int do_uninstall(Options *op, const char *version)
                     restore_failed = TRUE;
                 }
             }
-            ui_status_update(op, percent, e->filename);
+            ui_status_update(op, percent, "%s", e->filename);
             break;
             
           default:
@@ -787,7 +787,7 @@ static int do_uninstall(Options *op, const char *version)
                     }
                 }
             }
-            ui_status_update(op, percent, e->filename);
+            ui_status_update(op, percent, "%s", e->filename);
             free(tmpstr);
             break;
         }
@@ -817,12 +817,33 @@ static int do_uninstall(Options *op, const char *version)
     }
 
     /*
-     * attempt to unload the kernel module, but don't abort if this fails: the
-     * kernel may not have been configured with support for module unloading
-     * (Linux 2.6) or the user might have unloaded it themselves.
+     * attempt to unload the kernel module(s), but don't abort if this fails:
+     * the kernel may not have been configured with support for module 
+     * unloading or the user might have unloaded it themselves or the module 
+     * might not have existed at all.
      */
+
     cmd = nvstrcat(op->utils[RMMOD], " ", RMMOD_MODULE_NAME, NULL);
     run_command(op, cmd, NULL, FALSE, 0, TRUE);
+    nvfree(cmd);
+
+    for (i = 0; i < NV_MAX_MODULE_INSTANCES; i++) {
+        char num[5];
+        memset(num, 0, sizeof(num));
+        snprintf(num, sizeof(num), "%d", i);
+        num[sizeof(num) - 1] = '\0';
+       
+        cmd = nvstrcat(op->utils[RMMOD], " ", RMMOD_MODULE_NAME, 
+                       num, NULL);
+        run_command(op, cmd, NULL, FALSE, 0, TRUE);
+
+        nvfree(cmd);
+    }
+
+    cmd = nvstrcat(op->utils[RMMOD], " ", RMMOD_MODULE_NAME,
+                   "-frontend", NULL);
+    run_command(op, cmd, NULL, FALSE, 0, TRUE);
+
     nvfree(cmd);
 
     run_distro_hook(op, "post-uninstall");
@@ -1106,7 +1127,7 @@ static int check_backup_log_entries(Options *op, BackupInfo *b)
                     }
                 }
             }
-            ui_status_update(op, percent, e->filename);
+            ui_status_update(op, percent, "%s", e->filename);
 
             break;
 
@@ -1153,7 +1174,7 @@ static int check_backup_log_entries(Options *op, BackupInfo *b)
                     free(tmpstr);
                 }
             }
-            ui_status_update(op, percent, e->filename);
+            ui_status_update(op, percent, "%s", e->filename);
 
             break;
 
@@ -1189,7 +1210,7 @@ static int check_backup_log_entries(Options *op, BackupInfo *b)
                     ret = e->ok = FALSE;
                 }
             }
-            ui_status_update(op, percent, tmpstr);
+            ui_status_update(op, percent, "%s", tmpstr);
             free(tmpstr);
             break;
         }
@@ -1607,7 +1628,7 @@ static int sanity_check_backup_log_entries(Options *op, BackupInfo *b)
         }
         
         percent = (float) i / (float) (b->n);
-        ui_status_update(op, percent, e->filename);
+        ui_status_update(op, percent, "%s", e->filename);
     }
 
     ui_status_end(op, "done.");

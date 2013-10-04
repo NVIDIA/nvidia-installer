@@ -92,7 +92,9 @@ enum {
     MODULE_SIGNING_KEY_PATH_OPTION,
     MODULE_SIGNING_HASH_OPTION,
     MODULE_SIGNING_X509_HASH_OPTION,
+    INSTALL_VDPAU_WRAPPER_OPTION,
     NO_CHECK_FOR_ALTERNATE_INSTALLS_OPTION,
+    MULTIPLE_KERNEL_MODULES_OPTION,
 };
 
 static const NVGetoptOption __options[] = {
@@ -208,15 +210,15 @@ static const NVGetoptOption __options[] = {
     { "compat32-chroot", COMPAT32_CHROOT_OPTION, NVGETOPT_STRING_ARGUMENT,
       NULL,
       "The top-level prefix (chroot) relative to which the 32bit "
-      "compatibility OpenGL libraries will be installed on Linux/x86-64 "
-      "systems; this option is unset by default, the 32bit OpenGL "
+      "compatibility libraries will be installed on Linux/x86-64 "
+      "systems; this option is unset by default, the 32bit "
       "library installation prefix (see below) and the 32bit library "
       "path alone determine the target location.  Only under very rare "
       "circumstances should this option be used." },
 
     { "compat32-prefix", COMPAT32_PREFIX_OPTION, NVGETOPT_STRING_ARGUMENT,
       NULL,
-      "The prefix under which the 32bit compatibility OpenGL components "
+      "The prefix under which the 32bit compatibility components "
       "of the NVIDIA driver will be installed; the default is: '"
       DEFAULT_OPENGL_PREFIX "'.  Only under rare circumstances should "
       "this option be used." },
@@ -224,7 +226,7 @@ static const NVGetoptOption __options[] = {
     { "compat32-libdir", COMPAT32_LIBDIR_OPTION, NVGETOPT_STRING_ARGUMENT,
       NULL,
       "The path relative to the 32bit compatibility prefix under which the "
-      "32bit compatibility OpenGL components of the NVIDIA driver will "
+      "32bit compatibility components of the NVIDIA driver will "
       "be installed.  The default is '" DEFAULT_LIBDIR "' or '"
       UBUNTU_DEFAULT_COMPAT32_LIBDIR "', depending on the installed Linux "
       "distribution.  Only under very rare circumstances should this "
@@ -605,12 +607,27 @@ static const NVGetoptOption __options[] = {
       "name must be one of the message digest algorithms recognized by "
       "the x509(1) command." },
 
+    { "install-vdpau-wrapper", INSTALL_VDPAU_WRAPPER_OPTION,
+      NVGETOPT_IS_BOOLEAN, NULL,
+      "The NVIDIA driver package includes a VDPAU wrapper library for "
+      "convenience. By default, the wrapper library provided with the "
+      "driver package will not be installed if an existing wrapper "
+      "library is detected. Setting the '--install-vdpau-wrapper' option "
+      "will force the wrapper library to be installed; setting the "
+      "'--no-install-vdpau-wrapper' option will force the wrapper library to "
+      "be excluded from the installation." },
+
     { "no-check-for-alternate-installs", NO_CHECK_FOR_ALTERNATE_INSTALLS_OPTION,
       0, NULL,
       "Maintainers of alternate driver installation methods can report the "
       "presence and/or availability of an alternate driver installation to "
       "nvidia-installer. Setting this option skips the check for alternate "
       "driver installations." },
+
+    { "multiple-kernel-modules", MULTIPLE_KERNEL_MODULES_OPTION,
+       NVGETOPT_INTEGER_ARGUMENT, NULL,
+      "Build and install multiple NVIDIA kernel modules. The maximum number "
+      "of NVIDIA kernel modules that may be built is 8." },
 
     /* Orphaned options: These options were in the long_options table in
      * nvidia-installer.c but not in the help. */

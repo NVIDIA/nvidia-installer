@@ -30,6 +30,13 @@
 #include "nvidia-installer.h"
 #include "command-list.h"
 
+typedef enum {
+    ELF_INVALID_FILE,
+    ELF_ARCHITECTURE_UNKNOWN,
+    ELF_ARCHITECTURE_32,
+    ELF_ARCHITECTURE_64,
+} ElfFileType;
+
 char *read_next_word (char *buf, char **e);
 
 int check_euid(Options *op);
@@ -50,6 +57,7 @@ int continue_after_error(Options *op, const char *fmt, ...) NV_ATTRIBUTE_PRINTF(
 int do_install(Options *op, Package *p, CommandList *c);
 void should_install_opengl_headers(Options *op, Package *p);
 void should_install_compat32_files(Options *op, Package *p);
+void should_install_vdpau_wrapper(Options *op, Package *p);
 void check_installed_files_from_package(Options *op, Package *p);
 int tls_test(Options *op, int compat_32_libs);
 int check_runtime_configuration(Options *op, Package *p);
@@ -70,5 +78,6 @@ int unprelink(Options *op, const char *filename);
 int verify_crc(Options *op, const char *filename, unsigned int crc,
                unsigned int *actual_crc);
 int secure_boot_enabled(void);
+ElfFileType get_elf_architecture(const char *filename);
 
 #endif /* __NVIDIA_INSTALLER_MISC_H__ */

@@ -163,7 +163,8 @@ char *read_proc_version(Options *op, const char *proc_mount_point);
 PrecompiledInfo *get_precompiled_info(Options *op,
                                       const char *filename,
                                       const char *real_proc_version_string,
-                                      const char *package_version);
+                                      const char *package_version,
+                                      char *const *search_filelist);
 
 PrecompiledFileInfo *precompiled_find_file(const PrecompiledInfo *info,
                                            const char *file);

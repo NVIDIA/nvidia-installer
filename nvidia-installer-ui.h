@@ -128,6 +128,20 @@ typedef struct __nv_installer_ui {
     int (*yes_no)(Options *op, const int def, const char *msg);
 
     /*
+     * paged_prompt - ask the question 'question' with 'num_answers' possible
+     * multiple choice answers in 'answers', with 'default_answer' as the
+     * default answer, and with scrollable 'pager_text' given as supplementary
+     * information, described by 'pager_title'. Returns the index into 'answers'
+     * of the user-selected answer to 'question'. The names of answers must
+     * not begin with digits, and the caller is responsible for enforcing this.
+     */
+
+    int (*paged_prompt)(Options *op, const char *question,
+                        const char *pager_title, const char *pager_text,
+                        const char **answers, int num_answers,
+                        int default_answer);
+
+    /*
      * status_begin(), status_update(), status_end() - these three
      * functions display the status of some process.  It is expected
      * that status_begin() would be called, followed by some number of

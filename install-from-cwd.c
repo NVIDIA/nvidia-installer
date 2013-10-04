@@ -96,7 +96,7 @@ int install_from_cwd(Options *op)
      */
     
     if ((p = parse_manifest(op)) == NULL) goto failed;
-    
+
     ui_set_title(op, "%s (%s)", p->description, p->version);
     
     /* 
@@ -153,25 +153,7 @@ int install_from_cwd(Options *op)
     /* attempt to build a kernel module for the target kernel */
 
     if (!op->no_kernel_module) {
-
-        /* Offer the DKMS option if DKMS exists and the kernel module sources 
-         * will be installed somewhere. Don't offer DKMS as an option if module
-         * signing was requested. */
-
-        if (find_system_util("dkms") && !op->no_kernel_module_source &&
-            !(op->module_signing_secret_key && op->module_signing_public_key)) {
-            op->dkms = ui_yes_no(op, op->dkms,
-                                "Would you like to register the kernel module "
-                                "sources with DKMS? This will allow DKMS to "
-                                "automatically build a new module, if you "
-                                "install a different kernel later.");
-        }
-
-        /* Only do the normal kernel module install if not using DKMS */
-
-        if (op->dkms) {
-            op->no_kernel_module = TRUE;
-        } else if (!install_kernel_module(op, p)) {
+        if (!install_kernel_module(op, p)) {
             goto failed;
         }
     } else {
@@ -262,6 +244,14 @@ int install_from_cwd(Options *op)
     if (!op->kernel_module_only) {
         if (!uninstall_existing_driver(op, FALSE)) goto failed;
     }
+
+    /*
+     * Determine whether the VDPAU wrapper should be installed: this must be
+     * done after uninstallation of the previous driver, to avoid detecting a
+     * leftover wrapper, and before building the command list.
+     */
+
+    should_install_vdpau_wrapper(op, p);
 
     /* build a list of operations to execute to do the install */
     
@@ -397,6 +387,26 @@ static int install_kernel_module(Options *op,  Package *p)
 {
     PrecompiledInfo *precompiled_info;
 
+    /* Offer the DKMS option if DKMS exists and the kernel module sources 
+     * will be installed somewhere. Don't offer DKMS as an option if module
+     * signing was requested. */
+
+    if (find_system_util("dkms") && !op->no_kernel_module_source &&
+        !(op->module_signing_secret_key && op->module_signing_public_key)) {
+        op->dkms = ui_yes_no(op, op->dkms,
+                            "Would you like to register the kernel module "
+                            "sources with DKMS? This will allow DKMS to "
+                            "automatically build a new module, if you "
+                            "install a different kernel later.");
+    }
+
+    /* Only do the normal kernel module install if not using DKMS */
+
+    if (op->dkms) {
+        op->no_kernel_module = TRUE;
+        return TRUE;
+    }
+
     /* determine where to install the kernel module */
     
     if (!determine_kernel_module_installation_path(op)) return FALSE;
@@ -420,17 +430,18 @@ static int install_kernel_module(Options *op,  Package *p)
     
     if ((precompiled_info = find_precompiled_kernel_interface(op, p))) {
 
+        int i;
+
+
         /*
-         * we have a prebuilt kernel interface, so now link the kernel
-         * interface with the binary portion of the kernel module.
+         * we have a prebuilt kernel interface package, so now link the
+         * kernel interface files to produce the kernel module.
          *
          * XXX if linking fails, maybe we should fall through and
          * attempt to build the kernel module?  No, if linking fails,
          * then there is something pretty seriously wrong... better to
          * abort.
          */
-
-        int i;
 
         for (i = 0; i < precompiled_info->num_files; i++) {
             if (!link_kernel_module(op, p, p->kernel_module_build_directory,
@@ -477,9 +488,9 @@ static int install_kernel_module(Options *op,  Package *p)
     
     if (!test_kernel_module(op, p)) return FALSE;
     
-    /* add the kernel module to the list of things to install */
+    /* add the kernel modules to the list of things to install */
     
-    if (!add_kernel_module_to_package(op, p)) return FALSE;
+    if (!add_kernel_modules_to_package(op, p)) return FALSE;
     
     return TRUE;
 }
@@ -495,7 +506,7 @@ int add_this_kernel(Options *op)
 {
     Package *p;
     PrecompiledFileInfo *fileInfos;
-    int num_files;
+    int num_expected_files = 1;
     
     /* parse the manifest */
 
@@ -505,14 +516,17 @@ int add_this_kernel(Options *op)
 
     if (!determine_kernel_source_path(op, p)) goto failed;
 
+    if (op->multiple_kernel_modules) 
+        num_expected_files = op->num_kernel_modules + 1;
+
     /* build the precompiled files */
 
-    num_files = build_kernel_interface(op, p, &fileInfos);
-    if (!num_files) goto failed;
+    if (num_expected_files != build_kernel_interface(op, p, &fileInfos)) 
+        goto failed;
     
     /* pack the precompiled files */
 
-    if (!pack_precompiled_files(op, p, num_files, fileInfos))
+    if (!pack_precompiled_files(op, p, num_expected_files, fileInfos))
         goto failed;
     
     free_package(p);
@@ -564,7 +578,7 @@ int add_this_kernel(Options *op)
 
 static Package *parse_manifest (Options *op)
 {
-    char *buf, *c, *flag , *tmpstr;
+    char *buf, *c, *flag, *tmpstr, *module_suffix = "";
     int done, n, line;
     int fd, ret, len = 0;
     struct stat stat_buf, entry_stat_buf;
@@ -601,17 +615,30 @@ static Package *parse_manifest (Options *op)
     p->version = get_next_line(ptr, &ptr, manifest, len);
     if (!p->version) goto invalid_manifest_file;
     
-    /* new third line is the kernel interface filename */
+    /* Ignore the third line */
 
     line++;
-    p->kernel_interface_filename = get_next_line(ptr, &ptr, manifest, len);
-    if (!p->kernel_interface_filename) goto invalid_manifest_file;
+    nvfree(get_next_line(ptr, &ptr, manifest, len));
 
     /* the fourth line is the kernel module name */
 
     line++;
-    p->kernel_module_name = get_next_line(ptr, &ptr, manifest, len);
-    if (!p->kernel_module_name) goto invalid_manifest_file;
+    tmpstr = get_next_line(ptr, &ptr, manifest, len);
+    if (!tmpstr) goto invalid_manifest_file;
+
+    if (op->multiple_kernel_modules) {
+        module_suffix = "0";
+        p->kernel_frontend_module_name = nvstrcat(tmpstr, "-frontend", NULL);
+        p->kernel_frontend_module_filename = 
+            nvstrcat(p->kernel_frontend_module_name, ".ko", NULL);
+        p->kernel_frontend_interface_filename = nvstrdup("nv-linuxfrontend.o");
+    }
+
+    p->kernel_module_name = nvstrcat(tmpstr, module_suffix, NULL);
+    p->kernel_module_filename = nvstrcat(p->kernel_module_name, ".ko", NULL);
+    p->kernel_interface_filename = nvstrcat("nv-linux", module_suffix, ".o", NULL); 
+
+    nvfree(tmpstr);
 
     /*
      * the fifth line is a whitespace-separated list of kernel modules
@@ -870,6 +897,7 @@ void add_package_entry(Package *p,
                        char *dst,
                        PackageEntryFileType type,
                        PackageEntryFileTlsClass tls_class,
+                       PackageEntryFileCompatArch compat_arch,
                        mode_t mode)
 {
     int n;
@@ -882,15 +910,16 @@ void add_package_entry(Package *p,
 
     memset(&p->entries[n], 0, sizeof(PackageEntry));
 
-    p->entries[n].file      = file;
-    p->entries[n].path      = path;
-    p->entries[n].name      = name;
-    p->entries[n].target    = target;
-    p->entries[n].dst       = dst;
-    p->entries[n].type      = type;
-    p->entries[n].tls_class = tls_class;
-    p->entries[n].mode      = mode;
-    p->entries[n].caps      = get_file_type_capabilities(type);
+    p->entries[n].file        = file;
+    p->entries[n].path        = path;
+    p->entries[n].name        = name;
+    p->entries[n].target      = target;
+    p->entries[n].dst         = dst;
+    p->entries[n].type        = type;
+    p->entries[n].tls_class   = tls_class;
+    p->entries[n].mode        = mode;
+    p->entries[n].caps        = get_file_type_capabilities(type);
+    p->entries[n].compat_arch = compat_arch;
 
     if (stat(p->entries[n].file, &stat_buf) != -1) {
         p->entries[n].inode = stat_buf.st_ino;
@@ -954,6 +983,10 @@ static void free_package(Package *p)
 
     nvfree((char *) p->entries);
 
+    nvfree(p->kernel_frontend_module_filename);
+    nvfree(p->kernel_frontend_module_name);
+    nvfree(p->kernel_frontend_interface_filename);
+
     nvfree((char *) p);
     
 } /* free_package() */
@@ -966,7 +999,7 @@ static void free_package(Package *p)
 
 static int assisted_module_signing(Options *op, Package *p)
 {
-    int generate_keys = FALSE, do_sign = FALSE, secureboot;
+    int generate_keys = FALSE, do_sign = FALSE, secureboot, i;
 
     secureboot = secure_boot_enabled();
 
@@ -1148,9 +1181,27 @@ guess_fail:
     }
 
     /* Now that we have keys (user-supplied or installer-generated),
-     * sign the kernel module which we built earlier. */
-    if (!sign_kernel_module(op, p->kernel_module_build_directory, TRUE)) {
-        return FALSE;
+     * sign the kernel module/s which we built earlier. */
+
+    for (i = 0; i < op->num_kernel_modules; i++) {
+        char module_instance_str[5];
+        memset(module_instance_str, 0, sizeof(module_instance_str));
+
+        if (op->multiple_kernel_modules) {
+            snprintf(module_instance_str, sizeof(module_instance_str), "%d", i);
+        }
+
+        if (!sign_kernel_module(op, p->kernel_module_build_directory,
+                                module_instance_str, TRUE)) {
+            return FALSE;
+        }
+    }
+
+    if (op->multiple_kernel_modules) {
+        if (!sign_kernel_module(op, p->kernel_module_build_directory,
+                                "frontend", TRUE)) {
+            return FALSE;
+        }
     }
 
     if (generate_keys) {
@@ -1224,6 +1275,7 @@ guess_fail:
                           NULL, /* dst */
                           FILE_TYPE_MODULE_SIGNING_KEY,
                           FILE_TLS_CLASS_NONE,
+                          FILE_COMPAT_ARCH_NONE,
                           0444);
 
         ui_message(op, "An X.509 certificate containing the public signing "
@@ -1256,6 +1308,7 @@ guess_fail:
                               NULL, /* dst */
                               FILE_TYPE_MODULE_SIGNING_KEY,
                               FILE_TLS_CLASS_NONE,
+                              FILE_COMPAT_ARCH_NONE,
                               0400);
 
             ui_message(op, "The private signing key will be installed to %s/%s. "

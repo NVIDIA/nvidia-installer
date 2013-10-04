@@ -148,7 +148,8 @@ char *read_proc_version(Options *op, const char *proc_mount_point)
 PrecompiledInfo *get_precompiled_info(Options *op,
                                       const char *filename,
                                       const char *real_proc_version_string,
-                                      const char *package_version)
+                                      const char *package_version,
+                                      char *const *search_filelist)
 {
     int fd, offset, num_files, i;
     char *buf;
@@ -160,7 +161,7 @@ PrecompiledInfo *get_precompiled_info(Options *op,
 
     fd = size = 0;
     buf = description = proc_version_string = NULL;
-    
+
     /* open the file to be unpacked */
     
     if ((fd = open(filename, O_RDONLY)) == -1) {
@@ -288,6 +289,35 @@ PrecompiledInfo *get_precompiled_info(Options *op,
         }
     }
 
+    /* 
+     * Check for the package validity.
+     * 
+     * The package is valid if all of the files specified in 
+     * search_filelist are present in the package.
+     */
+
+    if (search_filelist != NULL) {
+        int index;
+
+        for (index = 0; search_filelist[index]; index++) {
+            int found = FALSE;
+
+            for (i = 0; i < num_files; i++) {
+                if (!strcmp(search_filelist[index], fileInfos[i].name)) {
+                    found = TRUE;
+                    break;
+                }
+            }
+
+            if (!found) {
+                ui_log(op, "Required file '%s' not found in package '%s'", 
+                       search_filelist[index], filename);
+                goto done;
+            }
+        }
+    }
+    
+
     /*
      * now that we can no longer fail, allocate and initialize the
      * PrecompiledInfo structure
@@ -309,7 +339,7 @@ PrecompiledInfo *get_precompiled_info(Options *op,
     proc_version_string = description = NULL;
     fileInfos = NULL;
 
- done:
+done:
 
     /* cleanup whatever needs cleaning up */
 

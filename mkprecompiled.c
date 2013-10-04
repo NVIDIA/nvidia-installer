@@ -522,7 +522,7 @@ static Options *parse_commandline(int argc, char *argv[])
         break;
     }
 
-    op->package = get_precompiled_info(op, op->package_file, NULL, NULL);
+    op->package = get_precompiled_info(op, op->package_file, NULL, NULL, NULL);
 
     if (!op->package && op->action != PACK) {
         fprintf(stderr, "Unable to read package file '%s'.\n",

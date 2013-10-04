@@ -214,7 +214,7 @@ char *ui_get_input(Options *op, const char *def, const char *fmt, ...)
         ret = __ui->get_input(op, def, msg);
         tmp = nvstrcat(msg, " (Answer: '", ret, "')", NULL);
     }
-    log_printf(op, NV_BULLET_STR, tmp);
+    log_printf(op, NV_BULLET_STR, "%s", tmp);
     nvfree(msg);
     nvfree(tmp);
 
@@ -249,7 +249,7 @@ void ui_error(Options *op, const char *fmt, ...)
     NV_VSNPRINTF(msg, fmt);
 
     __ui->message(op, NV_MSG_LEVEL_ERROR, msg);
-    log_printf(op, "ERROR: ", msg);
+    log_printf(op, "ERROR: ", "%s", msg);
     
     free(msg);
 
@@ -264,7 +264,7 @@ void ui_warn(Options *op, const char *fmt, ...)
     NV_VSNPRINTF(msg, fmt);
 
     __ui->message(op, NV_MSG_LEVEL_WARNING, msg);
-    log_printf(op, "WARNING: ", msg);
+    log_printf(op, "WARNING: ", "%s", msg);
  
     free(msg);
     
@@ -280,7 +280,7 @@ void ui_message(Options *op, const char *fmt, ...)
 
     if (!op->silent) __ui->message(op, NV_MSG_LEVEL_MESSAGE, msg);
     
-    log_printf(op, NV_BULLET_STR, msg);
+    log_printf(op, NV_BULLET_STR, "%s", msg);
 
     free(msg);
 
@@ -294,7 +294,7 @@ void ui_log(Options *op, const char *fmt, ...)
     NV_VSNPRINTF(msg, fmt);
 
     if (!op->silent) __ui->message(op, NV_MSG_LEVEL_LOG, msg);
-    log_printf(op, NV_BULLET_STR, msg);
+    log_printf(op, NV_BULLET_STR, "%s", msg);
 
     free(msg);
 
@@ -315,7 +315,7 @@ void ui_expert(Options *op, const char *fmt, ...)
     NV_VSNPRINTF(msg, fmt);
 
     if (!op->silent) __ui->message(op, NV_MSG_LEVEL_LOG, msg);
-    log_printf(op, NV_BULLET_STR, msg);
+    log_printf(op, NV_BULLET_STR, "%s", msg);
 
     free (msg);
     
@@ -385,7 +385,7 @@ int ui_yes_no (Options *op, const int def, const char *fmt, ...)
         tmp = nvstrcat(msg, " (Answer: ", (ret ? "Yes" : "No"), ")", NULL);
     }
     
-    log_printf(op, NV_BULLET_STR, tmp);
+    log_printf(op, NV_BULLET_STR, "%s", tmp);
     nvfree(msg);
     nvfree(tmp);
 
@@ -394,12 +394,38 @@ int ui_yes_no (Options *op, const int def, const char *fmt, ...)
 } /* ui_yes_no() */
 
 
+int ui_paged_prompt (Options *op, const char *question, const char *pager_title,
+                     const char *pager_text, const char **answers,
+                     int num_answers, int default_answer)
+{
+    char *tmp;
+    int ret;
+
+    if (op->no_questions) {
+        ret = default_answer;
+    } else {
+        ret = __ui->paged_prompt(op, question, pager_title, pager_text, answers,
+                                 num_answers, default_answer);
+    }
+
+    tmp = nvstrcat("(Answer: ", answers[ret], ")", NULL);
+
+    if (!op->silent) {
+        __ui->message(op, NV_MSG_LEVEL_LOG, tmp);
+    }
+
+    log_printf(op, NV_BULLET_STR, "%s", tmp);
+    nvfree(tmp);
+
+    return ret;
+}
+
 
 void ui_status_begin(Options *op, const char *title, const char *fmt, ...)
 {
     char *msg;
 
-    log_printf(op, NV_BULLET_STR, title);
+    log_printf(op, NV_BULLET_STR, "%s", title);
 
     if (op->silent) return;
  
@@ -432,7 +458,7 @@ void ui_status_end(Options *op, const char *fmt, ...)
     NV_VSNPRINTF(msg, fmt);
 
     if (!op->silent) __ui->status_end(op, msg);
-    log_printf(op, NV_BULLET_STR, msg);
+    log_printf(op, NV_BULLET_STR, "%s", msg);
     free(msg);
 }
 

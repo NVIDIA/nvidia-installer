@@ -74,6 +74,16 @@ static void add_file_to_list(const char*, const char*, FileList*);
 
 static void append_to_rpm_file_list(Options *op, Command *c);
 
+/*
+ * find_conflicting_files() optionally takes an array of NoRecursionDirectory
+ * entries to indicate which directories should not be recursively searched.
+ */
+
+typedef struct {
+    int level;   /* max search depth: set to negative for unrestricted depth */
+    char *name;  /* name to find: NULL to end the list */
+} NoRecursionDirectory;
+
 
 /*
  * build_command_list() - construct a list of all the things to do
@@ -151,12 +161,12 @@ CommandList *build_command_list(Options *op, Package *p)
         find_conflicting_xfree86_libraries(op, DEFAULT_X_PREFIX, l);
         ui_status_update(op, 0.32f, XORG7_DEFAULT_X_PREFIX);
         find_conflicting_xfree86_libraries(op, XORG7_DEFAULT_X_PREFIX, l);
-        ui_status_update(op, 0.48f, op->x_prefix);
+        ui_status_update(op, 0.48f, "%s", op->x_prefix);
         find_conflicting_xfree86_libraries(op, op->x_prefix, l);
 
-        ui_status_update(op, 0.64f, op->x_module_path);
+        ui_status_update(op, 0.64f, "%s", op->x_module_path);
         find_conflicting_xfree86_libraries_fullpath(op, op->x_module_path, l);
-        ui_status_update(op, 0.80f, op->x_library_path);
+        ui_status_update(op, 0.80f, "%s", op->x_library_path);
         find_conflicting_xfree86_libraries_fullpath(op, op->x_library_path, l);
 
         ui_status_end(op, "done.");
@@ -165,11 +175,11 @@ CommandList *build_command_list(Options *op, Package *p)
 
         ui_status_update(op, 0.20f, DEFAULT_X_PREFIX);
         find_conflicting_opengl_libraries(op, DEFAULT_X_PREFIX, l);
-        ui_status_update(op, 0.40f, op->x_prefix);
+        ui_status_update(op, 0.40f, "%s", op->x_prefix);
         find_conflicting_opengl_libraries(op, op->x_prefix, l);
         ui_status_update(op, 0.60f, DEFAULT_OPENGL_PREFIX);
         find_conflicting_opengl_libraries(op, DEFAULT_OPENGL_PREFIX, l);
-        ui_status_update(op, 0.80f, op->opengl_prefix);
+        ui_status_update(op, 0.80f, "%s", op->opengl_prefix);
         find_conflicting_opengl_libraries(op, op->opengl_prefix, l);
 
         ui_status_end(op, "done.");
@@ -181,22 +191,22 @@ CommandList *build_command_list(Options *op, Package *p)
             ui_status_begin(op, "Searching for conflicting compat32 files:", "Searching");
 
             prefix = nvstrcat(op->compat32_chroot, DEFAULT_X_PREFIX, NULL);
-            ui_status_update(op, 0.20f, prefix);
+            ui_status_update(op, 0.20f, "%s", prefix);
             find_conflicting_opengl_libraries(op, prefix, l);
             nvfree(prefix);
 
             prefix = nvstrcat(op->compat32_chroot, op->x_prefix, NULL);
-            ui_status_update(op, 0.40f, prefix);
+            ui_status_update(op, 0.40f, "%s", prefix);
             find_conflicting_opengl_libraries(op, prefix, l);
             nvfree(prefix);
 
             prefix = nvstrcat(op->compat32_chroot, DEFAULT_OPENGL_PREFIX, NULL);
-            ui_status_update(op, 0.60f, prefix);
+            ui_status_update(op, 0.60f, "%s", prefix);
             find_conflicting_opengl_libraries(op, prefix, l);
             nvfree(prefix);
 
             prefix = nvstrcat(op->compat32_chroot, op->compat32_prefix, NULL);
-            ui_status_update(op, 0.80f, prefix);
+            ui_status_update(op, 0.80f, "%s", prefix);
             find_conflicting_opengl_libraries(op, prefix, l);
             nvfree(prefix);
 
@@ -457,7 +467,7 @@ int execute_command_list(Options *op, CommandList *c,
     int i, ret;
     float percent;
 
-    ui_status_begin(op, title, msg);
+    ui_status_begin(op, title, "%s", msg);
 
     for (i = 0; i < c->num; i++) {
 
@@ -555,6 +565,20 @@ int execute_command_list(Options *op, CommandList *c,
  ***************************************************************************
  */
 
+
+/*
+ * CONFLICT_ARCH_ALL: file always conflicts, regardless of arch
+ * CONFLICT_ARCH_32: file only conflicts if its arch is 32 bit
+ * CONFLICT_ARCH_64: file only conflicts if its arch is 64 bit
+ */
+
+typedef enum {
+    CONFLICT_ARCH_ALL,
+    CONFLICT_ARCH_32,
+    CONFLICT_ARCH_64,
+} ConflictArch;
+
+
 typedef struct {
     const char *name;
     int len;
@@ -567,12 +591,15 @@ typedef struct {
      */
 
     const char *requiredString;
+
+    ConflictArch conflictArch;
 } ConflictingFileInfo;
 
 static void find_conflicting_files(Options *op,
                                    char *path,
                                    ConflictingFileInfo *files,
-                                   FileList *l);
+                                   FileList *l,
+                                   const NoRecursionDirectory *skipdirs);
 
 static void find_conflicting_libraries(Options *op,
                                        const char *prefix,
@@ -580,28 +607,59 @@ static void find_conflicting_libraries(Options *op,
                                        FileList *l);
 
 static ConflictingFileInfo __xfree86_opengl_libs[] = {
-    { "libnvidia-glcore.",   17, /* strlen("libnvidia-glcore.") */   NULL            },
-    { "libGL.",              6,  /* strlen("libGL.") */              NULL            },
-    { "libGLwrapper.",       13, /* strlen("libGLwrapper.") */       NULL            },
-    { "libglx.",             7,  /* strlen("libglx.") */             "glxModuleData" },
-    { NULL,                  0,                                      NULL            }
+    { "libnvidia-glcore.",   17, /* strlen("libnvidia-glcore.") */
+                             NULL,            CONFLICT_ARCH_ALL        },
+    { "libGL.",              6,  /* strlen("libGL.") */
+                             NULL,            CONFLICT_ARCH_ALL        },
+    { "libGLwrapper.",       13, /* strlen("libGLwrapper.") */
+                             NULL,            CONFLICT_ARCH_ALL        },
+    { "libglx.",             7,  /* strlen("libglx.") */
+                             "glxModuleData", CONFLICT_ARCH_ALL        },
+
+    /* XXX we do not currently build 64-bit EGL libraries due to problems
+     * with the ABI, so only conflict with 32-bit EGL libraries for now. */
+
+    { "libEGL.",             7,  /* strlen("libEGL.") */
+                             NULL,            CONFLICT_ARCH_32         },
+    { "libGLESv1_CM.",       13, /* strlen("libGLESv1_CM." */
+                             NULL,            CONFLICT_ARCH_32         },
+    { "libGLESv2.",          10, /* strlen("libGLESv2." */
+                             NULL,            CONFLICT_ARCH_32         },
+    { NULL,                  0,     NULL,     CONFLICT_ARCH_ALL        }
 };
 
 static ConflictingFileInfo __xfree86_non_opengl_libs[] = {
-    { "nvidia_drv.",         11, /* strlen("nvidia_drv.") */         NULL            },
-    { "libvdpau.",           9,  /* strlen("libvdpau.") */           NULL            },
-    { "libvdpau_trace.",     15, /* strlen("libvdpau_trace.") */     NULL            },
-    { "libvdpau_nvidia.",    16, /* strlen("libvdpau_nvidia.") */    NULL            },
-    { "libnvidia-cfg.",      14, /* strlen("libnvidia-cfg.") */      NULL            },
-    { "libcuda.",            8,  /* strlen("libcuda.") */            NULL            },
-    { "libnvidia-compiler.", 19, /* strlen("libnvidia-compiler.") */ NULL            },
-    { "libnvcuvid.",         11, /* strlen("libnvcuvid.") */         NULL            },
-    { "libnvidia-ml.",       13, /* strlen("libnvidia-ml.") */       NULL            },
-    { "libnvidia-encode.",   17, /* strlen("libnvidia-encode.") */   NULL            },
-    { "libnvidia-vgx.",      14, /* strlen("libnvidia-vgx.") */      NULL            },
-    { "libnvidia-ifr.",      14, /* strlen("libnvidia-ifr.") */      NULL            },
-    { "libnvidia-vgxcfg.",   17, /* strlen("libnvidia-vgxcfg.") */   NULL            },
-    { NULL,                  0,                                      NULL            }
+    { "nvidia_drv.",         11, /* strlen("nvidia_drv.") */
+                             NULL,            CONFLICT_ARCH_ALL        },
+    { "libvdpau_nvidia.",    16, /* strlen("libvdpau_nvidia.") */
+                             NULL,            CONFLICT_ARCH_ALL        },
+    { "libnvidia-cfg.",      14, /* strlen("libnvidia-cfg.") */
+                             NULL,            CONFLICT_ARCH_ALL        },
+    { "libcuda.",            8,  /* strlen("libcuda.") */
+                             NULL,            CONFLICT_ARCH_ALL        },
+    { "libnvidia-compiler.", 19, /* strlen("libnvidia-compiler.") */
+                             NULL,            CONFLICT_ARCH_ALL        },
+    { "libnvcuvid.",         11, /* strlen("libnvcuvid.") */
+                             NULL,            CONFLICT_ARCH_ALL        },
+    { "libnvidia-ml.",       13, /* strlen("libnvidia-ml.") */
+                             NULL,            CONFLICT_ARCH_ALL        },
+    { "libnvidia-encode.",   17, /* strlen("libnvidia-encode.") */
+                             NULL,            CONFLICT_ARCH_ALL        },
+    { "libnvidia-vgx.",      14, /* strlen("libnvidia-vgx.") */
+                             NULL,            CONFLICT_ARCH_ALL        },
+    { "libnvidia-ifr.",      14, /* strlen("libnvidia-ifr.") */
+                             NULL,            CONFLICT_ARCH_ALL        },
+    { "libnvidia-vgxcfg.",   17, /* strlen("libnvidia-vgxcfg.") */
+                             NULL,            CONFLICT_ARCH_ALL        },
+    { NULL,                  0,     NULL,     CONFLICT_ARCH_ALL        }
+};
+
+static ConflictingFileInfo __xfree86_vdpau_wrapper_libs[] = {
+    { "libvdpau.",           9,  /* strlen("libvdpau.") */
+                             NULL,            CONFLICT_ARCH_ALL        },
+    { "libvdpau_trace.",     15, /* strlen("libvdpau_trace.") */
+                             NULL,            CONFLICT_ARCH_ALL        },
+    { NULL,                  0,     NULL,     CONFLICT_ARCH_ALL        }
 };
 
 /*
@@ -618,6 +676,9 @@ static void find_conflicting_xfree86_libraries(Options *op,
         find_conflicting_libraries(op, xprefix, __xfree86_opengl_libs, l);
     }
     find_conflicting_libraries(op, xprefix, __xfree86_non_opengl_libs, l);
+    if (op->install_vdpau_wrapper == NV_OPTIONAL_BOOL_TRUE) {
+        find_conflicting_libraries(op, xprefix, __xfree86_vdpau_wrapper_libs, l);
+    }
 
 } /* find_conflicting_xfree86_libraries() */
 
@@ -636,28 +697,39 @@ static void find_conflicting_xfree86_libraries_fullpath(Options *op,
                                                         FileList *l)
 {
     if (!op->no_opengl_files) {
-        find_conflicting_files(op, path, __xfree86_opengl_libs, l);
+        find_conflicting_files(op, path, __xfree86_opengl_libs, l, NULL);
     }
-    find_conflicting_files(op, path, __xfree86_non_opengl_libs, l);
+    find_conflicting_files(op, path, __xfree86_non_opengl_libs, l, NULL);
+    if (op->install_vdpau_wrapper == NV_OPTIONAL_BOOL_TRUE) {
+        find_conflicting_files(op, path, __xfree86_vdpau_wrapper_libs, l, NULL);
+    }
 
 } /* find_conflicting_xfree86_libraries_fullpath() */
 
 
 
 static ConflictingFileInfo __opengl_libs[] = {
-    { "libnvidia-glcore.",   17, /* strlen("libnvidia-glcore.") */   NULL },
-    { "libGL.",              6,  /* strlen("libGL.") */              NULL },
-    { "libnvidia-tls.",      14, /* strlen("libnvidia-tls.") */      NULL },
-    { "libGLwrapper.",       13, /* strlen("libGLwrapper.") */       NULL },
-    { NULL,                  0,                                      NULL }
+    { "libnvidia-glcore.",   17, /* strlen("libnvidia-glcore.") */
+                             NULL,            CONFLICT_ARCH_ALL        },
+    { "libGL.",              6,  /* strlen("libGL.") */
+                             NULL,            CONFLICT_ARCH_ALL        },
+    { "libnvidia-tls.",      14, /* strlen("libnvidia-tls.") */
+                             NULL,            CONFLICT_ARCH_ALL        },
+    { "libGLwrapper.",       13, /* strlen("libGLwrapper.") */
+                             NULL,            CONFLICT_ARCH_ALL        },
+    { NULL,                  0,     NULL,     CONFLICT_ARCH_ALL        }
 };
 
 static ConflictingFileInfo __non_opengl_libs[] = {
-    { "libnvidia-cfg.",      14, /* strlen("libnvidia-cfg.") */      NULL },
-    { "libcuda.",            8,  /* strlen("libcuda.") */            NULL },
-    { "libnvidia-compiler.", 19, /* strlen("libnvidia-compiler.") */ NULL },
-    { "libnvidia-ml.",       13, /* strlen("libnvidia-ml.") */       NULL },
-    { NULL,                  0,                                      NULL }
+    { "libnvidia-cfg.",      14, /* strlen("libnvidia-cfg.") */
+                             NULL,            CONFLICT_ARCH_ALL        },
+    { "libcuda.",            8,  /* strlen("libcuda.") */
+                             NULL,            CONFLICT_ARCH_ALL        },
+    { "libnvidia-compiler.", 19, /* strlen("libnvidia-compiler.") */
+                             NULL,            CONFLICT_ARCH_ALL        },
+    { "libnvidia-ml.",       13, /* strlen("libnvidia-ml.") */
+                             NULL,            CONFLICT_ARCH_ALL        },
+    { NULL,                  0,     NULL,     CONFLICT_ARCH_ALL        }
 };
 
 /*
@@ -692,6 +764,14 @@ static void find_conflicting_kernel_modules(Options *op,
     char *paths[3];
     char *tmp = get_kernel_name(op);
 
+    /* Don't descend into the "build" or "source" directories; these won't
+     * contain modules, and may be symlinks back to an actual source tree. */
+    static const NoRecursionDirectory skipdirs[] = {
+        { 1, "build" },
+        { 1, "source" },
+        { 0, NULL }
+    };
+
     memset(files, 0, sizeof(files));
     files[1].name = NULL;
     files[1].len = 0;
@@ -714,7 +794,7 @@ static void find_conflicting_kernel_modules(Options *op,
             files[0].name = p->bad_module_filenames[n];
             files[0].len = strlen(files[0].name);
 
-            find_conflicting_files(op, paths[i], files, l);
+            find_conflicting_files(op, paths[i], files, l, skipdirs);
         }
     }
 
@@ -754,12 +834,14 @@ static void find_existing_files(Package *p, FileList *l,
 /*
  * ignore_conflicting_file() - ignore (i.e., do not put it on the list
  * of files to backup) the conflicting file 'filename' if requiredString
- * is non-NULL and we cannot find the string in 'filename'.
+ * is non-NULL and we cannot find the string in 'filename', or if the
+ * file only conflicts on specific architectures, and the file's
+ * architecture does not match.
  */
 
 static int ignore_conflicting_file(Options *op,
                                    const char *filename,
-                                   const char *requiredString)
+                                   const ConflictingFileInfo info)
 {
     int fd = -1;
     struct stat stat_buf;
@@ -767,9 +849,29 @@ static int ignore_conflicting_file(Options *op,
     int ret = FALSE;
     int i, len;
 
-    /* if no requiredString, do not ignore this conflicting file */
+    /* check if the file only conflicts on certain architectures */
 
-    if (!requiredString) return FALSE;
+    if (info.conflictArch != CONFLICT_ARCH_ALL) {
+        ElfFileType elftype = get_elf_architecture(filename);
+
+        switch (elftype) {
+            case ELF_ARCHITECTURE_32:
+                ret = info.conflictArch != CONFLICT_ARCH_32;
+                break;
+            case ELF_ARCHITECTURE_64:
+                ret = info.conflictArch != CONFLICT_ARCH_64;
+                break;
+            default:
+                ui_warn(op, "Unable to determine the architecture of the file "
+                        "'%s', which has an architecture-specific conflict.",
+                        filename);
+                break;
+        }
+    }
+
+    /* if no requiredString, do not check for the required string */
+
+    if (!info.requiredString) return ret;
 
     if ((fd = open(filename, O_RDONLY)) == -1) {
         ui_error(op, "Unable to open '%s' for reading (%s)",
@@ -803,10 +905,10 @@ static int ignore_conflicting_file(Options *op,
 
     ret = TRUE;
 
-    len = strlen(requiredString);
+    len = strlen(info.requiredString);
 
     for (i = 0; (i + len) <= stat_buf.st_size; i++) {
-        if ((strncmp(&file[i], requiredString, len) == 0) &&
+        if ((strncmp(&file[i], info.requiredString, len) == 0) &&
             (((i + len) == stat_buf.st_size) || (file[i+len] == '\0'))) {
             ret = FALSE;
             break;
@@ -841,7 +943,8 @@ static int ignore_conflicting_file(Options *op,
 static void find_conflicting_files(Options *op,
                                    char *path,
                                    ConflictingFileInfo *files,
-                                   FileList *l)
+                                   FileList *l,
+                                   const NoRecursionDirectory *skipdirs)
 {
     int i;
     char *paths[2];
@@ -859,9 +962,10 @@ static void find_conflicting_files(Options *op,
         case FTS_F:
         case FTS_SLNONE:
             for (i = 0; files[i].name; i++) {
+                /* end compare at len e.g. so "libGL." matches "libGL.so.1" */
                 if (!strncmp(ent->fts_name, files[i].name, files[i].len) &&
                     !ignore_conflicting_file(op, ent->fts_path,
-                                             files[i].requiredString)) {
+                                             files[i])) {
                     add_file_to_list(NULL, ent->fts_path, l);
                 }
             }
@@ -869,14 +973,17 @@ static void find_conflicting_files(Options *op,
 
         case FTS_DP:
         case FTS_D:
-            if (op->no_recursion ||
-                /*
-                 * stop recursing into any "nvidia-cg-toolkit"
-                 * directory to prevent libGL.so.1 from being deleted
-                 * (see bug 843595).
-                 */
-                !strcmp("nvidia-cg-toolkit", ent->fts_name))
+            if (op->no_recursion) {
                 fts_set(fts, ent, FTS_SKIP);
+            } else if (skipdirs) {
+                const NoRecursionDirectory *dir;
+                for (dir = skipdirs; dir->name; dir++) {
+                    if ((dir->level < 0 || dir->level >= ent->fts_level) &&
+                        strcmp(ent->fts_name, dir->name) == 0) {
+                        fts_set(fts, ent, FTS_SKIP);
+                    }
+                }
+            }
             break;
 
         default:
@@ -885,7 +992,7 @@ static void find_conflicting_files(Options *op,
              * and directories; traversing the hierarchy logically
              * to simplify handling of paths with symbolic links
              * to directories, we only need to handle broken links
-             * and, if recursion was disabled, directories.
+             * and, if recursion was not disabled, directories.
              */
             break;
         }
@@ -912,6 +1019,16 @@ static void find_conflicting_libraries(Options *op,
     int i, j;
     char *paths[4];
 
+    /*
+     * stop recursing into any "nvidia-cg-toolkit"
+     * directory to prevent libGL.so.1 from being deleted
+     * (see bug 843595).
+     */
+    static const NoRecursionDirectory skipdirs[] = {
+        { -1, "nvidia-cg-toolkit" },
+        { 0, NULL }
+    };
+
     paths[0] = nvstrcat(prefix, "/", "lib", NULL);
     paths[1] = nvstrcat(prefix, "/", "lib64", NULL);
     paths[2] = nvstrcat(prefix, "/", "lib32", NULL);
@@ -937,7 +1054,7 @@ static void find_conflicting_libraries(Options *op,
             }
         }
 
-        if (paths[i]) find_conflicting_files(op, paths[i], files, l);
+        if (paths[i]) find_conflicting_files(op, paths[i], files, l, skipdirs);
     }
 
     for (i = 0; i < 3; i++)

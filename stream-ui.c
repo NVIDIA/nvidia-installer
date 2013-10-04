@@ -45,6 +45,8 @@ void  stream_message             (Options*, int level, const char*);
 void  stream_command_output      (Options*, const char*);
 int   stream_approve_command_list(Options*, CommandList*, const char*);
 int   stream_yes_no              (Options*, const int, const char*);
+int   stream_paged_prompt        (Options *op, const char *, const char *,
+                                  const char *, const char **, int, int);
 void  stream_status_begin        (Options*, const char*, const char*);
 void  stream_status_update       (Options*, const float, const char*);
 void  stream_status_end          (Options*, const char*);
@@ -60,6 +62,7 @@ InstallerUI stream_ui_dispatch_table = {
     stream_command_output,
     stream_approve_command_list,
     stream_yes_no,
+    stream_paged_prompt,
     stream_status_begin,
     stream_status_update,
     stream_status_end,
@@ -183,7 +186,7 @@ char *stream_get_input(Options *op, const char *def, const char *msg)
     char *buf;
     
     fmt(stdout, NULL, "");
-    fmt(stdout, NULL, msg);
+    fmt(stdout, NULL, "%s", msg);
     fprintf(stdout, "  [default: '%s']: ", def);
     fflush(stdout);
     
@@ -272,7 +275,7 @@ void stream_message(Options *op, const int level, const char *msg)
     if ((level == NV_MSG_LEVEL_LOG) && (d->status_active)) return;
 
     if (msg_attrs[level].newline) fmt(msg_attrs[level].stream, NULL, "");
-    fmt(msg_attrs[level].stream, msg_attrs[level].prefix, msg);
+    fmt(msg_attrs[level].stream, msg_attrs[level].prefix, "%s", msg);
     if (msg_attrs[level].newline) fmt(msg_attrs[level].stream, NULL, "");
 
 } /* stream_message() */
@@ -292,7 +295,7 @@ void stream_command_output(Options *op, const char *msg)
     
     if ((!op->expert) || (d->status_active)) return;
 
-    fmtoutp("   ", msg);
+    fmtoutp("   ", "%s", msg);
     
 } /* stream_command_output() */
 
@@ -384,7 +387,7 @@ int stream_yes_no(Options *op, const int def, const char *msg)
     int eof, ret = def;
 
     fmt(stdout, NULL, "");
-    fmt(stdout, NULL, msg);
+    fmt(stdout, NULL, "%s", msg);
     if (def) fprintf(stdout, "  [default: (Y)es]: ");
     else fprintf(stdout, "  [default: (N)o]: ");
     fflush(stdout);
@@ -405,6 +408,96 @@ int stream_yes_no(Options *op, const int def, const char *msg)
 } /* stream_yes_no() */
 
 
+/*
+ * select_option - given a list of options and a user-provided selection, check
+ * to see if the selection matches any of the available options. Options can be
+ * selected either by index or by option name. Returns the caller-provided
+ * default option if the user's selection is an empty string, the index of the
+ * first (case-insensitive) matching option, or a negative number if no option
+ * matched the user's input.
+ */
+
+static int select_option(const char **options, int num_options,
+                         int default_option, const char *selection)
+{
+    int i;
+
+    if (strlen(selection) == 0) {
+        return default_option;
+    }
+
+    if (isdigit(selection[0])) {
+        int index = atoi(selection);
+
+        if (index < 1 || index > num_options) {
+            return -2;
+        }
+
+        return index - 1;
+    }
+
+    for (i = 0; i < num_options; i++) {
+        if (strcasecmp(selection, options[i]) == 0) {
+            return i;
+        }
+    }
+
+    return -1;
+}
+
+
+
+/*
+ * stream_paged_prompt() - display a question with multiple-choice answers
+ * along with a text area (not scrollable), allowing the user to review the text
+ * and select a button corresponding to the desired response. Returns the index
+ * answer selected from the passed-in answers array.
+ */
+
+int stream_paged_prompt(Options *op, const char *question,
+                        const char *pager_title, const char *pager_text,
+                        const char **answers, int num_answers,
+                        int default_answer)
+{
+    int ret = default_answer;
+
+    fmtout("");
+    fmtout("________");
+    fmtout("");
+    fmtout("%s", pager_title);
+    fmtout("");
+    fmtout("%s", pager_text);
+    fmtout("");
+    fmtout("________");
+
+    do {
+        char *str;
+        int i;
+
+        if (ret < 0) {
+            fmterr("Invalid response!");
+        }
+
+        fmtout("");
+        fmtout("%s", question);
+        fmtout("Valid responses are: ");
+
+        for (i = 0; i < num_answers; i++) {
+            fmtout(" (%d)\t\"%s\"%s", i + 1, answers[i],
+                   i == default_answer ? " [ default ]" : "");
+        }
+
+        fmtout("Please select your response by number or name:");
+        str = fget_next_line(stdin, NULL);
+
+        ret = select_option(answers, num_answers, default_answer, str);
+        free(str);
+    } while (ret < 0);
+
+    return ret;
+}
+
+
 
 /*
  * stream_status_begin() - we assume that title is always passed, but
@@ -417,7 +510,7 @@ void stream_status_begin(Options *op, const char *title, const char *msg)
     
     d->status_active = TRUE;
     
-    fmtout(title);
+    fmtout("%s", title);
     d->status_label = nvstrdup(msg);
     
     print_status_bar(d, STATUS_BEGIN, 0.0);

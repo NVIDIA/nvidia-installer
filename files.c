@@ -505,6 +505,8 @@ int set_destinations(Options *op, Package *p)
 
         case FILE_TYPE_VDPAU_LIB:
         case FILE_TYPE_VDPAU_SYMLINK:
+        case FILE_TYPE_VDPAU_WRAPPER_LIB:
+        case FILE_TYPE_VDPAU_WRAPPER_SYMLINK:
             if (p->entries[i].compat_arch == FILE_COMPAT_ARCH_COMPAT32) {
                 prefix = op->compat32_prefix;
                 dir = op->compat32_libdir;
@@ -975,26 +977,30 @@ int get_prefixes (Options *op)
 } /* get_prefixes() */
 
 
-
 /*
- * add_kernel_module_to_package() - append the kernel module
- * (contained in p->kernel_module_build_directory) to the package list
- * for installation.
+ * add_kernel_module_helper() - append a kernel module (contained in
+ * p->kernel_module_build_directory/subdir) to the package list.
  */
 
-int add_kernel_module_to_package(Options *op, Package *p)
+static void add_kernel_module_helper(Options *op, Package *p,
+                                     const char *filename, const char *subdir)
 {
     char *file, *name, *dst;
 
-    file = nvstrcat(p->kernel_module_build_directory, "/",
-                    p->kernel_module_filename, NULL);
+    file = nvstrcat(p->kernel_module_build_directory, "/", subdir,
+                    filename, NULL);
 
     name = strrchr(file, '/');
-    if (name) name++;
-    if (!name) name = file;
 
-    dst = nvstrcat(op->kernel_module_installation_path, "/",
-                   p->kernel_module_filename, NULL);
+    if (name && name[0]) {
+        name++;
+    }
+
+    if (!name || !name[0]) {
+        name = file;
+    }
+
+    dst = nvstrcat(op->kernel_module_installation_path, "/", filename, NULL);
 
     add_package_entry(p,
                       file,
@@ -1004,7 +1010,36 @@ int add_kernel_module_to_package(Options *op, Package *p)
                       dst,
                       FILE_TYPE_KERNEL_MODULE,
                       FILE_TLS_CLASS_NONE,
+                      FILE_COMPAT_ARCH_NONE,
                       0644);
+}
+
+/*
+ * add_kernel_modules_to_package() - add any to-be-installed kernel modules
+ * to the package list for installation.
+ */
+
+int add_kernel_modules_to_package(Options *op, Package *p)
+{
+    int i;
+
+    if (op->multiple_kernel_modules) {
+        add_kernel_module_helper(op, p, p->kernel_frontend_module_filename, "");
+    }
+
+    for (i = 0; i < op->num_kernel_modules; i++) {
+
+        char *tmp, *name;
+
+        name = nvstrdup(p->kernel_module_filename);
+
+        tmp = strrchr(name, '0');
+        if (tmp) *tmp = *tmp + i;
+
+        add_kernel_module_helper(op, p, name, "");
+
+        nvfree(name);
+    }
 
     return TRUE;
 
@@ -1013,8 +1048,8 @@ int add_kernel_module_to_package(Options *op, Package *p)
 
 
 /*
- * Clear the file type for each package entry that is not type
- * FILE_TYPE_KERNEL_MODULE or FILE_TYPE_KERNEL_MODULE_SRC.
+ * Invalidate each package entry that is not type
+ * FILE_TYPE_KERNEL_MODULE{,_CMD,_SRC}.
  */
 
 void remove_non_kernel_module_files_from_package(Options *op, Package *p)
@@ -1032,7 +1067,7 @@ void remove_non_kernel_module_files_from_package(Options *op, Package *p)
 
 
 /*
- * Clear the file type for each package entry that is an OpenGL File
+ * Invalidate each package entry that is an OpenGL file
  */
 void remove_opengl_files_from_package(Options *op, Package *p)
 {
@@ -1952,6 +1987,7 @@ void process_libGL_la_files(Options *op, Package *p)
                                   NULL, /* dst */
                                   FILE_TYPE_LIBGL_LA,
                                   p->entries[i].tls_class,
+                                  p->entries[i].compat_arch,
                                   p->entries[i].mode);
             }
 
@@ -2027,6 +2063,7 @@ void process_dot_desktop_files(Options *op, Package *p)
                                   NULL, /* dst */
                                   FILE_TYPE_DOT_DESKTOP,
                                   p->entries[i].tls_class,
+                                  p->entries[i].compat_arch,
                                   p->entries[i].mode);
             }
         }
@@ -2283,13 +2320,6 @@ static int get_x_paths_helper(Options *op,
     
     /*
      * attempt to determine the path through the various query mechanisms
-     *
-     * xorg-server >= 1.3 has a stupid version number regression because the
-     * reported Xorg version was tied to the server version, meaning what used
-     * to report 7.2 now reports, for example, 1.2.99.903.  This means we set
-     * op->modular_xorg to FALSE.  However, any server with this regression will
-     * also support the -showDefaultModulePath option so we should still be able
-     * to get the right path.
      */
 
     /*
@@ -2464,7 +2494,7 @@ static void get_x_library_and_module_paths(Options *op)
  * at the given path, keep reprompting until a valid path to a regular file or
  * symbolic link is given. This is just a thin wrapper around ui_get_input().
  */
-char *get_filename(Options *op, const char *def, const char *fmt, ...)
+char *get_filename(Options *op, const char *def, const char *msg)
 {
     struct stat stat_buf;
     char *file = NULL;
@@ -2476,7 +2506,7 @@ char *get_filename(Options *op, const char *def, const char *fmt, ...)
         return nvstrdup(def);
     }
 
-    file = ui_get_input(op, file ? file : def, fmt);
+    file = ui_get_input(op, file ? file : def, "%s", msg);
 
     while (stat(file, &stat_buf) == -1 ||
            !(S_ISREG(stat_buf.st_mode) || S_ISLNK(stat_buf.st_mode))) {
@@ -2485,7 +2515,7 @@ char *get_filename(Options *op, const char *def, const char *fmt, ...)
         ui_message(op, "File \"%s\" does not exist, or is not a regular "
                    "file. Please enter another filename.", file);
 
-        file = ui_get_input(op, oldfile ? oldfile : def, fmt);
+        file = ui_get_input(op, oldfile ? oldfile : def, "%s", msg);
         nvfree(oldfile);
     }
 

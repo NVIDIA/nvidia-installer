@@ -186,8 +186,8 @@ static void nv_ncurses_destroy_region(RegionStruct *);
 
 /* helper functions for drawing buttons */
 
-static void nv_ncurses_draw_button(DataStruct *, RegionStruct *,
-                                   int, int, int, int, char *, bool, bool);
+static void nv_ncurses_draw_button(DataStruct *, RegionStruct *, int, int,
+                                   int, int, const char *, bool, bool);
 static void nv_ncurses_erase_button(RegionStruct *, int, int, int, int);
 
 
@@ -206,6 +206,8 @@ static PagerStruct *nv_ncurses_create_pager(DataStruct *, int, int, int, int,
 static void nv_ncurses_pager_update(DataStruct *, PagerStruct *);
 static void nv_ncurses_pager_handle_events(DataStruct *, PagerStruct *, int);
 static void nv_ncurses_destroy_pager(PagerStruct *);
+static int nv_ncurses_paged_prompt(Options *, const char*, const char*,
+                                   const char*, const char **, int, int);
 
 
 /* progress bar helper functions */
@@ -217,11 +219,9 @@ static void init_position(int p[4], int w);
 
 /* misc helper functions */
 
-static TextRows *nv_ncurses_create_command_list_textrows(DataStruct *,
-                                                  CommandList *, int);
+static char *nv_ncurses_create_command_list_text(DataStruct *, CommandList *);
 static char *nv_ncurses_mode_to_permission_string(mode_t);
 
-static void nv_ncurses_concat_text_rows(TextRows *, TextRows *);
 static void nv_ncurses_free_text_rows(TextRows *);
 
 static int nv_ncurses_format_print(DataStruct *, RegionStruct *,
@@ -247,6 +247,7 @@ InstallerUI ui_dispatch_table = {
     nv_ncurses_command_output,
     nv_ncurses_approve_command_list,
     nv_ncurses_yes_no,
+    nv_ncurses_paged_prompt,
     nv_ncurses_status_begin,
     nv_ncurses_status_update,
     nv_ncurses_status_end,
@@ -621,140 +622,17 @@ static char *nv_ncurses_get_input(Options *op,
 
 static int nv_ncurses_display_license(Options *op, const char *license)
 {
-    DataStruct *d = (DataStruct *) op->ui_priv;
-    TextRows *t_pager = NULL;
-    int ch, x, cur = 0;
-    int button_width, button_y, accept_x, no_accept_x, accepted;
-    PagerStruct *p = NULL;
-    char *str;
-
     static const char *descr = "Please read the following LICENSE "
         "and then select either \"Accept\" to accept the license "
         "and continue with the installation, or select "
         "\"Do Not Accept\" to abort the installation.";
 
-    nv_ncurses_check_resize(d, FALSE);
-    accepted = FALSE;
+    static const char *buttons[2] = {"Accept", "Do Not Accept"};
 
- draw_license:
+    int ret = nv_ncurses_paged_prompt(op, descr, "NVIDIA Software License",
+                                      license, buttons, 2, 1);
 
-    /* free the pager, and pager's text rows */
-    
-    if (d->message) nv_ncurses_destroy_region(d->message);
-    if (p) nv_ncurses_destroy_pager(p);
-    if (t_pager) nv_ncurses_free_text_rows(t_pager);
-
-    /* create the message region and print descr in it */
-
-    nv_ncurses_do_message_region(d, NULL, descr, TRUE, 2);
-
-    /* draw the accept buttons */
-
-    button_width = 15;
-    button_y = d->message->h - 2;
-    accept_x = (d->message->w - (button_width * 3)) / 2;
-    no_accept_x = accept_x + (button_width * 2);
-
-    nv_ncurses_draw_button(d, d->message, accept_x, button_y, button_width,
-                           1, "Accept", accepted, FALSE);
-    
-    nv_ncurses_draw_button(d, d->message, no_accept_x, button_y, button_width,
-                           1, "Do Not Accept", !accepted, FALSE);
-
-    /* init the pager to display the license */
-    
-    t_pager = d->format_text_rows(NULL, license, d->message->w, TRUE);
-    p = nv_ncurses_create_pager(d, 1, d->message->h + 2, d->message->w,
-                              d->height - d->message->h - 4,
-                              t_pager, "NVIDIA Software License", cur);
-    refresh();
-
-    /* process key strokes */
-    
-    do {
-        /* if a resize occurred, jump back to the top and redraw */
-        
-        if (nv_ncurses_check_resize(d, FALSE)) {
-            cur = p->cur;
-            goto draw_license;
-        }
-        ch = getch();
-
-        switch (ch) {
-        case NV_NCURSES_TAB:
-        case KEY_LEFT:
-        case KEY_RIGHT:
-
-            /*
-             * any of left, right, and tab will toggle which button is
-             * selected
-             */
-            
-            accepted ^= 1;
-
-            nv_ncurses_draw_button(d, d->message, accept_x, button_y,
-                                   button_width, 1, "Accept",
-                                   accepted, FALSE);
-    
-            nv_ncurses_draw_button(d, d->message, no_accept_x, button_y,
-                                   button_width, 1, "Do Not Accept",
-                                   !accepted, FALSE);
-            refresh();
-            break;
-        
-        case NV_NCURSES_CTRL('L'):
-            nv_ncurses_check_resize(d, TRUE);
-            cur = p->cur;
-            goto draw_license;
-            break;
-
-        default:
-            break;
-        }
-        
-        nv_ncurses_pager_handle_events(d, p, ch);
-        
-    } while (ch != NV_NCURSES_ENTER);
-    
-    /* animate the button being pushed down */
-
-    x = accepted ? accept_x : no_accept_x;
-    str = accepted ? "Accept" : "Do Not Accept";
-            
-    nv_ncurses_erase_button(d->message, x, button_y, button_width, 1);
-    nv_ncurses_draw_button(d, d->message, x, button_y, button_width, 1,
-                           str, TRUE, TRUE);
-    refresh();
-    usleep(NV_NCURSES_BUTTON_PRESS_TIME);
-    
-    nv_ncurses_erase_button(d->message, x, button_y, button_width, 1);
-    nv_ncurses_draw_button(d, d->message, x, button_y, button_width, 1,
-                           str, TRUE, FALSE);
-    refresh();
-    usleep(NV_NCURSES_BUTTON_PRESS_TIME);
-    
-    /* free the text rows used by the pager */
-
-    nv_ncurses_free_text_rows(t_pager);
-
-    /* free the pager */
-    
-    nv_ncurses_destroy_pager(p);
-
-    /* restore the footer */
-
-    nv_ncurses_set_footer(d, NV_NCURSES_DEFAULT_FOOTER_LEFT,
-                          NV_NCURSES_DEFAULT_FOOTER_RIGHT);
-
-    /* free the message region */
-
-    nv_ncurses_destroy_region(d->message);
-    d->message = NULL;
-    
-    refresh();
-
-    return accepted;
-    
+    return ret == 0;
 } /* nv_ncurses_display_license() */
 
 
@@ -892,11 +770,9 @@ static int nv_ncurses_approve_command_list(Options *op, CommandList *cl,
                                            const char *descr)
 {
     DataStruct *d = (DataStruct *) op->ui_priv;
-    TextRows *t_pager = NULL;
-    PagerStruct *p = NULL;
-    char *str, *question;
-    int button_w, button_y, yes_x, no_x;
-    int len, ch, x, yes, cur = 0;
+    char *commandlist, *question;
+    int ret, len;
+    const char *buttons[2] = {"Yes", "No"};
 
     /* initialize the question string */
 
@@ -905,131 +781,15 @@ static int nv_ncurses_approve_command_list(Options *op, CommandList *cl,
     snprintf(question, len, "The following operations will be performed to "
              "install the %s.  Is this acceptable?", descr);
     
-    /* check if the window was resized */
+    commandlist = nv_ncurses_create_command_list_text(d, cl);
 
-    nv_ncurses_check_resize(d, FALSE);
-    yes = 1;
-    
- draw_command_list:
-
-    /* free any existing message region, pager, and pager textrows */
-
-    if (d->message) {
-        nv_ncurses_destroy_region(d->message);
-        d->message = NULL;
-    }
-    if (p) nv_ncurses_destroy_pager(p);
-    if (t_pager) nv_ncurses_free_text_rows(t_pager);
-
-    /* create the message region and print descr in it */
-    
-    nv_ncurses_do_message_region(d, NULL, question, TRUE, 2);
-    
-    /* draw the yes/no buttons */
-    
-    button_w = 7;
-    button_y = d->message->h - 2;
-    yes_x = (d->message->w - button_w*3)/2 + 0;
-    no_x  = (d->message->w - button_w*3)/2 + 2*button_w;
-
-    nv_ncurses_draw_button(d, d->message, yes_x, button_y,
-                           button_w, 1, "Yes", yes, FALSE);
-    nv_ncurses_draw_button(d, d->message, no_x, button_y,
-                           button_w, 1, "No", !yes, FALSE);
-    
-    /* draw the command list */
-
-    t_pager = nv_ncurses_create_command_list_textrows(d, cl, d->message->w);
-    p = nv_ncurses_create_pager(d, 1, d->message->h + 2, d->message->w,
-                              d->height - d->message->h - 4,
-                              t_pager, "Proposed Commandlist", cur);
-    refresh();
-
-    /* process key strokes */
-
-    do {
-        /* if a resize occurred, jump back to the top and redraw */
-        
-        if (nv_ncurses_check_resize(d, FALSE)) {
-            cur = p->cur;
-            goto draw_command_list;
-        }
-        ch = getch();
-        
-        switch (ch) {
-        case NV_NCURSES_TAB:
-        case KEY_LEFT:
-        case KEY_RIGHT:
-            
-            /*
-             * any of left, right, and tab will toggle which button is
-             * selected
-             */
-
-            yes ^= 1;
-
-            nv_ncurses_draw_button(d, d->message, yes_x, button_y,
-                                   button_w, 1, "Yes", yes, FALSE);
-            nv_ncurses_draw_button(d, d->message, no_x, button_y,
-                                   button_w, 1, "No", !yes, FALSE);
-            refresh();
-            break;
-
-        case NV_NCURSES_CTRL('L'):
-            nv_ncurses_check_resize(d, TRUE);
-            cur = p->cur;
-            goto draw_command_list;
-            break;
-
-        default:
-            break;
-        }
-
-        nv_ncurses_pager_handle_events(d, p, ch);
-
-    } while (ch != NV_NCURSES_ENTER);
-
-    /* animate the button being pushed down */
-    
-    x = yes ? yes_x : no_x;
-    str = yes ? "Yes" : "No";
-    
-    nv_ncurses_erase_button(d->message, x, button_y, button_w, 1);
-    nv_ncurses_draw_button(d, d->message, x, button_y,
-                           button_w, 1, str, TRUE, TRUE);
-    refresh();
-    usleep(NV_NCURSES_BUTTON_PRESS_TIME);
-    
-    nv_ncurses_erase_button(d->message, x, button_y, button_w, 1);
-    nv_ncurses_draw_button(d, d->message, x, button_y,
-                           button_w, 1, str, TRUE, FALSE);
-    refresh();
-    usleep(NV_NCURSES_BUTTON_PRESS_TIME);
-    
-    /* free the text rows used by the pager */
-
-    nv_ncurses_free_text_rows(t_pager);
-
-    /* free the pager */
-    
-    nv_ncurses_destroy_pager(p);
-
-    /* restore the footer */
-
-    nv_ncurses_set_footer(d, NV_NCURSES_DEFAULT_FOOTER_LEFT,
-                          NV_NCURSES_DEFAULT_FOOTER_RIGHT);
-    
-    /* free the message region */
-
-    nv_ncurses_destroy_region(d->message);
-    d->message = NULL;
-    
-    refresh();
+    ret = nv_ncurses_paged_prompt(op, question, "Proposed CommandList",
+                                  commandlist, buttons, 2, 0);
 
     free(question);
+    free(commandlist);
 
-    return yes;
-   
+    return ret == 0;
 } /* nv_ncurses_approve_command_list() */
 
 
@@ -1552,7 +1312,7 @@ static void nv_ncurses_destroy_region(RegionStruct *region)
 
 static void nv_ncurses_draw_button(DataStruct *d, RegionStruct *region,
                                    int x, int y, int w, int h,
-                                   char *str, bool hilite, bool down)
+                                   const char *str, bool hilite, bool down)
 {
     int i, j, n, attr = 0;
     
@@ -1906,6 +1666,161 @@ static void nv_ncurses_pager_handle_events(DataStruct *d,
     }
 } /* nv_ncurses_pager_handle_events() */
 
+static void draw_buttons(DataStruct *d, const char **buttons, int num_buttons,
+                         int button, int button_w, const int *buttons_x,
+                         int button_y)
+{
+    int i;
+
+    for (i = 0; i < num_buttons; i++) {
+        nv_ncurses_draw_button(d, d->message, buttons_x[i], button_y,
+                               button_w, 1, buttons[i], button == i, FALSE);
+    }
+}
+
+/*
+ * nv_ncurses_paged_prompt() - display a question with multiple-choice buttons
+ * along with a scrollable paged text area, allowing the user to review the
+ * pageable text and select a button corresponding to the desired response.
+ * Returns the index of the button selected from the passed-in buttons array.
+ */
+
+static int nv_ncurses_paged_prompt(Options *op, const char *question,
+                                   const char *pager_title,
+                                   const char *pager_text, const char **buttons,
+                                   int num_buttons, int default_button)
+{
+    DataStruct *d = (DataStruct *) op->ui_priv;
+    TextRows *t_pager = NULL;
+    int ch, cur = 0;
+    int i, button_w = 0, button_y, button = default_button;
+    int buttons_x[num_buttons];
+    PagerStruct *p = NULL;
+
+    /* check if the window was resized */
+
+    nv_ncurses_check_resize(d, FALSE);
+
+    for (i = 0; i < num_buttons; i++) {
+        int len = strlen(buttons[i]);
+        if (len > button_w) {
+            button_w = len;
+        }
+    }
+    button_w += 4;
+
+  print_message:
+
+    /* free any existing message region, pager, and pager textrows */
+
+    if (d->message) {
+        nv_ncurses_destroy_region(d->message);
+        d->message = NULL;
+    }
+
+    if (p) {
+        nv_ncurses_destroy_pager(p);
+        p = NULL;
+    }
+    if (t_pager) {
+        nv_ncurses_free_text_rows(t_pager);
+        t_pager = NULL;
+    }
+
+    /* create the message region and print the question in it */
+
+    nv_ncurses_do_message_region(d, NULL, question, TRUE, 2);
+
+    button_y = d->message->h - 2;
+
+    for (i = 0; i < num_buttons; i++) {
+        buttons_x[i] = (i + 1) * (d->message->w / (num_buttons + 1)) -
+                       button_w / 2;
+    }
+
+    draw_buttons(d, buttons, num_buttons, button, button_w, buttons_x,
+                 button_y);
+
+    /* draw the paged text */
+
+    t_pager = d->format_text_rows(NULL, pager_text, d->message->w, TRUE);
+    p = nv_ncurses_create_pager(d, 1, d->message->h + 2, d->message->w,
+                                d->height - d->message->h - 4, t_pager,
+                                pager_title, cur);
+    refresh();
+
+    /* process key strokes */
+
+    do {
+        /* if a resize occurred, jump back to the top and redraw */
+            if (nv_ncurses_check_resize(d, FALSE)) {
+                cur = p->cur;
+                goto print_message;
+        }
+
+        ch = getch();
+
+        switch (ch) {
+            case NV_NCURSES_TAB:
+            case KEY_RIGHT:
+                button = (button + 1) % num_buttons;
+                draw_buttons(d, buttons, num_buttons, button, button_w,
+                             buttons_x, button_y);
+                refresh();
+                break;
+
+            case KEY_LEFT:
+                button = (button + num_buttons - 1) % num_buttons;
+                draw_buttons(d, buttons, num_buttons, button, button_w,
+                             buttons_x, button_y);
+                refresh();
+                break;
+
+            case NV_NCURSES_CTRL('L'):
+                nv_ncurses_check_resize(d, TRUE);
+                cur = p->cur;
+                goto print_message;
+                break;
+
+            default:
+                break;
+        }
+
+        nv_ncurses_pager_handle_events(d, p, ch);
+    } while (ch != NV_NCURSES_ENTER);
+
+    /* animate the button being pushed down */
+
+    nv_ncurses_erase_button(d->message, buttons_x[button], button_y,
+                            button_w, 1);
+    nv_ncurses_draw_button(d, d->message, buttons_x[button], button_y,
+                           button_w, 1, buttons[button], TRUE, TRUE);
+    refresh();
+    usleep(NV_NCURSES_BUTTON_PRESS_TIME);
+
+    nv_ncurses_erase_button(d->message, buttons_x[button], button_y,
+                            button_w, 1);
+    nv_ncurses_draw_button(d, d->message, buttons_x[button], button_y,
+                           button_w, 1, buttons[button], TRUE, FALSE);
+    refresh();
+    usleep(NV_NCURSES_BUTTON_PRESS_TIME);
+
+    /* restore the footer */
+
+    nv_ncurses_set_footer(d, NV_NCURSES_DEFAULT_FOOTER_LEFT,
+                          NV_NCURSES_DEFAULT_FOOTER_RIGHT);
+
+    /* clean up */
+
+    nv_ncurses_free_text_rows(t_pager);
+    nv_ncurses_destroy_pager(p);
+    nv_ncurses_destroy_region(d->message);
+    d->message = NULL;
+
+    refresh();
+
+    return button;
+}
 
 
 
@@ -1962,20 +1877,14 @@ static void init_position(int p[4], int w)
 
 
 /*
- * nv_ncurses_create_command_list_textrows() - build TextRows to
- * describe the command list
+ * nv_ncurses_create_command_list_text() - build a string from the command list
  */
 
-static TextRows *nv_ncurses_create_command_list_textrows(DataStruct *d,
-                                                         CommandList *cl,
-                                                         int w)
+static char *nv_ncurses_create_command_list_text(DataStruct *d, CommandList *cl)
 {
     int i, len;
     Command *c;
-    char *str, *perms;
-    TextRows *t0, *t1;
-
-    t0 = t1 = NULL;
+    char *str, *perms, *ret = strdup("");
 
     for (i = 0; i < cl->num; i++) {
         c = &cl->cmds[i];
@@ -2032,24 +1941,30 @@ static TextRows *nv_ncurses_create_command_list_textrows(DataStruct *d,
         }
 
         if (str) {
-            t1 = d->format_text_rows(NV_BULLET_STR, str, w, TRUE);
-            
-            if (t0) {
-                nv_ncurses_concat_text_rows(t0, t1);
-                nv_ncurses_free_text_rows(t1);
-            } else {
-                t0 = t1;
-            }
-            t1 = NULL;
-        
+            int lenret, lenstr;
+            char *tmp;
+
+            lenret = strlen(ret);
+            lenstr = strlen(str);
+            tmp = malloc(lenret + lenstr + 2 /* "\n\0" */);
+
+            tmp[0] = 0;
+
+            strncat(tmp, ret, lenret);
+            strncat(tmp, str, lenstr);
+
+            tmp[lenret + lenstr] = '\n';
+            tmp[lenret + lenstr + 1] = 0;
+
             free(str);
+            free(ret);
+            ret = tmp;
         }
     }
 
-    return t0;
+    return ret;
 
-} /* nv_ncurses_create_command_list_textrows() */
-
+}
 
 
 /*
@@ -2079,27 +1994,6 @@ static char *nv_ncurses_mode_to_permission_string(mode_t mode)
 
 } /* mode_to_permission_string() */
 
-
-/*
- * nv_ncurses_concat_text_rows() - concatenate two text rows
- */
-
-static void nv_ncurses_concat_text_rows(TextRows *t0, TextRows *t1)
-{
-    int n, i;
-    
-    n = t0->n + t1->n;
-    
-    t0->t = (char **) realloc(t0->t, sizeof(char *) * n);
-    
-    for (i = 0; i < t1->n; i++) {
-        t0->t[i + t0->n] = strdup(t1->t[i]);
-    }
-
-    t0->m = NV_MAX(t0->m, t1->m);
-    t0->n = n;
-
-} /* nv_ncurses_concat_text_rows() */
 
 
 

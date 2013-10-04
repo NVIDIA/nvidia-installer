@@ -146,6 +146,10 @@ typedef struct __options {
     int no_kernel_module_source;
     int dkms;
     int check_for_alternate_installs;
+    int multiple_kernel_modules;
+    int num_kernel_modules;
+
+    NVOptionalBool install_vdpau_wrapper;
 
     char *opengl_prefix;
     char *opengl_libdir;
@@ -247,7 +251,9 @@ typedef enum {
     FILE_TYPE_CUDA_LIB,
     FILE_TYPE_CUDA_SYMLINK,
     FILE_TYPE_VDPAU_LIB,
+    FILE_TYPE_VDPAU_WRAPPER_LIB,
     FILE_TYPE_VDPAU_SYMLINK,
+    FILE_TYPE_VDPAU_WRAPPER_SYMLINK,
     FILE_TYPE_UTILITY_BIN_SYMLINK,
     FILE_TYPE_CUDA_ICD,
     FILE_TYPE_NVCUVID_LIB,
@@ -358,6 +364,9 @@ typedef struct __package {
     char **bad_module_filenames;
     char *kernel_module_build_directory;
     char *precompiled_kernel_interface_directory;
+    char *kernel_frontend_module_filename;
+    char *kernel_frontend_module_name;
+    char *kernel_frontend_interface_filename;
     
     PackageEntry *entries; /* array of filename/checksum/bytesize entries */
     int num_entries;
@@ -458,6 +467,8 @@ typedef struct __package {
 
 #define NUM_TIMES_QUESTIONS_ASKED 3
 
+#define NV_MAX_MODULE_INSTANCES   8
+
 #define LD_OPTIONS "-d -r"
 #define NVIDIA_VERSION_PROC_FILE "/proc/driver/nvidia/version"
 
@@ -495,6 +506,7 @@ void add_package_entry(Package *p,
                        char *dst,
                        PackageEntryFileType type,
                        PackageEntryFileTlsClass tls_class,
+                       PackageEntryFileCompatArch compat_arch,
                        mode_t mode);
 /* XXX */
 
