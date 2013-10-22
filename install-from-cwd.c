@@ -150,6 +150,10 @@ int install_from_cwd(Options *op)
 
     if (!check_for_nouveau(op)) goto failed;
 
+    /* ask if we should install the UVM kernel module */
+
+    should_install_uvm(op, p);
+
     /* attempt to build a kernel module for the target kernel */
 
     if (!op->no_kernel_module) {
@@ -387,6 +391,50 @@ static int install_kernel_module(Options *op,  Package *p)
 {
     PrecompiledInfo *precompiled_info;
 
+    /* Append the UVM dkms.conf fragment to RM's dkms.conf when installing UVM */
+
+    if (op->install_uvm) {
+        FILE *dkmsconf, *uvmdkmsconf;
+        char *tmppath;
+
+        tmppath = nvstrcat(p->kernel_module_build_directory, "/dkms.conf", NULL);
+        dkmsconf = fopen(tmppath, "a");
+        nvfree(tmppath);
+
+        tmppath = nvstrcat(p->uvm_module_build_directory,
+                           "/dkms.conf.fragment", NULL);
+        uvmdkmsconf = fopen(tmppath, "r");
+        nvfree (tmppath);
+
+        if (dkmsconf && uvmdkmsconf) {
+            char byte;
+
+            while (fread(&byte, 1, 1, uvmdkmsconf)) {
+                if (!fwrite(&byte, 1, 1, dkmsconf)) {
+                    goto dkmscatfailed;
+                }
+            }
+
+            if (ferror(uvmdkmsconf)) {
+                goto dkmscatfailed;
+            }
+
+        } else {
+dkmscatfailed:
+            ui_warn(op, "Failed to add build commands for the NVIDIA Unified "
+                    "Memory kernel module to the dkms.conf file: DKMS will "
+                    "not be able to build the NVIDIA Unified Memory kernel "
+                    "module.");
+        }
+
+        if (dkmsconf) {
+            fclose(dkmsconf);
+        }
+        if (uvmdkmsconf) {
+            fclose(uvmdkmsconf);
+        }
+    }
+
     /* Offer the DKMS option if DKMS exists and the kernel module sources 
      * will be installed somewhere. Don't offer DKMS as an option if module
      * signing was requested. */
@@ -516,8 +564,13 @@ int add_this_kernel(Options *op)
 
     if (!determine_kernel_source_path(op, p)) goto failed;
 
-    if (op->multiple_kernel_modules) 
-        num_expected_files = op->num_kernel_modules + 1;
+    if (op->multiple_kernel_modules) {
+        num_expected_files += op->num_kernel_modules;
+    }
+
+    if (op->install_uvm) {
+        num_expected_files += 1;
+    }
 
     /* build the precompiled files */
 
@@ -628,15 +681,21 @@ static Package *parse_manifest (Options *op)
 
     if (op->multiple_kernel_modules) {
         module_suffix = "0";
-        p->kernel_frontend_module_name = nvstrcat(tmpstr, "-frontend", NULL);
-        p->kernel_frontend_module_filename = 
-            nvstrcat(p->kernel_frontend_module_name, ".ko", NULL);
-        p->kernel_frontend_interface_filename = nvstrdup("nv-linuxfrontend.o");
     }
 
     p->kernel_module_name = nvstrcat(tmpstr, module_suffix, NULL);
     p->kernel_module_filename = nvstrcat(p->kernel_module_name, ".ko", NULL);
     p->kernel_interface_filename = nvstrcat("nv-linux", module_suffix, ".o", NULL); 
+
+    p->kernel_frontend_module_name = nvstrcat(tmpstr, "-frontend", NULL);
+    p->kernel_frontend_module_filename = nvstrcat(p->kernel_frontend_module_name,
+                                                  ".ko", NULL);
+    p->kernel_frontend_interface_filename = "nv-linuxfrontend.o";
+
+    p->uvm_kernel_module_name = nvstrcat(tmpstr, "-uvm", NULL);
+    p->uvm_kernel_module_filename = nvstrcat(p->uvm_kernel_module_name, ".ko",
+                                             NULL);
+    p->uvm_interface_filename = "nv-linuxuvm.o";
 
     nvfree(tmpstr);
 
@@ -687,6 +746,9 @@ static Package *parse_manifest (Options *op)
     p->kernel_module_build_directory = get_next_line(ptr, &ptr, manifest, len);
     if (!p->kernel_module_build_directory) goto invalid_manifest_file;
     remove_trailing_slashes(p->kernel_module_build_directory);
+
+    p->uvm_module_build_directory = nvstrcat(p->kernel_module_build_directory,
+                                             "/" UVM_SUBDIR, NULL);
 
     /*
      * the eigth line is the directory containing precompiled kernel
@@ -763,6 +825,12 @@ static Package *parse_manifest (Options *op)
             if (p->entries[n].type == FILE_TYPE_NONE) {
                 nvfree(flag);
                 goto invalid_manifest_file;
+            }
+
+            /* if any UVM files have been packaged, set uvm_files_packaged. */
+
+            if (p->entries[n].type == FILE_TYPE_UVM_MODULE_SRC) {
+                op->uvm_files_packaged = TRUE;
             }
 
             nvfree(flag);
@@ -966,6 +1034,7 @@ static void free_package(Package *p)
     }
     
     nvfree(p->kernel_module_build_directory);
+    nvfree(p->uvm_module_build_directory);
     
     nvfree(p->precompiled_kernel_interface_directory);
     
@@ -985,7 +1054,8 @@ static void free_package(Package *p)
 
     nvfree(p->kernel_frontend_module_filename);
     nvfree(p->kernel_frontend_module_name);
-    nvfree(p->kernel_frontend_interface_filename);
+    nvfree(p->uvm_kernel_module_name);
+    nvfree(p->uvm_kernel_module_filename);
 
     nvfree((char *) p);
     
@@ -1200,6 +1270,13 @@ guess_fail:
     if (op->multiple_kernel_modules) {
         if (!sign_kernel_module(op, p->kernel_module_build_directory,
                                 "frontend", TRUE)) {
+            return FALSE;
+        }
+    }
+
+    if (op->install_uvm) {
+        if (!sign_kernel_module(op, p->uvm_module_build_directory, "uvm",
+                                TRUE)) {
             return FALSE;
         }
     }

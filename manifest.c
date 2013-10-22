@@ -107,7 +107,8 @@ static const struct {
     { ENTRY(NVIDIA_MODPROBE_MANPAGE,F, F, T, T, F, F, F ) },
     { ENTRY(MODULE_SIGNING_KEY,     F, F, T, F, F, F, F ) },
     { ENTRY(NVIFR_LIB,              T, F, T, F, F, T, F ) },
-    { ENTRY(NVIFR_LIB_SYMLINK,      T, F, F, F, T, F, F ) }, 
+    { ENTRY(NVIFR_LIB_SYMLINK,      T, F, F, F, T, F, F ) },
+    { ENTRY(UVM_MODULE_SRC,         F, F, T, F, F, F, F ) },
 };
 
 /*

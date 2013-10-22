@@ -99,7 +99,7 @@
 
 #define PRECOMPILED_PKG_HEADER "\aNVIDIA\a"
 
-#define PRECOMPILED_PKG_VERSION 1
+#define PRECOMPILED_PKG_VERSION 2
 
 #define PRECOMPILED_FILE_CONSTANT_LENGTH (4 + /* precompiled file header */ \
                                           4 + /* file serial number */ \
@@ -108,6 +108,7 @@
                                           4 + /* file name length */ \
                                           4 + /* linked module name length */ \
                                           4 + /* core object name length */ \
+                                          4 + /* target dir name length */ \
                                           4 + /* file crc */ \
                                           4 + /* file size */ \
                                           4 + /* redundant file crc */ \
@@ -138,6 +139,7 @@ typedef struct __precompiled_file_info {
     char *name;
     char *linked_module_name;
     char *core_object_name;
+    char *target_directory;
     uint32 crc;
     uint32 size;
     uint8 *data;
@@ -181,8 +183,10 @@ void free_precompiled_file_data(PrecompiledFileInfo fileInfo);
 int precompiled_read_interface(PrecompiledFileInfo *fileInfo,
                                const char *filename,
                                const char *linked_module_name,
-                               const char *core_object_name);
-int precompiled_read_module(PrecompiledFileInfo *fileInfo, const char *filename);
+                               const char *core_object_name,
+                               const char *target_directory);
+int precompiled_read_module(PrecompiledFileInfo *fileInfo, const char *filename,
+                            const char *target_directory);
 void precompiled_append_files(PrecompiledInfo *info, PrecompiledFileInfo *files,
                               int num_files);
 

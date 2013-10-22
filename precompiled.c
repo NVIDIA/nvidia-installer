@@ -365,7 +365,8 @@ int precompiled_file_unpack(Options *op, const PrecompiledFileInfo *fileInfo,
     int ret = FALSE, dst_fd = 0;
     char *dst_path, *dst = NULL;
 
-    dst_path = nvstrcat(output_directory, "/", fileInfo->name, NULL);
+    dst_path = nvstrcat(output_directory, "/", fileInfo->target_directory, "/",
+                        fileInfo->name, NULL);
 
     /* extract file */
 
@@ -479,6 +480,7 @@ int precompiled_pack(const PrecompiledInfo *info, const char *package_filename)
                      strlen(info->files[i].name) +
                      strlen(info->files[i].linked_module_name) +
                      strlen(info->files[i].core_object_name) +
+                     strlen(info->files[i].target_directory) +
                      info->files[i].size +
                      info->files[i].signature_size;
     }
@@ -545,6 +547,7 @@ int precompiled_pack(const PrecompiledInfo *info, const char *package_filename)
         uint32 name_len = strlen(file->name);
         uint32 linked_module_name_len = strlen(file->linked_module_name);
         uint32 core_object_name_len = strlen(file->core_object_name);
+        uint32 target_directory_len = strlen(file->target_directory);
 
         /* file header */
         memcpy(&(out[offset]), PRECOMPILED_FILE_HEADER, 4);
@@ -571,6 +574,11 @@ int precompiled_pack(const PrecompiledInfo *info, const char *package_filename)
         encode_uint32(core_object_name_len, out, &offset);
         memcpy(&(out[offset]), file->core_object_name, core_object_name_len);
         offset += core_object_name_len;
+
+        /* target directory name */
+        encode_uint32(target_directory_len, out, &offset);
+        memcpy(&(out[offset]), file->target_directory, target_directory_len);
+        offset += target_directory_len;
 
         /* crc */
         encode_uint32(file->crc, out, &offset);
@@ -645,6 +653,7 @@ void free_precompiled_file_data(PrecompiledFileInfo fileInfo)
     nvfree(fileInfo.linked_module_name);
     nvfree(fileInfo.data);
     nvfree(fileInfo.signature);
+    nvfree(fileInfo.target_directory);
 }
 
 
@@ -659,7 +668,9 @@ void free_precompiled_file_data(PrecompiledFileInfo fileInfo)
 static int precompiled_read_file(PrecompiledFileInfo *fileInfo,
                                  const char *filename,
                                  const char *linked_module_name,
-                                 const char *core_object_name, uint32 type)
+                                 const char *core_object_name,
+                                 const char *target_directory,
+                                 uint32 type)
 {
     int fd;
     struct stat st;
@@ -687,6 +698,7 @@ static int precompiled_read_file(PrecompiledFileInfo *fileInfo,
     fileInfo->name = nv_basename(filename);
     fileInfo->linked_module_name = nvstrdup(linked_module_name);
     fileInfo->core_object_name = nvstrdup(core_object_name);
+    fileInfo->target_directory = nvstrdup(target_directory);
     fileInfo->crc = compute_crc(NULL, filename);
 
     success = TRUE;
@@ -700,16 +712,18 @@ done:
 int precompiled_read_interface(PrecompiledFileInfo *fileInfo,
                                const char *filename,
                                const char *linked_module_name,
-                               const char *core_object_name)
+                               const char *core_object_name,
+                               const char *target_directory)
 {
     return precompiled_read_file(fileInfo, filename, linked_module_name,
-                                 core_object_name,
+                                 core_object_name, target_directory,
                                  PRECOMPILED_FILE_TYPE_INTERFACE);
 }
 
-int precompiled_read_module(PrecompiledFileInfo *fileInfo, const char *filename)
+int precompiled_read_module(PrecompiledFileInfo *fileInfo, const char *filename,
+                            const char *target_directory)
 {
-    return precompiled_read_file(fileInfo, filename, "", "",
+    return precompiled_read_file(fileInfo, filename, "", "", target_directory,
                                  PRECOMPILED_FILE_TYPE_MODULE);
 }
 
@@ -791,6 +805,16 @@ static int precompiled_read_fileinfo(Options *op, PrecompiledFileInfo *fileInfos
 
     fileInfo->core_object_name = nvalloc(val + 1);
     memcpy(fileInfo->core_object_name, buf + offset, val);
+    offset += val;
+
+    val = read_uint32(buf, &offset);
+    if (offset + val > size) {
+        ui_log(op, "Bad target directory name length.");
+        return -1;
+    }
+
+    fileInfo->target_directory = nvalloc(val + 1);
+    memcpy(fileInfo->target_directory, buf + offset, val);
     offset += val;
 
     fileInfo->crc = read_uint32(buf, &offset);

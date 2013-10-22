@@ -23,6 +23,8 @@
 #include "nvidia-installer.h"
 #include "precompiled.h"
 
+#define UVM_SUBDIR "uvm"
+
 int remove_directory(Options *op, const char *victim);
 int touch_directory(Options *op, const char *victim);
 int copy_file(Options *op, const char *srcfile,

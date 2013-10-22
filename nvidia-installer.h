@@ -148,6 +148,8 @@ typedef struct __options {
     int check_for_alternate_installs;
     int multiple_kernel_modules;
     int num_kernel_modules;
+    int install_uvm;
+    int uvm_files_packaged;
 
     NVOptionalBool install_vdpau_wrapper;
 
@@ -187,6 +189,7 @@ typedef struct __options {
     char *kernel_module_src_prefix;
     char *kernel_module_src_dir;
     char *utils[MAX_UTILS];
+    char *uvm_module_src_dir;
     
     char *proc_mount_point;
     char *ui_str;
@@ -270,6 +273,7 @@ typedef enum {
     FILE_TYPE_MODULE_SIGNING_KEY,
     FILE_TYPE_NVIFR_LIB,
     FILE_TYPE_NVIFR_LIB_SYMLINK,
+    FILE_TYPE_UVM_MODULE_SRC,
     FILE_TYPE_MAX
 } PackageEntryFileType;
 
@@ -363,10 +367,14 @@ typedef struct __package {
     char **bad_modules;
     char **bad_module_filenames;
     char *kernel_module_build_directory;
+    char *uvm_module_build_directory;
     char *precompiled_kernel_interface_directory;
     char *kernel_frontend_module_filename;
     char *kernel_frontend_module_name;
     char *kernel_frontend_interface_filename;
+    char *uvm_kernel_module_name;
+    char *uvm_kernel_module_filename;
+    char *uvm_interface_filename;
     
     PackageEntry *entries; /* array of filename/checksum/bytesize entries */
     int num_entries;

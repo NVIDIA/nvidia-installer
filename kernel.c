@@ -435,7 +435,7 @@ static int attach_signature(Options *op, Package *p,
     ui_log(op, "Attaching module signature to linked kernel module.");
 
     module_path = nvstrcat(p->kernel_module_build_directory, "/",
-                           module_name, NULL);
+                           fileInfo->target_directory, "/", module_name, NULL);
 
     command_ret = verify_crc(op, module_path, fileInfo->linked_module_crc,
                              &actual_crc);
@@ -539,8 +539,9 @@ int link_kernel_module(Options *op, Package *p, const char *build_directory,
         return FALSE;
     }
 
-    cmd = nvstrcat("cd ", build_directory, "; ", op->utils[LD], " ",
-                   LD_OPTIONS, " -o ", fileInfo->linked_module_name, " ",
+    cmd = nvstrcat("cd ", build_directory, "/", fileInfo->target_directory,
+                   "; ", op->utils[LD], " ", LD_OPTIONS, " -o ",
+                   fileInfo->linked_module_name, " ",
                    fileInfo->name, " ", fileInfo->core_object_name, NULL);
 
     ret = run_command(op, cmd, &result, TRUE, 0, TRUE);
@@ -605,13 +606,13 @@ static int build_kernel_module_helper(Options *op, const char *dir,
 }
 
 
-static int check_file(Options *op, Package *p, const char *filename,
+static int check_file(Options *op, const char *dir, const char *filename,
                       const char *modname)
 {
     int ret;
     char *path;
 
-    path = nvstrcat(p->kernel_module_build_directory, "/", filename, NULL);
+    path = nvstrcat(dir, "/", filename, NULL);
     ret = access(path, F_OK);
     nvfree(path);
 
@@ -678,14 +679,38 @@ int build_kernel_module(Options *op, Package *p)
     
     /* check that the frontend file actually exists */
     if (op->multiple_kernel_modules) {
-        if (!check_file(op, p, p->kernel_frontend_module_filename, "frontend")) {
+        if (!check_file(op, p->kernel_module_build_directory,
+                        p->kernel_frontend_module_filename, "frontend")) {
             return FALSE;
         }
     }
 
     /* check that the file actually exists */
-    if (!check_file(op, p, p->kernel_module_filename, "kernel")) {
+    if (!check_file(op, p->kernel_module_build_directory,
+                    p->kernel_module_filename, "kernel")) {
         return FALSE;
+    }
+
+    /*
+     * Build the UVM kernel module. The build directory from the previous kernel
+     * module build must not be cleaned first, as the UVM kernel module will
+     * depend on the Module.symvers file produced by that build.
+     */
+
+    if (op->install_uvm) {
+        ret = build_kernel_module_helper(op, p->uvm_module_build_directory,
+                                         "Unified Memory", 0);
+
+        ret = ret && check_file(op, p->uvm_module_build_directory,
+                                p->uvm_kernel_module_filename, "Unified Memory");
+
+        if (!ret) {
+            ui_error(op, "The Unified Memory kernel module failed to build. "
+                     "To work around this issue, you may attempt to "
+                     "install this driver package again with the "
+                     "'--no-unified-memory' option.");
+            return FALSE;
+        }
     }
 
     ui_log(op, "Kernel module compilation complete.");
@@ -773,7 +798,7 @@ static int create_detached_signature(Options *op, Package *p,
 {
     int ret, command_ret;
     struct stat st;
-    char *module_path = NULL, *error = NULL;
+    char *module_path = NULL, *error = NULL, *target_dir = NULL;
 
     ui_status_begin(op, "Creating a detached signature for the linked "
                     "kernel module:", "Linking module");
@@ -785,7 +810,8 @@ static int create_detached_signature(Options *op, Package *p,
         goto done;
     }
 
-    module_path = nvstrcat(build_dir, "/", module_filename, NULL);
+    target_dir = nvstrcat(build_dir, "/", fileInfo->target_directory, NULL);
+    module_path = nvstrcat(target_dir, "/", module_filename, NULL);
     command_ret = stat(module_path, &st);
 
     if (command_ret != 0) {
@@ -801,7 +827,7 @@ static int create_detached_signature(Options *op, Package *p,
 
     ui_status_update(op, .50, "Signing linked module");
 
-    ret = sign_kernel_module(op, build_dir, module_suffix, FALSE);
+    ret = sign_kernel_module(op, target_dir, module_suffix, FALSE);
 
     if (!ret) {
         error = "Failed to sign the linked kernel module.";
@@ -831,6 +857,7 @@ done:
     }
 
     nvfree(module_path);
+    nvfree(target_dir);
     return ret;
 } /* create_detached_signature() */
 
@@ -846,12 +873,16 @@ done:
 static int build_kernel_interface_file(Options *op, const char *tmpdir,
                                        PrecompiledFileInfo *fileInfo,
                                        const char *kernel_interface_filename,
-                                       const char *module_suffix,
-                                       const char *build_module_instances_parameter)
+                                       const char *module_suffix)
 {
     char *cmd;
-    char *kernel_interface;
-    int command_ret;
+    char *kernel_interface, *build_module_instances_parameter = NULL;
+    int ret;
+
+    if (op->multiple_kernel_modules) {
+        build_module_instances_parameter =
+            nvasprintf(" NV_BUILD_MODULE_INSTANCES=%d", NV_MAX_MODULE_INSTANCES);
+    }
 
     cmd = nvstrcat("cd ", tmpdir, "; make ",
                    kernel_interface_filename,
@@ -860,11 +891,13 @@ static int build_kernel_interface_file(Options *op, const char *tmpdir,
                    " NV_MODULE_SUFFIX=", module_suffix,
                    build_module_instances_parameter, NULL);
 
-    command_ret = run_command(op, cmd, NULL, TRUE, 25 /* XXX */, TRUE);
+    nvfree(build_module_instances_parameter);
+
+    ret = run_command(op, cmd, NULL, TRUE, 25 /* XXX */, TRUE);
 
     free(cmd);
 
-    if (command_ret != 0) {
+    if (ret != 0) {
         ui_status_end(op, "Error.");
         ui_error(op, "Unable to build the NVIDIA kernel module interface.");
         /* XXX need more descriptive error message */
@@ -875,15 +908,15 @@ static int build_kernel_interface_file(Options *op, const char *tmpdir,
 
     kernel_interface = nvstrcat(tmpdir, "/",
                                 kernel_interface_filename, NULL);
+    ret = access(kernel_interface, F_OK);
+    nvfree(kernel_interface);
 
-    if (access(kernel_interface, F_OK) == -1) {
+    if (ret == -1) {
         ui_status_end(op, "Error.");
         ui_error(op, "The NVIDIA kernel module interface was not created.");
-        nvfree(kernel_interface);
         return FALSE;
     }
 
-    nvfree(kernel_interface);
     return TRUE;
 }
 
@@ -900,13 +933,14 @@ static int pack_kernel_interface(Options *op, Package *p,
                                  const char *module_suffix,
                                  const char *kernel_interface,
                                  const char *module_filename,
-                                 const char *core_file)
+                                 const char *core_file,
+                                 const char *target_directory)
 {
     int command_ret;
 
     command_ret = precompiled_read_interface(fileInfo, kernel_interface,
                                              module_filename,
-                                             core_file);
+                                             core_file, target_directory);
 
     if (command_ret) {
         if (op->module_signing_secret_key && op->module_signing_public_key) {
@@ -921,6 +955,47 @@ static int pack_kernel_interface(Options *op, Package *p,
 
     return FALSE;
 }
+
+
+
+static int build_and_pack_interface(Options *op, Package *p, const char *tmpdir,
+                                    const char *subdir,
+                                    PrecompiledFileInfo *fileInfo,
+                                    const char *interface, const char *module,
+                                    const char *suffix, const char *core)
+{
+    int ret;
+    char *filename = NULL;
+    char *dir = NULL;
+
+    ui_status_begin(op, "Building kernel module interface: ", "Building %s",
+                    interface);
+
+    dir = nvstrcat(tmpdir, "/", subdir, NULL);
+    ret = build_kernel_interface_file(op, dir, fileInfo, interface, suffix);
+
+    if (!ret) {
+        goto done;
+    }
+
+    ui_status_end(op, "done.");
+
+    ui_log(op, "Kernel module interface compilation complete.");
+
+    filename = nvstrcat(dir, "/", interface, NULL);
+
+    /* add the kernel interface to the list of files to be packaged */
+    ret = pack_kernel_interface(op, p, tmpdir, fileInfo, suffix, filename,
+                                module, core, subdir);
+
+done:
+    nvfree(dir);
+    nvfree(filename);
+
+    return ret;
+}
+
+
 
 /*
  * build_kernel_interface() - build the kernel interface(s), and store any
@@ -941,9 +1016,8 @@ int build_kernel_interface(Options *op, Package *p,
     char *tmpdir = NULL;
     char *dstfile = NULL;
     int files_packaged = 0, i;
-    int num_files = 1;
-    int ret_status;
-    char *build_module_instances_parameter = NULL;
+    int num_files = 1, ret = FALSE;
+    char *uvmdir = NULL;
 
     *fileInfos = NULL;
 
@@ -966,6 +1040,23 @@ int build_kernel_interface(Options *op, Package *p,
                  "directory '%s'.", tmpdir);
         goto failed;
     }
+
+    uvmdir = nvstrcat(tmpdir, "/" UVM_SUBDIR, NULL);
+
+    if (op->install_uvm) {
+        if (!mkdir_recursive(op, uvmdir, 0655)) {
+            ui_error(op, "Unable to create a temporary subdirectory for the "
+                     "Unified Memory kernel module build.");
+            goto failed;
+        }
+
+        if (!copy_directory_contents(op,
+                                     p->uvm_module_build_directory, uvmdir)) {
+            ui_error(op, "Unable to copy the Unified Memory kernel module "
+                     "sources to temporary directory '%s'.", uvmdir);
+            goto failed;
+        }
+    }
     
     /*
      * touch the contents of the build directory, to avoid make time
@@ -976,111 +1067,75 @@ int build_kernel_interface(Options *op, Package *p,
 
     if (op->multiple_kernel_modules) {
         num_files = op->num_kernel_modules;
-        build_module_instances_parameter = 
-                                 nvasprintf(" NV_BUILD_MODULE_INSTANCES=%d",
-                                            NV_MAX_MODULE_INSTANCES);
-    }
-    else {
-        build_module_instances_parameter = nvstrdup("");
     }
 
-    *fileInfos = nvalloc(sizeof(PrecompiledFileInfo) * (num_files + 1));
+    *fileInfos = nvalloc(sizeof(PrecompiledFileInfo) * (num_files + 2));
 
     for (i = 0; i < num_files; i++) {
-        char *kernel_interface, *kernel_module_filename;
+        char *kernel_module_filename;
         char *kernel_interface_filename;
-        PrecompiledFileInfo *fileInfo = *fileInfos + i;
-        char module_instance_str[5];
+        char *module_instance_str = NULL;
 
-        memset(module_instance_str, 0, sizeof(module_instance_str));
         if (op->multiple_kernel_modules) {
-            snprintf(module_instance_str, sizeof(module_instance_str), "%d", i);
+            module_instance_str = nvasprintf("%d", i);
+        } else {
+            module_instance_str = nvstrdup("");
         }
 
         kernel_interface_filename = nvstrdup(p->kernel_interface_filename);
-
         replace_zero(kernel_interface_filename, i);
 
-        /* build the kernel interface */
-
-        ui_status_begin(op, "Building kernel interface:", "Building (%d/%d)",
-                        i + 1, num_files);
-
-        ret_status = build_kernel_interface_file(op, tmpdir, fileInfo,
-                        kernel_interface_filename, module_instance_str,
-                        build_module_instances_parameter);
-
-        if (!ret_status) {
-            nvfree(kernel_interface_filename);
-            goto failed;
-        }
-
-        ui_status_end(op, "done.");
-
-        ui_log(op, "Kernel module interface compilation complete.");
-
-        kernel_interface = nvstrcat(tmpdir, "/",
-                                    kernel_interface_filename, NULL);
-
         kernel_module_filename = nvstrdup(p->kernel_module_filename);
-
         replace_zero(kernel_module_filename, i);
 
-        /* add the kernel interface to the list of files to be packaged */
-        ret_status = pack_kernel_interface(op, p, tmpdir, fileInfo,
-                                           module_instance_str,
-                                           kernel_interface,
-                                           kernel_module_filename,
-                                           "nv-kernel.o");
+        ret = build_and_pack_interface(op, p, tmpdir, "", *fileInfos + i,
+                                       kernel_interface_filename,
+                                       kernel_module_filename,
+                                       module_instance_str, "nv-kernel.o");
 
-        nvfree(kernel_interface);
+        if (!ret) {
+            goto interface_done;
+        }
+
+interface_done:
+
         nvfree(kernel_interface_filename);
         nvfree(kernel_module_filename);
+        nvfree(module_instance_str);
 
-        if (!ret_status)
+        if (!ret)
             goto failed;
 
         files_packaged++;
     }
 
     if (op->multiple_kernel_modules) {
-        char *frontend_interface_filename;
-        PrecompiledFileInfo *fileInfo = *fileInfos + num_files;
-
-        ui_status_begin(op, "Building frontend interface: ", "Building");
-
-        ret_status = build_kernel_interface_file(op, tmpdir, fileInfo,
-                        p->kernel_frontend_interface_filename, "frontend",
-                        build_module_instances_parameter);
-
-        if (!ret_status)
-            goto failed;
-
-        ui_status_end(op, "done.");
-
-        ui_log(op, "Frontend kernel module interface compilation complete.");
-
-        frontend_interface_filename = nvstrcat(tmpdir, "/",
+        ret = build_and_pack_interface(op, p, tmpdir, "", *fileInfos + num_files,
                                        p->kernel_frontend_interface_filename,
-                                       NULL);
-
-        /* add the kernel interface to the list of files to be packaged */
-        ret_status = pack_kernel_interface(op, p, tmpdir, fileInfo,
-                                           "frontend",
-                                           frontend_interface_filename,
-                                           p->kernel_frontend_module_filename,
-                                           "");
-
-        nvfree(frontend_interface_filename);
-
-        if (!ret_status)
+                                       p->kernel_frontend_module_filename,
+                                       "frontend", "");
+         if (!ret) {
             goto failed;
+         }
+
+        files_packaged++;
+    }
+
+    if (op->install_uvm) {
+        ret = build_and_pack_interface(op, p, tmpdir, UVM_SUBDIR,
+                                       *fileInfos + files_packaged,
+                                       p->uvm_interface_filename,
+                                       p->uvm_kernel_module_filename, "uvm", "");
+
+        if (!ret) {
+            goto failed;
+        }
 
         files_packaged++;
     }
 
 failed:
-    nvfree(build_module_instances_parameter);
+    nvfree(uvmdir);
 
     if (files_packaged == 0) {
         nvfree(*fileInfos);
@@ -1097,6 +1152,7 @@ failed:
     return files_packaged;
 
 } /* build_kernel_interface() */
+
 
 
 
@@ -1457,36 +1513,54 @@ int test_kernel_module(Options *op, Package *p)
     nvfree(module_path);
 
     if (ret != 0) {
-        ret = ignore_load_error(op, p, p->kernel_module_filename,
-                                data, ret);
-    } else {
+        ret = ignore_load_error(op, p, p->kernel_module_filename, data, ret);
+        goto test_exit;
+    }
+    if (op->install_uvm) {
+        module_path = nvstrcat(p->uvm_module_build_directory, "/",
+                               p->uvm_kernel_module_filename, NULL);
+        ret = do_insmod(op, module_path, &data);
+        nvfree(module_path);
 
-        /*
-         * check if the kernel module detected problems with this
-         * system's kernel and display any warning messages it may
-         * have prepared for us.
-         */
-
-        check_for_warning_messages(op);
-
-        /*
-         * attempt to unload the kernel module, but don't abort if
-         * this fails: the kernel may not have been configured with
-         * support for module unloading (Linux 2.6).
-         */
-        cmd = nvstrcat(op->utils[RMMOD], " ", p->kernel_module_name, NULL);
-        run_command(op, cmd, NULL, FALSE, 0, TRUE);
-
-        if (op->multiple_kernel_modules) {
-            nvfree(cmd);
-            cmd = nvstrcat(op->utils[RMMOD], " ",
-                           p->kernel_frontend_module_name, NULL);
-            run_command(op, cmd, NULL, FALSE, 0, TRUE);
+        if (ret != 0) {
+            ret = ignore_load_error(op, p, p->uvm_kernel_module_filename, data,
+                                    ret);
+            goto test_exit;
         }
+    }
 
-        ret = TRUE;
+    /*
+     * check if the kernel module detected problems with this
+     * system's kernel and display any warning messages it may
+     * have prepared for us.
+     */
+
+    check_for_warning_messages(op);
+
+    /*
+     * attempt to unload the kernel module, but don't abort if
+     * this fails: the kernel may not have been configured with
+     * support for module unloading (Linux 2.6).
+     */
+
+    if (op->install_uvm) {
+        cmd = nvstrcat(op->utils[RMMOD], " ", p->uvm_kernel_module_name, NULL);
+        run_command(op, cmd, NULL, FALSE, 0, TRUE);
         nvfree(cmd);
     }
+
+    cmd = nvstrcat(op->utils[RMMOD], " ", p->kernel_module_name, NULL);
+    run_command(op, cmd, NULL, FALSE, 0, TRUE);
+    nvfree(cmd);
+
+    if (op->multiple_kernel_modules) {
+        cmd = nvstrcat(op->utils[RMMOD], " ",
+                       p->kernel_frontend_module_name, NULL);
+        run_command(op, cmd, NULL, FALSE, 0, TRUE);
+        nvfree(cmd);
+    }
+
+    ret = TRUE;
 
 test_exit:
     nvfree(data);

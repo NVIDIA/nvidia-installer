@@ -1269,6 +1269,29 @@ void should_install_vdpau_wrapper(Options *op, Package *p)
 
 
 /*
+ * should_install_uvm() - ask the user if he/she wishes to install UVM
+ */
+
+void should_install_uvm(Options *op, Package *p)
+{
+    /* if the package does not include UVM, it can't be installed. */
+
+    if (!op->uvm_files_packaged) {
+        op->install_uvm = FALSE;
+        return;
+    }
+
+    /* ask expert users whether they want to install UVM */
+
+    if (op->expert) {
+        op->install_uvm = ui_yes_no(op, op->install_uvm, "Would you like to "
+                                    "install the NVIDIA Unified Memory kernel "
+                                    "module?");
+    }
+}
+
+
+/*
  * check_installed_files_from_package() - scan through the entries in
  * the package, making sure that all symbolic links and files are
  * properly installed.

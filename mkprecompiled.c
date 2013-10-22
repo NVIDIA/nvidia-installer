@@ -150,7 +150,8 @@ static void print_help(void)
            "    --kernel-interface <file> --linked-module-name <module-name>\\\n"
            "                              --core-object-name <core-name>\\\n"
            "                            [ --linked-module <linked-kmod-file> \\\n"
-           "                              --signed-module <signed-kmod-file> ]\n"
+           "                              --signed-module <signed-kmod-file> ]\\\n"
+           "                            [ --target-directory <target-directory> ]\n"
            "        Pack <file> as a precompiled kernel interface.\n"
            "        <module-name> specifies the name of the kernel module file\n"
            "        that is produced by linking the precompiled kernel interface\n"
@@ -168,11 +169,16 @@ static void print_help(void)
            "        correctly applied on the target system, the linking should\n"
            "        be performed with the same linker and flags that will be\n"
            "        used on the target system.\n"
+           "        A target directory for unpacking the interface may be\n"
+           "        specified with the --target-directory option.\n"
+           "        <target-directory> is the name of the directory where the\n"
+           "        unpacked interface will be written.\n"
            "        The --linked-module and --signed-module options must be\n"
            "        given after the --kernel-interface option for the kernel\n"
            "        interface file with which they are associated, and before\n"
            "        any additional --kernel-interface or --kernel-module files.\n"
-           "    --kernel-module <file> [ --signed ]\n"
+           "    --kernel-module <file> [ --signed ]\\\n"
+           "                           [ --target-directory <target-directory> ]\n"
            "        Pack <file> as a precompiled kernel module. The --signed\n"
            "        option specifies that <file> includes a module signature.\n"
            "        The --signed option must be given after the --kernel-module\n"
@@ -208,6 +214,7 @@ enum {
     LINKED_AND_SIGNED_MODULE_OPTION,
     LINKED_MODULE_NAME_OPTION,
     CORE_OBJECT_NAME_OPTION,
+    TARGET_DIRECTORY_OPTION
 };
 
 
@@ -302,9 +309,13 @@ static void set_action(Options *op, int action)
 
 static void pack_a_file(Options *op, PrecompiledFileInfo *file,
                         char *name, uint32 type, char **linked_name,
-                        char **core_name, char **linked_module_file,
-                        char **signed_module_file)
+                        char **core_name, char **target_directory,
+                        char **linked_module_file, char **signed_module_file)
 {
+    if (!*target_directory) {
+        *target_directory = nvstrdup("");
+    }
+
     switch(type) {
     case PRECOMPILED_FILE_TYPE_INTERFACE:
         if (*linked_name == NULL || *core_name == NULL) {
@@ -314,14 +325,15 @@ static void pack_a_file(Options *op, PrecompiledFileInfo *file,
             exit(1);
         }
 
-        if (!precompiled_read_interface(file, name, *linked_name, *core_name)) {
+        if (!precompiled_read_interface(file, name, *linked_name, *core_name,
+                                        *target_directory)) {
             fprintf(stderr, "Failed to read kernel interface '%s'.\n", name);
         exit(1);
         }
         break;
 
     case PRECOMPILED_FILE_TYPE_MODULE:
-        if (!precompiled_read_module(file, name)) {
+        if (!precompiled_read_module(file, name, *target_directory)) {
             fprintf(stderr, "Failed to read kernel module '%s'.\n", name);
         }
         break;
@@ -340,9 +352,11 @@ static void pack_a_file(Options *op, PrecompiledFileInfo *file,
 
     nvfree(*linked_name);
     nvfree(*core_name);
+    nvfree(*target_directory);
     nvfree(*linked_module_file);
     nvfree(*signed_module_file);
-    *linked_name = *core_name = *linked_module_file = *signed_module_file = NULL;
+    *linked_name = *core_name = *target_directory = *linked_module_file =
+    *signed_module_file = NULL;
 }
 
 /*
@@ -358,7 +372,7 @@ static Options *parse_commandline(int argc, char *argv[])
     uint32 type = 0;
     PrecompiledFileInfo *file = NULL;
     char *strval, *signed_mod = NULL, *linked_mod = NULL, *filename = NULL,
-         *linked_name = NULL, *core_name = NULL;
+         *linked_name = NULL, *core_name = NULL, *target_directory = NULL;
     char see_help[1024];
 
     static const NVGetoptOption long_options[] = {
@@ -386,6 +400,8 @@ static Options *parse_commandline(int argc, char *argv[])
         { "linked-module-name",  LINKED_MODULE_NAME_OPTION,
                                          NVGETOPT_STRING_ARGUMENT, NULL, NULL },
         { "core-object-name",    CORE_OBJECT_NAME_OPTION,
+                                         NVGETOPT_STRING_ARGUMENT, NULL, NULL },
+        { "target-directory",    TARGET_DIRECTORY_OPTION,
                                          NVGETOPT_STRING_ARGUMENT, NULL, NULL },
         { NULL,                  0,   0,                        NULL, NULL }
     };
@@ -430,7 +446,7 @@ static Options *parse_commandline(int argc, char *argv[])
 
             if (file) {
                 pack_a_file(op, file, filename, type, &linked_name, &core_name,
-                            &linked_mod, &signed_mod);
+                            &target_directory, &linked_mod, &signed_mod);
             }
 
             file = op->new_files + op->num_files;
@@ -483,6 +499,13 @@ static Options *parse_commandline(int argc, char *argv[])
 
             break;
 
+        case TARGET_DIRECTORY_OPTION:
+
+            check_file_option_validity(op, "target-directory");
+            target_directory = strval;
+
+            break;
+
         default:
             fprintf (stderr, "Invalid commandline; %s", see_help);
             exit(0);
@@ -502,7 +525,7 @@ static Options *parse_commandline(int argc, char *argv[])
     case PACK:
         if (file) {
             pack_a_file(op, file, filename, type, &linked_name, &core_name,
-                        &linked_mod, &signed_mod);
+                        &target_directory, &linked_mod, &signed_mod);
         }
 
         if (op->num_files < 1) {
@@ -650,6 +673,7 @@ int main(int argc, char *argv[])
 
             printf("  size: %d bytes\n", file->size);
             printf("  crc: %" PRIu32 "\n", file->crc);
+            printf("  target directory: %s\n", file->target_directory);
 
             if (file->type == PRECOMPILED_FILE_TYPE_INTERFACE) {
                 printf("  core object name: %s\n", file->core_object_name);

@@ -862,9 +862,20 @@ static int ignore_conflicting_file(Options *op,
                 ret = info.conflictArch != CONFLICT_ARCH_64;
                 break;
             default:
-                ui_warn(op, "Unable to determine the architecture of the file "
-                        "'%s', which has an architecture-specific conflict.",
-                        filename);
+                /*
+                 * XXX ignore symlinks with indeterminate architectures: their
+                 * targets may have already been deleted, and they'll be reused
+                 * or replaced as part of the installation, anyway.
+                 */
+                if (lstat(filename, &stat_buf) == -1) {
+                    ui_warn(op, "Unable to stat '%s'.", filename);
+                } else if ((stat_buf.st_mode & S_IFLNK) == S_IFLNK) {
+                    ret = TRUE;
+                } else {
+                    ui_warn(op, "Unable to determine the architecture of the "
+                            "file '%s', which has an architecture-specific "
+                            "conflict.", filename);
+                }
                 break;
         }
     }
@@ -872,6 +883,8 @@ static int ignore_conflicting_file(Options *op,
     /* if no requiredString, do not check for the required string */
 
     if (!info.requiredString) return ret;
+
+    ret = FALSE;
 
     if ((fd = open(filename, O_RDONLY)) == -1) {
         ui_error(op, "Unable to open '%s' for reading (%s)",

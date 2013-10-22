@@ -149,6 +149,7 @@ static Options *load_default_options(void)
     op->install_vdpau_wrapper = NV_OPTIONAL_BOOL_DEFAULT;
     op->check_for_alternate_installs = TRUE;
     op->num_kernel_modules = 1;
+    op->install_uvm = TRUE;
 
     return op;
 
@@ -422,6 +423,9 @@ static void parse_commandline(int argc, char *argv[], Options *op)
                 op->num_kernel_modules = NV_MAX_MODULE_INSTANCES;
             else
                 op->num_kernel_modules = intval;
+            break;
+        case NO_UVM_OPTION:
+            op->install_uvm = FALSE;
             break;
         case NO_CHECK_FOR_ALTERNATE_INSTALLS_OPTION:
             op->check_for_alternate_installs = FALSE;

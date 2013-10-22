@@ -471,6 +471,9 @@ int set_destinations(Options *op, Package *p)
         op->kernel_module_src_dir = nvstrcat("nvidia-", p->version, NULL);
     }
 
+    op->uvm_module_src_dir = nvstrcat(op->kernel_module_src_dir, "/" UVM_SUBDIR,
+                                      NULL);
+
     for (i = 0; i < p->num_entries; i++) {
 
         switch (p->entries[i].type) {
@@ -481,13 +484,18 @@ int set_destinations(Options *op, Package *p)
             continue;
 
         case FILE_TYPE_KERNEL_MODULE_SRC:
+        case FILE_TYPE_UVM_MODULE_SRC:
             if (op->no_kernel_module_source) {
                 /* Don't install kernel module source files if requested. */
                 p->entries[i].dst = NULL;
                 continue;
             }
             prefix = op->kernel_module_src_prefix;
-            dir = op->kernel_module_src_dir;
+            if (p->entries[i].type == FILE_TYPE_UVM_MODULE_SRC) {
+                dir = op->uvm_module_src_dir;
+            } else {
+                dir = op->kernel_module_src_dir;
+            }
             path = "";
             break;
 
@@ -983,12 +991,11 @@ int get_prefixes (Options *op)
  */
 
 static void add_kernel_module_helper(Options *op, Package *p,
-                                     const char *filename, const char *subdir)
+                                     const char *filename, const char *dir)
 {
     char *file, *name, *dst;
 
-    file = nvstrcat(p->kernel_module_build_directory, "/", subdir,
-                    filename, NULL);
+    file = nvstrcat(dir, "/", filename, NULL);
 
     name = strrchr(file, '/');
 
@@ -1024,7 +1031,8 @@ int add_kernel_modules_to_package(Options *op, Package *p)
     int i;
 
     if (op->multiple_kernel_modules) {
-        add_kernel_module_helper(op, p, p->kernel_frontend_module_filename, "");
+        add_kernel_module_helper(op, p, p->kernel_frontend_module_filename,
+                                 p->kernel_module_build_directory);
     }
 
     for (i = 0; i < op->num_kernel_modules; i++) {
@@ -1036,9 +1044,14 @@ int add_kernel_modules_to_package(Options *op, Package *p)
         tmp = strrchr(name, '0');
         if (tmp) *tmp = *tmp + i;
 
-        add_kernel_module_helper(op, p, name, "");
+        add_kernel_module_helper(op, p, name, p->kernel_module_build_directory);
 
         nvfree(name);
+    }
+
+    if (op->install_uvm) {
+        add_kernel_module_helper(op, p, p->uvm_kernel_module_filename,
+                                 p->uvm_module_build_directory);
     }
 
     return TRUE;

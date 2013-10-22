@@ -58,6 +58,7 @@ int do_install(Options *op, Package *p, CommandList *c);
 void should_install_opengl_headers(Options *op, Package *p);
 void should_install_compat32_files(Options *op, Package *p);
 void should_install_vdpau_wrapper(Options *op, Package *p);
+void should_install_uvm(Options *op, Package *p);
 void check_installed_files_from_package(Options *op, Package *p);
 int tls_test(Options *op, int compat_32_libs);
 int check_runtime_configuration(Options *op, Package *p);

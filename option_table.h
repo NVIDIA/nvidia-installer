@@ -95,6 +95,7 @@ enum {
     INSTALL_VDPAU_WRAPPER_OPTION,
     NO_CHECK_FOR_ALTERNATE_INSTALLS_OPTION,
     MULTIPLE_KERNEL_MODULES_OPTION,
+    NO_UVM_OPTION,
 };
 
 static const NVGetoptOption __options[] = {
@@ -628,6 +629,9 @@ static const NVGetoptOption __options[] = {
        NVGETOPT_INTEGER_ARGUMENT, NULL,
       "Build and install multiple NVIDIA kernel modules. The maximum number "
       "of NVIDIA kernel modules that may be built is 8." },
+
+    { "no-unified-memory", NO_UVM_OPTION, 0, NULL,
+      "Do not install the NVIDIA Unified Memory kernel module."},
 
     /* Orphaned options: These options were in the long_options table in
      * nvidia-installer.c but not in the help. */
