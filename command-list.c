@@ -576,10 +576,17 @@ static void find_conflicting_libraries(Options *op,
                                        FileList *l);
 
 static ConflictingFileInfo __xfree86_opengl_libs[] = {
+
+    /* Conflicting OpenGL libraries */
+
     { "libnvidia-glcore.",   17, /* strlen("libnvidia-glcore.") */   NULL            },
     { "libGL.",              6,  /* strlen("libGL.") */              NULL            },
     { "libGLwrapper.",       13, /* strlen("libGLwrapper.") */       NULL            },
+
+    /* Conflicting X extensions */
+
     { "libglx.",             7,  /* strlen("libglx.") */             "glxModuleData" },
+    { "libglamoregl.",       13, /* strlen("libglamoregl.") */       NULL            },
     { NULL,                  0,                                      NULL            }
 };
 
