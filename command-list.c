@@ -607,16 +607,25 @@ static void find_conflicting_libraries(Options *op,
                                        FileList *l);
 
 static ConflictingFileInfo __xfree86_opengl_libs[] = {
+
+    /* Conflicting OpenGL libraries */
+
     { "libnvidia-glcore.",   17, /* strlen("libnvidia-glcore.") */
                              NULL,            CONFLICT_ARCH_ALL        },
     { "libGL.",              6,  /* strlen("libGL.") */
                              NULL,            CONFLICT_ARCH_ALL        },
     { "libGLwrapper.",       13, /* strlen("libGLwrapper.") */
                              NULL,            CONFLICT_ARCH_ALL        },
+
+    /* Conflicting X extensions */
+
     { "libglx.",             7,  /* strlen("libglx.") */
                              "glxModuleData", CONFLICT_ARCH_ALL        },
+    { "libglamoregl.",       13, /* strlen("libglamoregl.") */
+                             NULL,            CONFLICT_ARCH_ALL        },
 
-    /* XXX we do not currently build 64-bit EGL libraries due to problems
+    /* Conflicting EGL libraries:
+     * XXX we do not currently build 64-bit EGL libraries due to problems
      * with the ABI, so only conflict with 32-bit EGL libraries for now. */
 
     { "libEGL.",             7,  /* strlen("libEGL.") */
