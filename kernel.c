@@ -706,7 +706,8 @@ int build_kernel_module(Options *op, Package *p)
 
         if (!ret) {
             ui_error(op, "The Unified Memory kernel module failed to build. "
-                     "To work around this issue, you may attempt to "
+                     "This kernel module is required for the proper operation "
+                     "of CUDA. If you do not need to use CUDA, you can try to "
                      "install this driver package again with the "
                      "'--no-unified-memory' option.");
             return FALSE;
@@ -1525,6 +1526,13 @@ int test_kernel_module(Options *op, Package *p)
         if (ret != 0) {
             ret = ignore_load_error(op, p, p->uvm_kernel_module_filename, data,
                                     ret);
+            if (ret) {
+                ui_warn(op, "The NVIDIA Unified Memory module failed to load, "
+                        "and the load failure was ignored. This module is "
+                        "required in order for the CUDA driver to function; if "
+                        "the load failure cannot be resolved, then this system "
+                        "will be unable to run CUDA applications.");
+            }
             goto test_exit;
         }
     }

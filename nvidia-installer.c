@@ -419,10 +419,15 @@ static void parse_commandline(int argc, char *argv[], Options *op)
                 goto fail;
             }
             op->multiple_kernel_modules = TRUE;
-            if (intval > NV_MAX_MODULE_INSTANCES)
+            /* Unified Memory is incompatible with multiple kernel modules */
+            op->install_uvm = FALSE;
+
+            if (intval > NV_MAX_MODULE_INSTANCES) {
                 op->num_kernel_modules = NV_MAX_MODULE_INSTANCES;
-            else
+            }
+            else {
                 op->num_kernel_modules = intval;
+            }
             break;
         case NO_UVM_OPTION:
             op->install_uvm = FALSE;

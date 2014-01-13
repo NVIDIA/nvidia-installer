@@ -628,10 +628,16 @@ static const NVGetoptOption __options[] = {
     { "multiple-kernel-modules", MULTIPLE_KERNEL_MODULES_OPTION,
        NVGETOPT_INTEGER_ARGUMENT, NULL,
       "Build and install multiple NVIDIA kernel modules. The maximum number "
-      "of NVIDIA kernel modules that may be built is 8." },
+      "of NVIDIA kernel modules that may be built is 8. '--multiple-kernel-"
+      "modules' implies '--no-unified-memory'."},
 
     { "no-unified-memory", NO_UVM_OPTION, 0, NULL,
-      "Do not install the NVIDIA Unified Memory kernel module."},
+      "Do not install the NVIDIA Unified Memory kernel module. This kernel "
+      "module is required for CUDA, and if it is not installed, the CUDA "
+      "driver and CUDA applications will not be able to run. The "
+      "'--no-unified-memory' option should only be used to work around "
+      "failures to build or install the Unified Memory kernel module on "
+      "systems that do not need to run CUDA." },
 
     /* Orphaned options: These options were in the long_options table in
      * nvidia-installer.c but not in the help. */

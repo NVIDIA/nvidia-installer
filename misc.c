@@ -1286,7 +1286,14 @@ void should_install_uvm(Options *op, Package *p)
     if (op->expert) {
         op->install_uvm = ui_yes_no(op, op->install_uvm, "Would you like to "
                                     "install the NVIDIA Unified Memory kernel "
-                                    "module?");
+                                    "module? You must install this module in "
+                                    "order to use CUDA.");
+    }
+
+    if (!op->install_uvm) {
+        ui_warn(op, "The NVIDIA Unified Memory kernel module will not be "
+                "installed. As a result, CUDA applications will not be able to "
+                "run with this installation of the NVIDIA driver.");
     }
 }
 

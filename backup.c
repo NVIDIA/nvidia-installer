@@ -619,6 +619,21 @@ static int rmdir_recursive(Options *op)
     return ret;
 }
 
+
+
+/* unload_nvidia_module() - unload nvidia${suffix}.ko, ignoring failures. */
+
+static void unload_nvidia_module(Options *op, const char *suffix)
+{
+    char *cmd;
+
+    cmd = nvstrcat(op->utils[RMMOD], " ", RMMOD_MODULE_NAME, suffix, NULL);
+    run_command(op, cmd, NULL, FALSE, 0, TRUE);
+    nvfree(cmd);
+}
+
+
+
 /*
  * do_uninstall() - this function uninstalls a previously installed
  * driver, by parsing the BACKUP_LOG file.
@@ -629,7 +644,7 @@ static int do_uninstall(Options *op, const char *version)
     BackupLogEntry *e;
     BackupInfo *b;
     int i, len, ok;
-    char *tmpstr, *cmd;
+    char *tmpstr;
     float percent;
     int removal_failed = FALSE, restore_failed = FALSE;
 
@@ -823,28 +838,20 @@ static int do_uninstall(Options *op, const char *version)
      * might not have existed at all.
      */
 
-    cmd = nvstrcat(op->utils[RMMOD], " ", RMMOD_MODULE_NAME, NULL);
-    run_command(op, cmd, NULL, FALSE, 0, TRUE);
-    nvfree(cmd);
+    unload_nvidia_module(op, "-uvm");
+
+    unload_nvidia_module(op, "");
 
     for (i = 0; i < NV_MAX_MODULE_INSTANCES; i++) {
         char num[5];
         memset(num, 0, sizeof(num));
         snprintf(num, sizeof(num), "%d", i);
         num[sizeof(num) - 1] = '\0';
-       
-        cmd = nvstrcat(op->utils[RMMOD], " ", RMMOD_MODULE_NAME, 
-                       num, NULL);
-        run_command(op, cmd, NULL, FALSE, 0, TRUE);
 
-        nvfree(cmd);
+        unload_nvidia_module(op, num);   
     }
 
-    cmd = nvstrcat(op->utils[RMMOD], " ", RMMOD_MODULE_NAME,
-                   "-frontend", NULL);
-    run_command(op, cmd, NULL, FALSE, 0, TRUE);
-
-    nvfree(cmd);
+    unload_nvidia_module(op, "-frontend");
 
     run_distro_hook(op, "post-uninstall");
 
