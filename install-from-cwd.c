@@ -84,11 +84,17 @@ int install_from_cwd(Options *op)
     const char *msg;
     int ret;
     int ran_pre_install_hook = FALSE;
+    HookScriptStatus res;
 
     static const char edit_your_xf86config[] =
         "Please update your XF86Config or xorg.conf file as "
         "appropriate; see the file /usr/share/doc/"
         "NVIDIA_GLX-1.0/README.txt for details.";
+
+    const char *choices[2] = {
+        "Continue installation",
+        "Abort installation"
+    };
 
     /*
      * validate the manifest file in the cwd, and process it, building
@@ -137,14 +143,26 @@ int install_from_cwd(Options *op)
 
     /* run the distro preinstall hook */
 
-    if (!run_distro_hook(op, "pre-install")) {
-        if (!ui_yes_no(op, TRUE,
-                       "The distribution-provided pre-install script failed!  "
-                       "Continue installation anyway?")) {
+    res = run_distro_hook(op, "pre-install");
+    if (res == HOOK_SCRIPT_FAIL) {
+        if (ui_multiple_choice(op, choices, 2, 0, "The distribution-provided "
+                               "pre-install script failed!  Are you sure you "
+                               "want to continue?") == 1) {
             goto failed;
         }
+    } else if (res == HOOK_SCRIPT_SUCCESS) {
+        if (ui_multiple_choice(op, choices, 2, 0, "The distribution-provided "
+                               "pre-install script completed successfully. If "
+                               "this is the first time you have run the "
+                               "installer, this script may have helped disable "
+                               "Nouveau, but a reboot may be required first.  "
+                               "Would you like to continue, or would you "
+                               "prefer to abort installation to reboot the "
+                               "system?") == 1) {
+            goto exit_install;
+        }
+        ran_pre_install_hook = TRUE;
     }
-    ran_pre_install_hook = TRUE;
 
     /* fail if the nouveau driver is currently in use */
 
@@ -480,6 +498,13 @@ dkmscatfailed:
 
         int i;
 
+        /*
+         * make sure the required development tools are present on
+         * this system before trying to link the kernel interface.
+         */
+        if (!check_precompiled_kernel_interface_tools(op)) {
+            return FALSE;
+        }
 
         /*
          * we have a prebuilt kernel interface package, so now link the
@@ -560,6 +585,10 @@ int add_this_kernel(Options *op)
 
     if ((p = parse_manifest(op)) == NULL) goto failed;
 
+    /* make sure we have the development tools */
+
+    if (!check_development_tools(op, p)) goto failed;
+
     /* find the kernel header files */
 
     if (!determine_kernel_source_path(op, p)) goto failed;
@@ -634,7 +663,7 @@ static Package *parse_manifest (Options *op)
     char *buf, *c, *flag, *tmpstr, *module_suffix = "";
     int done, n, line;
     int fd, ret, len = 0;
-    struct stat stat_buf, entry_stat_buf;
+    struct stat stat_buf;
     Package *p;
     char *manifest = MAP_FAILED, *ptr;
     
@@ -775,30 +804,19 @@ static Package *parse_manifest (Options *op)
             free(buf);
             done = TRUE;
         } else {
-            
-            p->num_entries++;
-            n = p->num_entries - 1;
-            
-            /* extend the PackageEntry array */
-
-            if ((p->entries = (PackageEntry *) nvrealloc
-                 (p->entries, sizeof(PackageEntry) *
-                  p->num_entries)) == NULL) {
-                ui_error(op, "Memory allocation failure.");
-                goto fail;
-            }
+            PackageEntry entry;
             
             /* initialize the new entry */
 
-            memset(&p->entries[n], 0, sizeof(PackageEntry));
+            memset(&entry, 0, sizeof(PackageEntry));
 
             /* read the file name and permissions */
 
             c = buf;
 
-            p->entries[n].file = read_next_word(buf, &c);
+            entry.file = read_next_word(buf, &c);
 
-            if (!p->entries[n].file) goto invalid_manifest_file;
+            if (!entry.file) goto invalid_manifest_file;
 
             tmpstr = read_next_word(c, &c);
             
@@ -806,7 +824,7 @@ static Package *parse_manifest (Options *op)
             
             /* translate the mode string into an octal mode */
             
-            ret = mode_string_to_mode(op, tmpstr, &p->entries[n].mode);
+            ret = mode_string_to_mode(op, tmpstr, &entry.mode);
 
             free(tmpstr);
 
@@ -814,22 +832,21 @@ static Package *parse_manifest (Options *op)
             
             /* every file has a type field */
 
-            p->entries[n].type = FILE_TYPE_NONE;
+            entry.type = FILE_TYPE_NONE;
 
             flag = read_next_word(c, &c);
             if (!flag) goto invalid_manifest_file;
 
-            p->entries[n].type = parse_manifest_file_type(flag,
-                                                          &p->entries[n].caps);
+            entry.type = parse_manifest_file_type(flag, &entry.caps);
 
-            if (p->entries[n].type == FILE_TYPE_NONE) {
+            if (entry.type == FILE_TYPE_NONE) {
                 nvfree(flag);
                 goto invalid_manifest_file;
             }
 
             /* if any UVM files have been packaged, set uvm_files_packaged. */
 
-            if (p->entries[n].type == FILE_TYPE_UVM_MODULE_SRC) {
+            if (entry.type == FILE_TYPE_UVM_MODULE_SRC) {
                 op->uvm_files_packaged = TRUE;
             }
 
@@ -837,16 +854,16 @@ static Package *parse_manifest (Options *op)
 
             /* some libs/symlinks have an arch field */
 
-            p->entries[n].compat_arch = FILE_COMPAT_ARCH_NONE;
+            entry.compat_arch = FILE_COMPAT_ARCH_NONE;
 
-            if (p->entries[n].caps.has_arch) {
+            if (entry.caps.has_arch) {
                 flag = read_next_word(c, &c);
                 if (!flag) goto invalid_manifest_file;
 
                 if (strcmp(flag, "COMPAT32") == 0)
-                    p->entries[n].compat_arch = FILE_COMPAT_ARCH_COMPAT32;
+                    entry.compat_arch = FILE_COMPAT_ARCH_COMPAT32;
                 else if (strcmp(flag, "NATIVE") == 0)
-                    p->entries[n].compat_arch = FILE_COMPAT_ARCH_NATIVE;
+                    entry.compat_arch = FILE_COMPAT_ARCH_NATIVE;
                 else {
                     nvfree(flag);
                     goto invalid_manifest_file;
@@ -857,16 +874,16 @@ static Package *parse_manifest (Options *op)
 
             /* some libs/symlinks have a class field */
 
-            p->entries[n].tls_class = FILE_TLS_CLASS_NONE;
+            entry.tls_class = FILE_TLS_CLASS_NONE;
 
-            if (p->entries[n].caps.has_tls_class) {
+            if (entry.caps.has_tls_class) {
                 flag = read_next_word(c, &c);
                 if (!flag) goto invalid_manifest_file;
 
                 if (strcmp(flag, "CLASSIC") == 0)
-                    p->entries[n].tls_class = FILE_TLS_CLASS_CLASSIC;
+                    entry.tls_class = FILE_TLS_CLASS_CLASSIC;
                 else if (strcmp(flag, "NEW") == 0)
-                    p->entries[n].tls_class = FILE_TLS_CLASS_NEW;
+                    entry.tls_class = FILE_TLS_CLASS_NEW;
                 else {
                     nvfree(flag);
                     goto invalid_manifest_file;
@@ -877,20 +894,20 @@ static Package *parse_manifest (Options *op)
 
             /* libs and documentation have a path field */
 
-            if (p->entries[n].caps.has_path) {
-                p->entries[n].path = read_next_word(c, &c);
-                if (!p->entries[n].path) goto invalid_manifest_file;
+            if (entry.caps.has_path) {
+                entry.path = read_next_word(c, &c);
+                if (!entry.path) goto invalid_manifest_file;
             } else {
-                p->entries[n].path = NULL;
+                entry.path = NULL;
             }
             
             /* symlinks have a target */
 
-            if (p->entries[n].caps.is_symlink) {
-                p->entries[n].target = read_next_word(c, &c);
-                if (!p->entries[n].target) goto invalid_manifest_file;
+            if (entry.caps.is_symlink) {
+                entry.target = read_next_word(c, &c);
+                if (!entry.target) goto invalid_manifest_file;
             } else {
-                p->entries[n].target = NULL;
+                entry.target = NULL;
             }
 
             /*
@@ -899,24 +916,21 @@ static Package *parse_manifest (Options *op)
              * 'file' without any leading directory components
              */
 
-            p->entries[n].name = strrchr(p->entries[n].file, '/');
-            if (p->entries[n].name) p->entries[n].name++;
+            entry.name = strrchr(entry.file, '/');
+            if (entry.name) entry.name++;
             
-            if (!p->entries[n].name) p->entries[n].name = p->entries[n].file;
+            if (!entry.name) entry.name = entry.file;
 
-            /*
-             * store the inode and device information, so that we can
-             * later recognize it, to avoid accidentally moving it as
-             * part of the 'find_conflicting_files' path
-             */
-
-            if (stat(p->entries[n].file, &entry_stat_buf) != -1) {
-                p->entries[n].inode = entry_stat_buf.st_ino;
-                p->entries[n].device = entry_stat_buf.st_dev;
-            } else {
-                p->entries[n].inode = 0;
-                p->entries[n].device = 0;
-            }
+            add_package_entry(p,
+                              entry.file,
+                              entry.path,
+                              entry.name,
+                              entry.target,
+                              entry.dst,
+                              entry.type,
+                              entry.tls_class,
+                              entry.compat_arch,
+                              entry.mode);
 
             /* free the line */
             
@@ -1113,6 +1127,11 @@ static int assisted_module_signing(Options *op, Package *p)
         /* The kernel may or may not enforce module signatures; ask the user
          * whether to sign the module. */
 
+        const char *choices[2] = {
+            "Sign the kernel module",
+            "Install without signing"
+        };
+
         const char* sb_message = (secureboot == 1) ?
                                      "This system also has UEFI Secure Boot "
                                      "enabled; many distributions enforce "
@@ -1120,13 +1139,15 @@ static int assisted_module_signing(Options *op, Package *p)
                                      "systems when Secure Boot is enabled. " :
                                      "";
 
-        do_sign = ui_yes_no(op, FALSE, "The target kernel has "
-                            "CONFIG_MODULE_SIG set, which means that it "
-                            "supports cryptographic signatures on kernel "
-                            "modules. On some systems, the kernel may "
-                            "refuse to load modules without a valid "
-                            "signature from a trusted key. %sWould you like "
-                            "to sign the NVIDIA kernel module?", sb_message);
+        do_sign = (ui_multiple_choice(op, choices, 2, 1, "The target kernel "
+                                      "has CONFIG_MODULE_SIG set, which means "
+                                      "that it supports cryptographic "
+                                      "signatures on kernel modules. On some "
+                                      "systems, the kernel may refuse to load "
+                                      "modules without a valid signature from "
+                                      "a trusted key. %sWould you like to sign "
+                                      "the NVIDIA kernel module?",
+                                      sb_message) == 0);
     }
 
     if (!do_sign) {
@@ -1138,11 +1159,18 @@ static int assisted_module_signing(Options *op, Package *p)
 
     /* If we're missing either key, we need to get both from the user. */
     if (!op->module_signing_secret_key || !op->module_signing_public_key) {
-        generate_keys = !ui_yes_no(op, FALSE, "Do you already have a key pair "
-                                   "which can be used to sign the NVIDIA "
-                                   "kernel module? Answer 'Yes' to use an "
-                                   "existing key pair, or 'No' to generate a "
-                                   "new key pair.");
+
+        const char *choices[2] = {
+            "Use an existing key pair",
+            "Generate a new key pair"
+        };
+
+        generate_keys = (ui_multiple_choice(op, choices, 2, 1, "Would you like "
+                                            "to sign the NVIDIA kernel module "
+                                            "with an existing key pair, or "
+                                            "would you like to generate a new "
+                                            "one?") == 1);
+
         if (generate_keys) {
             char *cmdline, *x509_hash;
             int ret;

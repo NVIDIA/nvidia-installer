@@ -35,10 +35,9 @@
  */
 
 typedef enum {
-    LDCONFIG = 0,
+    MIN_SYSTEM_UTILS = 0,
+    LDCONFIG = MIN_SYSTEM_UTILS,
     LDD,
-    LD,
-    OBJCOPY,
     GREP,
     DMESG,
     TAIL,
@@ -49,7 +48,9 @@ typedef enum {
 } SystemUtils;
 
 typedef enum {
-    CHCON = MAX_SYSTEM_UTILS,
+    MIN_SYSTEM_OPTIONAL_UTILS = MAX_SYSTEM_UTILS,
+    OBJCOPY = MIN_SYSTEM_OPTIONAL_UTILS,
+    CHCON,
     SELINUX_ENABLED,
     GETENFORCE,
     EXECSTACK,
@@ -66,13 +67,30 @@ typedef enum {
  */
 
 typedef enum {
-    INSMOD = MAX_SYSTEM_OPTIONAL_UTILS,
+    MIN_MODULE_UTILS = MAX_SYSTEM_OPTIONAL_UTILS,
+    INSMOD = MIN_MODULE_UTILS,
     MODPROBE,
     RMMOD,
     LSMOD,
     DEPMOD,
-    MAX_UTILS
+    MAX_MODULE_UTILS
 } ModuleUtils;
+
+/*
+ * Enumerated type, listing each of the develop utilities we'll need.
+ * Keep this enum in sync with the develop_utils string array in
+ * misc.c:check_development_tools().
+ */
+
+typedef enum {
+    MIN_DEVELOP_UTILS = MAX_MODULE_UTILS,
+    CC = MIN_DEVELOP_UTILS,
+    MAKE,
+    LD,
+    MAX_DEVELOP_UTILS
+} DevelopUtils;
+
+#define MAX_UTILS MAX_DEVELOP_UTILS
 
 /*
  * Enumerated type of distributions; this isn't an exhaustive list of
@@ -443,9 +461,9 @@ typedef struct __package {
 #define XORG7_DEFAULT_X_MODULEDIR       "xorg/modules"
 
 /*
- * Debian GNU/Linux for x86-64 installs 32-bit compatibility
- * libraries relative to a chroot-like top-level directory; the
- * prefix below is prepended to the full paths.
+ * Older versions of Debian GNU/Linux for x86-64 install 32-bit
+ * compatibility libraries relative to a chroot-like top-level 
+ * directory; the prefix below is prepended to the full paths.
  */
 #define DEBIAN_DEFAULT_COMPAT32_CHROOT  "/emul/ia32-linux"
 
@@ -464,6 +482,13 @@ typedef struct __package {
  */
 #define UBUNTU_DEFAULT_COMPAT32_LIBDIR  "lib32"
 
+/*
+ * Newer versions of Debian GNU/Linux may install 32-bit
+ * compatibility libraries to ../lib/i386-linux-gnu instead
+ * of ../lib32.
+ */
+
+#define DEBIAN_DEFAULT_COMPAT32_LIBDIR "lib/i386-linux-gnu"
 
 #define DEFAULT_PROC_MOUNT_POINT "/proc"
 

@@ -171,7 +171,7 @@ int determine_kernel_module_installation_path(Options *op)
 
 static int run_conftest(Options *op, Package *p, const char *args, char **result)
 {
-    char *CC, *cmd, *arch;
+    char *cmd, *arch;
     int ret;
 
     if (result)
@@ -181,13 +181,10 @@ static int run_conftest(Options *op, Package *p, const char *args, char **result
     if (!arch)
         return FALSE;
 
-    CC = getenv("CC");
-    if (!CC) CC = "cc";
-
     cmd = nvstrcat("sh \"", p->kernel_module_build_directory,
-                   "/conftest.sh\" \"", CC, "\" \"", CC, "\" \"", arch, "\" \"",
-                   op->kernel_source_path, "\" \"", op->kernel_output_path,
-                   "\" ", args, NULL);
+                   "/conftest.sh\" \"", op->utils[CC], "\" \"", op->utils[CC],
+                   "\" \"", arch, "\" \"", op->kernel_source_path, "\" \"",
+                   op->kernel_output_path, "\" ", args, NULL);
 
     ret = run_command(op, cmd, result, FALSE, 0, TRUE);
     nvfree(cmd);
@@ -432,6 +429,11 @@ static int attach_signature(Options *op, Package *p,
     char *module_path;
     int ret = FALSE, command_ret;
 
+    const char *choices[2] = {
+        "Install unsigned kernel module",
+        "Abort installation"
+    };
+
     ui_log(op, "Attaching module signature to linked kernel module.");
 
     module_path = nvstrcat(p->kernel_module_build_directory, "/",
@@ -456,27 +458,30 @@ static int attach_signature(Options *op, Package *p,
 attach_done:
             fclose(module_file);
         } else {
-            ret = ui_yes_no(op, FALSE,
-                            "A detached signature was included with the "
-                            "precompiled interface, but opening the linked "
-                            "kernel module and/or the signature file failed."
-                            "\n\nThe detached signature will not be added; "
-                            "would you still like to install the unsigned "
-                            "kernel module?");
+            ret = (ui_multiple_choice(op, choices, 2, 1,
+                                      "A detached signature was included with "
+                                      "the precompiled interface, but opening "
+                                      "the linked kernel module and/or the "
+                                      "signature file failed.\n\nThe detached "
+                                      "signature will not be added; would you "
+                                      "still like to install the unsigned "
+                                      "kernel module?") == 0);
         }
     } else {
-        ret = ui_yes_no(op, FALSE,
-                        "A detached signature was included with the "
-                        "precompiled interface, but the checksum of the linked "
-                        "kernel module (%d) did not match the checksum of the "
-                        "the kernel module for which the detached signature "
-                        "was generated (%d).\n\nThis can happen if the linker "
-                        "on the installation target system is not the same as "
-                        "the linker on the system that built the precompiled "
-                        "interface.\n\nThe detached signature will not be "
-                        "added; would you still like to install the unsigned "
-                        "kernel module?", actual_crc,
-                        fileInfo->linked_module_crc);
+        ret = (ui_multiple_choice(op, choices, 2, 1,
+                                  "A detached signature was included with the "
+                                  "precompiled interface, but the checksum of "
+                                  "the linked kernel module (%d) did not match "
+                                  "the checksum of the the kernel module for "
+                                  "which the detached signature was generated "
+                                  "(%d).\n\nThis can happen if the linker on "
+                                  "the installation target system is not the "
+                                  "same as the linker on the system that built "
+                                  "the precompiled interface.\n\nThe detached "
+                                  "signature will not be added; would you "
+                                  "still like to install the unsigned kernel "
+                                  "module?", actual_crc,
+                                  fileInfo->linked_module_crc) == 0);
     }
 
     if (ret) {
@@ -584,7 +589,7 @@ static int build_kernel_module_helper(Options *op, const char *dir,
     ui_status_begin(op, tmp, "Building");
     nvfree(tmp);
 
-    cmd = nvstrcat("cd ", dir, "; make module",
+    cmd = nvstrcat("cd ", dir, "; ", op->utils[MAKE], " module",
                    " SYSSRC=", op->kernel_source_path,
                    " SYSOUT=", op->kernel_output_path,
                    instances, NULL);
@@ -598,11 +603,13 @@ static int build_kernel_module_helper(Options *op, const char *dir,
         ui_status_end(op, "Error.");
         ui_error(op, "Unable to build the %s kernel module.", module);
         /* XXX need more descriptive error message */
+
+        return FALSE;
     }
 
     ui_status_end(op, "done.");
 
-    return ret == 0;
+    return TRUE;
 }
 
 
@@ -633,7 +640,7 @@ static int check_file(Options *op, const char *dir, const char *filename,
 int build_kernel_module(Options *op, Package *p)
 {
     char *result, *cmd;
-    int len, ret;
+    int ret;
 
     /*
      * touch all the files in the build directory to avoid make time
@@ -661,10 +668,8 @@ int build_kernel_module(Options *op, Package *p)
 
     ui_log(op, "Cleaning kernel module build directory.");
     
-    len = strlen(p->kernel_module_build_directory) + 32;
-    cmd = nvalloc(len);
-
-    snprintf(cmd, len, "cd %s; make clean", p->kernel_module_build_directory);
+    cmd = nvstrcat("cd ", p->kernel_module_build_directory, "; ",
+                   op->utils[MAKE], " clean", NULL);
 
     ret = run_command(op, cmd, &result, TRUE, 0, TRUE);
     free(result);
@@ -757,7 +762,7 @@ int sign_kernel_module(Options *op, const char *build_directory,
         build_module_instances_parameter = nvstrdup("");
     }
 
-    cmd = nvstrcat("cd ", build_directory, "; make module-sign"
+    cmd = nvstrcat("cd ", build_directory, "; ", op->utils[MAKE], " module-sign"
                    " SYSSRC=", op->kernel_source_path,
                    " SYSOUT=", op->kernel_output_path,
                    " MODSECKEY=", op->module_signing_secret_key,
@@ -885,7 +890,7 @@ static int build_kernel_interface_file(Options *op, const char *tmpdir,
             nvasprintf(" NV_BUILD_MODULE_INSTANCES=%d", NV_MAX_MODULE_INSTANCES);
     }
 
-    cmd = nvstrcat("cd ", tmpdir, "; make ",
+    cmd = nvstrcat("cd ", tmpdir, "; ", op->utils[MAKE], " ",
                    kernel_interface_filename,
                    " SYSSRC=", op->kernel_source_path,
                    " SYSOUT=", op->kernel_output_path,
@@ -1364,21 +1369,28 @@ static int ignore_load_error(Options *op, Package *p,
     if (enokey || secureboot || module_sig_force || op->expert) {
         if (op->kernel_module_signed) {
 
-            ignore_error = ui_yes_no(op, TRUE,
-                                     "The signed kernel module failed to "
-                                     "load%s because the kernel does not "
-                                     "trust any key which is capable of "
-                                     "verifying the module signature. "
-                                     "Would you like to install the signed "
-                                     "kernel module anyway?\n\nNote that %s"
-                                     "you will not be able to load the "
-                                     "installed module until after a key "
-                                     "that can verify the module signature "
-                                     "is added to a key database that is "
-                                     "trusted by the kernel. This will "
-                                     "likely require rebooting your "
-                                     "computer.", probable_reason,
-                                     signature_related);
+            const char *choices[2] = {
+                "Install signed kernel module",
+                "Abort installation"
+            };
+
+            ignore_error = (ui_multiple_choice(op, choices, 2, 0,
+                                               "The signed kernel module failed "
+                                               "to load%s because the kernel "
+                                               "does not trust any key which is "
+                                               "capable of verifying the module "
+                                               "signature. Would you like to "
+                                               "install the signed kernel module "
+                                               "anyway?\n\nNote that %syou "
+                                               "will not be able to load the "
+                                               "installed module until after a "
+                                               "key that can verify the module "
+                                               "signature is added to a key "
+                                               "database that is trusted by the "
+                                               "kernel. This will likely "
+                                               "require rebooting your computer.",
+                                               probable_reason,
+                                               signature_related) == 0);
         } else {
             const char *secureboot_message, *dkms_message;
 
@@ -1876,11 +1888,16 @@ PrecompiledInfo *find_precompiled_kernel_interface(Options *op, Package *p)
     /* If we found one, ask expert users if they really want to use it */
 
     if (info && op->expert) {
-        if (!ui_yes_no(op, TRUE, "A precompiled kernel interface for the "
-                       "kernel '%s' has been found.  Would you like to "
-                       "use this? (answering 'no' will require the "
-                       "installer to compile the interface)",
-                       info->description)) {
+        const char *choices[2] = {
+            "Use the precompiled interface",
+            "Compile the interface"
+        };
+
+        if (ui_multiple_choice(op, choices, 2, 0, "A precompiled kernel "
+                               "interface for the kernel '%s' has been found.  "
+                               "Would you like use the precompiled interface, "
+                               "or would you like to compile the interface "
+                               "instead?", info->description) == 1) {
             free_precompiled(info);
             info = NULL;
         }
@@ -2438,6 +2455,11 @@ int check_cc_version(Options *op, Package *p)
     int ret;
     Options dummyop;
 
+    const char *choices[2] = {
+        "Ignore CC version check",
+        "Abort installation"
+    };
+
     /* 
      * If we're building/installing for a different kernel, then we
      * can't do the gcc version check (we don't have a /proc/version
@@ -2461,14 +2483,13 @@ int check_cc_version(Options *op, Package *p)
 
     if (ret) return TRUE;
 
-    ret = ui_yes_no(op, TRUE, "The CC version check failed:\n\n%s\n\n"
-                    "If you know what you are doing and want to "
-                    "ignore the gcc version check, select \"No\" to "
-                    "continue installation.  Otherwise, select \"Yes\" to "
-                    "abort installation, set the CC environment variable to "
-                    "the name of the compiler used to compile your kernel, "
-                    "and restart installation.  Abort now?", result);
-    
+    ret = (ui_multiple_choice(op, choices, 2, 1, "The CC version check failed:"
+                              "\n\n%s\n\nIf you know what you are doing you "
+                              "can either ignore the CC version check and "
+                              "continue installation, or abort installation, "
+                              "set the CC environment variable to the name of "
+                              "the compiler used to compile your kernel, and "
+                              "restart installation.", result) == 1);
     nvfree(result);
     
     if (!ret) setenv("IGNORE_CC_MISMATCH", "1", 1);

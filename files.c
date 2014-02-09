@@ -1196,12 +1196,18 @@ int directory_exists(Options *op, const char *dir)
 
 int confirm_path(Options *op, const char *path)
 {
+    const char *choices[2] = {
+        "Create directory",
+        "Abort installation"
+    };
+
     /* return TRUE if the path already exists and is a directory */
 
     if (directory_exists(op, path)) return TRUE;
     
-    if (ui_yes_no(op, TRUE, "The directory '%s' does not exist; "
-                  "create?", path)) {
+    if (ui_multiple_choice(op, choices, 2, 0, "The directory '%s' does not "
+                           "exist; would you like to create it, or would you "
+                           "prefer to abort installation?", path) == 0) {
         if (mkdir_recursive(op, path, 0755)) {
             return TRUE;
         } else {
@@ -1569,11 +1575,18 @@ int check_for_existing_rpms(Options *op)
         nvfree(cmd);
 
         if (ret == 0) {
-            if (!ui_yes_no(op, TRUE, "An %s rpm appears to already be "
-                           "installed on your system.  As part of installing "
-                           "the new driver, this %s rpm will be uninstalled.  "
-                           "Are you sure you want to continue? ('no' will "
-                           "abort installation)", rpms[i], rpms[i])) {
+
+            const char *choices[2] = {
+                "Continue installation",
+                "Abort installation"
+            };
+
+            if (ui_multiple_choice(op, choices, 2, 0, "An %s rpm appears to "
+                                   "already be installed on your system.  As "
+                                   "part of installing the new driver, this %s "
+                                   "rpm will be uninstalled. Are you sure you "
+                                   "want to continue?",
+                                   rpms[i], rpms[i]) == 1) {
                 ui_log(op, "Installation aborted.");
                 return FALSE;
             }
@@ -2175,23 +2188,43 @@ void get_default_prefixes_and_paths(Options *op)
 
     if (op->distro == DEBIAN && !op->compat32_chroot) {
         /*
-         * Newer versions of Debian have moved to the Ubuntu style of compat32
-         * path, so use that if it exists.
+         * Newer versions of Debian install 32-bit compatibility libraries
+         * to dedicated directories that are not part of a chroot structure.
+         * Search for the known paths and use the first one that is found.
          */
-        char *default_path = nvstrcat(op->compat32_prefix, "/"
-                                      UBUNTU_DEFAULT_COMPAT32_LIBDIR, NULL);
-        struct stat buf;
-        if (lstat(default_path, &buf) < 0 || S_ISLNK(buf.st_mode)) {
+
+        char *debian_compat32_paths[] = { DEBIAN_DEFAULT_COMPAT32_LIBDIR,
+                                          UBUNTU_DEFAULT_COMPAT32_LIBDIR };
+        int i, found = FALSE;
+
+        for (i = 0; i < ARRAY_LEN(debian_compat32_paths); i++) {
+            char *default_path = nvstrcat(op->compat32_prefix, "/",
+                                          debian_compat32_paths[i], NULL);
+
+            struct stat buf;
+
+            if (lstat(default_path, &buf) == 0 && !S_ISLNK(buf.st_mode)) {
+                /* path exists and is not a symbolic link, so use it */
+                op->compat32_libdir = debian_compat32_paths[i];
+                found = TRUE;
+            }
+
+            nvfree(default_path);
+
+            if (found) {
+                break;
+            }
+        }
+
+        if (!found) {
             /*
-             * Path doesn't exist or is a symbolic link.  Use the compat32
+             * Paths don't exist or are symbolic links. Use the compat32
              * chroot path instead.
              */
+
             op->compat32_chroot = DEBIAN_DEFAULT_COMPAT32_CHROOT;
-        } else {
-            /* <prefix>/lib32 exists, so use that */
-            op->compat32_libdir = UBUNTU_DEFAULT_COMPAT32_LIBDIR;
         }
-        nvfree(default_path);
+
     }
 
 #endif

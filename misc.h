@@ -29,6 +29,19 @@
 
 #include "nvidia-installer.h"
 #include "command-list.h"
+#include "user-interface.h"
+
+/*
+ * Enumeration to identify whether the execution of a distro hook script has
+ * succeeded, failed or the script has not actually been executed
+ */
+
+typedef enum {
+    HOOK_SCRIPT_FAIL = 0,
+    HOOK_SCRIPT_SUCCESS,
+    HOOK_SCRIPT_NO_RUN,
+} HookScriptStatus;
+
 
 typedef enum {
     ELF_INVALID_FILE,
@@ -52,6 +65,7 @@ int find_module_utils(Options *op);
 int check_selinux(Options *op);
 int check_proc_modprobe_path(Options *op);
 int check_development_tools(Options *op, Package *p);
+int check_precompiled_kernel_interface_tools(Options *op);
 char *extract_version_string(const char *str);
 int continue_after_error(Options *op, const char *fmt, ...) NV_ATTRIBUTE_PRINTF(2, 3);
 int do_install(Options *op, Package *p, CommandList *c);
@@ -60,6 +74,8 @@ void should_install_compat32_files(Options *op, Package *p);
 void should_install_vdpau_wrapper(Options *op, Package *p);
 void should_install_uvm(Options *op, Package *p);
 void check_installed_files_from_package(Options *op, Package *p);
+int check_installed_file(Options*, const char*, const mode_t, const uint32,
+                         ui_message_func *logwarn);
 int tls_test(Options *op, int compat_32_libs);
 int check_runtime_configuration(Options *op, Package *p);
 void collapse_multiple_slashes(char *s);
@@ -69,13 +85,12 @@ int check_for_running_x(Options *op);
 int check_for_modular_xorg(Options *op);
 int check_for_nvidia_graphics_devices(Options *op, Package *p);
 int run_nvidia_xconfig(Options *op, int restore);
-int run_distro_hook(Options *op, const char *hook);
+HookScriptStatus run_distro_hook(Options *op, const char *hook);
 int check_for_alternate_install(Options *op);
 int check_for_nouveau(Options *op);
 int dkms_module_installed(Options *op, const char *version);
 int dkms_install_module(Options *op, const char *version, const char *kernel);
 int dkms_remove_module(Options *op, const char *version);
-int unprelink(Options *op, const char *filename);
 int verify_crc(Options *op, const char *filename, unsigned int crc,
                unsigned int *actual_crc);
 int secure_boot_enabled(void);

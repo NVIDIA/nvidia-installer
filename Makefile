@@ -96,7 +96,7 @@ GEN_UI_ARRAY       = $(OUTPUTDIR)/gen-ui-array
 CONFIG_H           = $(OUTPUTDIR)/config.h
 
 MANPAGE            = $(OUTPUTDIR)/nvidia-installer.1.gz
-GEN_MANPAGE_OPTS   = $(OUTPUTDIR)/gen-manpage-opts
+GEN_MANPAGE_OPTS   = $(OUTPUTDIR_ABSOLUTE)/gen-manpage-opts
 OPTIONS_1_INC      = $(OUTPUTDIR)/options.1.inc
 
 # Setup some architecture specific build options
@@ -158,6 +158,7 @@ MKPRECOMPILED_OBJS = $(call BUILD_OBJECT_LIST,$(MKPRECOMPILED_SRC))
 MAKESELF_HELP_SCRIPT_SRC  = makeself-help-script.c
 MAKESELF_HELP_SCRIPT_SRC += $(COMMON_UTILS_DIR)/common-utils.c
 MAKESELF_HELP_SCRIPT_SRC += $(COMMON_UTILS_DIR)/nvgetopt.c
+MAKESELF_HELP_SCRIPT_SRC += $(COMMON_UTILS_DIR)/msg.c
 
 BUILD_MAKESELF_OBJECT_LIST = \
   $(patsubst %.o,%.makeself.o,$(call BUILD_OBJECT_LIST,$(1)))
@@ -371,7 +372,7 @@ $(GEN_MANPAGE_OPTS): $(GEN_MANPAGE_OPTS_OBJS)
 	    $(HOST_CFLAGS) $(HOST_LDFLAGS) $(HOST_BIN_LDFLAGS) $^ -o $@
 
 $(OPTIONS_1_INC): $(GEN_MANPAGE_OPTS)
-	@./$< > $@
+	@$< > $@
 
 $(MANPAGE): nvidia-installer.1.m4 $(OPTIONS_1_INC) $(VERSION_MK)
 	$(call quiet_cmd,M4) \

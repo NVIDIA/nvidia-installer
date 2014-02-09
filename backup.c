@@ -541,7 +541,7 @@ int log_mkdir(Options *op, const char *dirs)
  */
 static int reverse_strlen_compare(const void *a, const void *b)
 {
-    return strlen((const char *)b) - strlen((const char *)a);
+    return strlen(*(char * const *)b) - strlen(*(char * const *)a);
 }
 
 
@@ -586,7 +586,7 @@ static int rmdir_recursive(Options *op)
 
     qsort(dirs, lines, sizeof(char*), reverse_strlen_compare);
 
-    for (i = lines; i < lines; i++) {
+    for (i = 0; i < lines; i++) {
         if (dirs[i]) {
             /* Ignore empty lines and the backup directory itself, since it is 
              * never empty as long as the dirs file is still around. */
@@ -1094,46 +1094,13 @@ static int check_backup_log_entries(Options *op, BackupInfo *b)
         switch (e->num) {
 
         case INSTALLED_FILE:
-            
-            /* check if the file is still there */
-            
-            if (access(e->filename, F_OK) == -1) {
-                ui_log(op, "Unable to access previously installed file "
-                       "'%s' (%s).", e->filename, strerror(errno));
-                ret = e->ok = FALSE;
-            } else {
-                /* check if the file still has the same crc; if not, try
-                 * un-prelinking it and check the crc again */
-                if (!verify_crc(op, e->filename, e->crc, &crc)) {
-                    ui_expert(op, "The previously installed file '%s' has a "
-                              "different checksum (%ul) than when it was "
-                              "installed (%ul). This may be due to prelinking; "
-                              "attempting `prelink -u %s` to restore the file.",
-                              e->filename, crc, e->crc, e->filename);
 
-                    if (unprelink(op, e->filename) != 0) {
-                        ui_log(op, "The previously installed file '%s' seems "
-                               "to have changed, but `prelink -u` failed; "
-                               "unable to restore '%s' to an un-prelinked "
-                               "state.", e->filename, e->filename);
-                        ret = e->ok = FALSE;
-                    } else if (!verify_crc(op, e->filename, e->crc, &crc)) {
-                        ui_log(op, "The previously installed file '%s' has a "
-                               "different checksum (%ul) after running `pre"
-                               "link -u` than when it was installed (%ul).",
-                               e->filename, crc, e->crc);
-                        ret = e->ok = FALSE;
-                    }
+            /* check if the file still matches its backup log entry */
 
-                    if (ret) {
-                        ui_expert(op, "Un-prelinking successful: '%s' will "
-                                  "be uninstalled.", e->filename);
-                    } else {
-                        ui_log(op, "Un-prelinking unsuccessful: '%s' will "
-                               "not be uninstalled.", e->filename);
-                    }
-                }
-            }
+            e->ok = check_installed_file(op, e->filename, e->mode, e->crc,
+                                         ui_log);
+            ret = ret && e->ok;
+ 
             ui_status_update(op, percent, "%s", e->filename);
 
             break;
@@ -1317,6 +1284,11 @@ int check_for_existing_driver(Options *op, Package *p)
     int ret = FALSE;
     int localRet;
 
+    const char *choices[2] = {
+        "Continue installation",
+        "Abort installation"
+    };
+
     if (!check_for_existing_rpms(op)) goto done;
 
     localRet = get_installed_driver_version_and_descr(op, &version, &descr);
@@ -1359,13 +1331,12 @@ int check_for_existing_driver(Options *op, Package *p)
      * downgrading is any different than upgrading.
      */
     
-    if (!ui_yes_no(op, TRUE, "There appears to already be a driver installed "
-                   "on your system (version: %s).  As part of "
-                   "installing this driver (version: %s), the existing "
-                   "driver will be uninstalled.  Are you sure you want to "
-                   "continue? ('no' will abort installation)",
-                   version, p->version)) {
-        
+    if (ui_multiple_choice(op, choices, 2, 0, "There appears to already be a "
+                           "driver installed on your system (version: %s).  As "
+                           "part of installing this driver (version: %s), the "
+                           "existing driver will be uninstalled.  Are you sure "
+                           "you want to continue?", version, p->version) == 1) {
+
         ui_log(op, "Installation aborted.");
         goto done;
     }

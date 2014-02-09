@@ -46,6 +46,7 @@
 #include "update.h"
 #include "sanity.h"
 #include "option_table.h"
+#include "msg.h"
 
 static void print_version(void);
 static void print_help(const char* name, int is_uninstall, int advanced);
@@ -60,16 +61,16 @@ extern const char *pNV_ID;
 
 static void print_version(void)
 {
-    fmtout("");
-    fmtout("%s", pNV_ID);
-    fmtoutp(TAB, "The NVIDIA Software Installer for Unix/Linux.");
-    fmtout("");
-    fmtoutp(TAB, "This program is used to install, upgrade and uninstall "
+    nv_info_msg(NULL, "");
+    nv_info_msg(NULL, "%s", pNV_ID);
+    nv_info_msg(TAB, "The NVIDIA Software Installer for Unix/Linux.");
+    nv_info_msg(NULL, "");
+    nv_info_msg(TAB, "This program is used to install, upgrade and uninstall "
                 "The NVIDIA Accelerated Graphics Driver Set for %s-%s.",
                 INSTALLER_OS, INSTALLER_ARCH);
-    fmtout("");
-    fmtoutp(TAB, "Copyright (C) 2003 - 2010 NVIDIA Corporation.");
-    fmtout("");
+    nv_info_msg(NULL, "");
+    nv_info_msg(TAB, "Copyright (C) 2003 - 2010 NVIDIA Corporation.");
+    nv_info_msg(NULL, "");
 }
 
 
@@ -79,9 +80,9 @@ static void print_version(void)
 
 static void print_help_helper(const char *name, const char *description)
 {
-    fmtoutp(TAB, "%s", name);
-    fmtoutp(BIGTAB, "%s", description);
-    fmtout("");
+    nv_info_msg(TAB, "%s", name);
+    nv_info_msg(BIGTAB, "%s", description);
+    nv_info_msg(NULL, "");
 }
 
 static void print_options(int is_uninstall, int advanced)
@@ -105,9 +106,9 @@ static void print_help(const char* name, int is_uninstall, int advanced)
 {
     print_version();
 
-    fmtout("");
-    fmtout("%s [options]", name);
-    fmtout("");
+    nv_info_msg(NULL, "");
+    nv_info_msg(NULL, "%s [options]", name);
+    nv_info_msg(NULL, "");
 
     print_options(is_uninstall, advanced);
 }
@@ -297,7 +298,7 @@ static void parse_commandline(int argc, char *argv[], Options *op)
             else if (strcasecmp(strval, "classic") == 0)
                 op->which_tls = FORCE_CLASSIC_TLS;
             else {
-                fmterr("Invalid parameter for '--force-tls'");
+                nv_error_msg("Invalid parameter for '--force-tls'");
                 goto fail;
             }
             break;
@@ -308,7 +309,7 @@ static void parse_commandline(int argc, char *argv[], Options *op)
             else if (strcasecmp(strval, "classic") == 0)
                 op->which_tls_compat32 = FORCE_CLASSIC_TLS;
             else {
-                fmterr("Invalid parameter for '--force-tls-compat32'");
+                nv_error_msg("Invalid parameter for '--force-tls-compat32'");
                 goto fail;
             }
             break;
@@ -353,7 +354,7 @@ static void parse_commandline(int argc, char *argv[], Options *op)
             else if (strcasecmp(strval, "no") == 0)
                 op->selinux_option = SELINUX_FORCE_NO;
             else if (strcasecmp(strval, "default")) {
-                fmterr("Invalid parameter for '--force-selinux'");
+                nv_error_msg("Invalid parameter for '--force-selinux'");
                 goto fail;
             }
             break;
@@ -415,7 +416,7 @@ static void parse_commandline(int argc, char *argv[], Options *op)
             break;
         case MULTIPLE_KERNEL_MODULES_OPTION:
             if (intval < 0) {
-                fmterr("Invalid parameter for '--multiple-kernel-modules'");
+                nv_error_msg("Invalid parameter for '--multiple-kernel-modules'");
                 goto fail;
             }
             op->multiple_kernel_modules = TRUE;
@@ -431,7 +432,7 @@ static void parse_commandline(int argc, char *argv[], Options *op)
             break;
         case NO_UVM_OPTION:
             op->install_uvm = FALSE;
-            break;
+        break;
         case NO_CHECK_FOR_ALTERNATE_INSTALLS_OPTION:
             op->check_for_alternate_installs = FALSE;
         break;
@@ -465,7 +466,7 @@ static void parse_commandline(int argc, char *argv[], Options *op)
         /*
          * We are printing help text for use by makeself.sh; we do not
          * want this formatted to the width of the current terminal,
-         * so hardcode the width used by fmtout() to 65.
+         * so hardcode the width used by nv_info_msg() to 65.
          */
         reset_current_terminal_width(65);
 
@@ -499,8 +500,8 @@ static void parse_commandline(int argc, char *argv[], Options *op)
     return;
     
  fail:
-    fmterr("Invalid commandline, please run `%s --help` "
-           "for usage information.", argv[0]);
+    nv_error_msg("Invalid commandline, please run `%s --help` "
+                 "for usage information.", argv[0]);
     nvfree((void*)op);
     exit(1);
 } /* parse_commandline() */

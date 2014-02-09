@@ -38,11 +38,16 @@ void  ui_expert              (Options*, const char*, ...)              NV_ATTRIB
 void  ui_command_output      (Options*, const char*, ...)              NV_ATTRIBUTE_PRINTF(2, 3);
 int   ui_approve_command_list(Options*, CommandList*,const char*, ...) NV_ATTRIBUTE_PRINTF(3, 4);
 int   ui_yes_no              (Options*, const int, const char*, ...)   NV_ATTRIBUTE_PRINTF(3, 4);
+int   ui_multiple_choice     (Options *, const char **, int, int,
+                              const char *, ...)                       NV_ATTRIBUTE_PRINTF(5, 6);
 int   ui_paged_prompt        (Options *, const char *, const char *,
                               const char *, const char **, int, int);
 void  ui_status_begin        (Options*, const char*, const char*, ...) NV_ATTRIBUTE_PRINTF(3, 4);
 void  ui_status_update       (Options*, const float, const char*, ...) NV_ATTRIBUTE_PRINTF(3, 4);
 void  ui_status_end          (Options*, const char*, ...)              NV_ATTRIBUTE_PRINTF(2, 3);
 void  ui_close               (Options*);
+
+/* Useful when different message types may be suitable in different contexts */
+typedef void ui_message_func (Options*, const char*, ...) NV_ATTRIBUTE_PRINTF(2, 3);
 
 #endif /* __NVIDIA_INSTALLER_USER_INTERFACE_H__ */

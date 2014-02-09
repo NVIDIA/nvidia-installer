@@ -11,6 +11,7 @@
 #include "nvidia-installer.h"
 #include "nvgetopt.h"
 #include "option_table.h"
+#include "msg.h"
 
 static void print_usage(char **argv)
 {
@@ -20,9 +21,9 @@ static void print_usage(char **argv)
 
 static void print_help_helper(const char *name, const char *description)
 {
-    fmtoutp(TAB, name);
-    fmtoutp(BIGTAB, description);
-    fmtout("");
+    nv_info_msg(TAB, name);
+    nv_info_msg(BIGTAB, description);
+    nv_info_msg(NULL, "");
 }
 
 int main(int argc, char **argv)
@@ -37,7 +38,7 @@ int main(int argc, char **argv)
     /*
      * We are printing help text for use by makeself.sh; we do not
      * want this formatted to the width of the current terminal, so
-     * hardcode the width used by fmtout() to 65.
+     * hardcode the width used by nv_info_msg() to 65.
      */
     reset_current_terminal_width(65);
 

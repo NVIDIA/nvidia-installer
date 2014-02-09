@@ -33,6 +33,7 @@
 #include "misc.h"
 #include "files.h"
 #include "common-utils.h"
+#include "msg.h"
 
 /* prototypes of each of the stream ui functions */
 
@@ -45,6 +46,8 @@ void  stream_message             (Options*, int level, const char*);
 void  stream_command_output      (Options*, const char*);
 int   stream_approve_command_list(Options*, CommandList*, const char*);
 int   stream_yes_no              (Options*, const int, const char*);
+int   stream_multiple_choice     (Options *op, const char *, const char **,
+                                  int, int);
 int   stream_paged_prompt        (Options *op, const char *, const char *,
                                   const char *, const char **, int, int);
 void  stream_status_begin        (Options*, const char*, const char*);
@@ -62,6 +65,7 @@ InstallerUI stream_ui_dispatch_table = {
     stream_command_output,
     stream_approve_command_list,
     stream_yes_no,
+    stream_multiple_choice,
     stream_paged_prompt,
     stream_status_begin,
     stream_status_update,
@@ -148,9 +152,10 @@ int stream_init(Options *op, FormatTextRows format_text_rows)
 
     if (!op->silent) {
 
-        fmtout("");
-        fmtout("Welcome to the NVIDIA Software Installer for Unix/Linux");
-        fmtout("");
+        nv_info_msg(NULL, "");
+        nv_info_msg(NULL, "Welcome to the NVIDIA Software Installer for "
+                          "Unix/Linux");
+        nv_info_msg(NULL, "");
     
         /* register the SIGWINCH signal handler */
 
@@ -185,8 +190,8 @@ char *stream_get_input(Options *op, const char *def, const char *msg)
 {
     char *buf;
     
-    fmt(stdout, NULL, "");
-    fmt(stdout, NULL, "%s", msg);
+    nv_info_msg(NULL, "");
+    nv_info_msg(NULL, "%s", msg);
     fprintf(stdout, "  [default: '%s']: ", def);
     fflush(stdout);
     
@@ -214,17 +219,18 @@ int stream_display_license(Options *op, const char *license)
 {
     char *str;
     
-    fmtout("");
-    fmtout("Please read the following LICENSE and type \""
-           "accept\" followed by the Enter key to accept the license, or "
-           "type anything else to not accept and exit nvidia-installer.");
-    fmtout("");
+    nv_info_msg(NULL, "");
+    nv_info_msg(NULL, "Please read the following LICENSE and type \""
+                      "accept\" followed by the Enter key to accept the "
+                      "license, or type anything else to not accept and "
+                      "exit nvidia-installer.");
+    nv_info_msg(NULL, "");
     
-    fmtout("________");
-    fmtout("");
+    nv_info_msg(NULL, "________");
+    nv_info_msg(NULL, "");
     printf("%s", license);
-    fmtout("________");
-    fmtout("");
+    nv_info_msg(NULL, "________");
+    nv_info_msg(NULL, "");
     
     printf("Accept? (Type \"Accept\" to accept, or anything else to abort): ");
     fflush(stdout);
@@ -274,9 +280,15 @@ void stream_message(Options *op, const int level, const char *msg)
 
     if ((level == NV_MSG_LEVEL_LOG) && (d->status_active)) return;
 
-    if (msg_attrs[level].newline) fmt(msg_attrs[level].stream, NULL, "");
-    fmt(msg_attrs[level].stream, msg_attrs[level].prefix, "%s", msg);
-    if (msg_attrs[level].newline) fmt(msg_attrs[level].stream, NULL, "");
+    if (msg_attrs[level].newline) {
+        nv_info_msg_to_file(msg_attrs[level].stream, NULL, "");
+    }
+    nv_info_msg_to_file(msg_attrs[level].stream,
+                        msg_attrs[level].prefix,
+                        "%s", msg);
+    if (msg_attrs[level].newline) {
+        nv_info_msg_to_file(msg_attrs[level].stream, NULL, "");
+    }
 
 } /* stream_message() */
 
@@ -295,7 +307,7 @@ void stream_command_output(Options *op, const char *msg)
     
     if ((!op->expert) || (d->status_active)) return;
 
-    fmtoutp("   ", "%s", msg);
+    nv_info_msg("   ", "%s", msg);
     
 } /* stream_command_output() */
 
@@ -314,10 +326,10 @@ int stream_approve_command_list(Options *op, CommandList *cl,
     char *perms;
     const char *prefix = " --> ";
 
-    fmtout("");
-    fmtout("The following operations will be performed to install the %s:",
-           descr);
-    fmtout("");
+    nv_info_msg(NULL, "");
+    nv_info_msg(NULL, "The following operations will be performed to install the %s:",
+                descr);
+    nv_info_msg(NULL, "");
     
     for (i = 0; i < cl->num; i++) {
         c = &cl->cmds[i];
@@ -326,37 +338,37 @@ int stream_approve_command_list(Options *op, CommandList *cl,
         
           case INSTALL_CMD:
             perms = mode_to_permission_string(c->mode);
-            fmtoutp(prefix, "install the file '%s' as '%s' with "
-                    "permissions '%s'", c->s0, c->s1, perms);
+            nv_info_msg(prefix, "install the file '%s' as '%s' with "
+                        "permissions '%s'", c->s0, c->s1, perms);
             free(perms);
             if (c->s2) {
-                fmtoutp(prefix, "execute the command `%s`", c->s2);
+                nv_info_msg(prefix, "execute the command `%s`", c->s2);
             }
             break;
             
           case RUN_CMD:
-            fmtoutp(prefix, "execute the command `%s`", c->s0);
+            nv_info_msg(prefix, "execute the command `%s`", c->s0);
             break;
             
           case SYMLINK_CMD:
-            fmtoutp(prefix, "create a symbolic link '%s' to '%s'",
-                    c->s0, c->s1);
+            nv_info_msg(prefix, "create a symbolic link '%s' to '%s'",
+                        c->s0, c->s1);
             break;
             
           case BACKUP_CMD:
-            fmtoutp(prefix, "back up the file '%s'", c->s0);
+            nv_info_msg(prefix, "back up the file '%s'", c->s0);
             break;
 
           case DELETE_CMD:
-            fmtoutp(prefix, "delete file '%s'", c->s0);
+            nv_info_msg(prefix, "delete file '%s'", c->s0);
             break;
 
           default:
 
-            fmterr("Error in CommandList! (cmd: %d; s0: '%s';"
-                   "s1: '%s'; s2: '%s'; mode: %04o)",
-                   c->cmd, c->s0, c->s1, c->s2, c->mode);
-            fmterr("Aborting installation.");
+            nv_error_msg("Error in CommandList! (cmd: %d; s0: '%s';"
+                         "s1: '%s'; s2: '%s'; mode: %04o)",
+                         c->cmd, c->s0, c->s1, c->s2, c->mode);
+            nv_error_msg("Aborting installation.");
             return FALSE;
             break;
         }
@@ -366,7 +378,7 @@ int stream_approve_command_list(Options *op, CommandList *cl,
     
     if (!stream_yes_no(op, TRUE, "\nIs this acceptable? (answering 'no' will "
                        "abort installation)")) {
-        fmterr("Command list not accepted; exiting installation.");
+        nv_error_msg("Command list not accepted; exiting installation.");
         return FALSE;
     }
 
@@ -386,8 +398,8 @@ int stream_yes_no(Options *op, const int def, const char *msg)
     char *buf;
     int eof, ret = def;
 
-    fmt(stdout, NULL, "");
-    fmt(stdout, NULL, "%s", msg);
+    nv_info_msg(NULL, "");
+    nv_info_msg(NULL, "%s", msg);
     if (def) fprintf(stdout, "  [default: (Y)es]: ");
     else fprintf(stdout, "  [default: (N)o]: ");
     fflush(stdout);
@@ -448,6 +460,47 @@ static int select_option(const char **options, int num_options,
 
 
 /*
+ * stream_multiple_choice() - display a question with multiple-choice answers
+ * allowing the user to select a button corresponding to the desired response.
+ * Returns the index answer selected from the passed-in answers array.
+ */
+
+int stream_multiple_choice(Options *op, const char *question,
+                           const char **answers, int num_answers,
+                           int default_answer)
+{
+    int ret = default_answer;
+
+    do {
+        char *str;
+        int i;
+
+        if (ret < 0) {
+            nv_error_msg("Invalid response!");
+        }
+
+        nv_info_msg(NULL, "");
+        nv_info_msg(NULL, "%s", question);
+        nv_info_msg(NULL, "Valid responses are: ");
+
+        for (i = 0; i < num_answers; i++) {
+            nv_info_msg(NULL, " (%d)\t\"%s\"%s", i + 1, answers[i],
+                        i == default_answer ? " [ default ]" : "");
+        }
+
+        nv_info_msg(NULL, "Please select your response by number or name:");
+        str = fget_next_line(stdin, NULL);
+
+        ret = select_option(answers, num_answers, default_answer, str);
+        free(str);
+    } while (ret < 0);
+
+    return ret;
+}
+
+
+
+/*
  * stream_paged_prompt() - display a question with multiple-choice answers
  * along with a text area (not scrollable), allowing the user to review the text
  * and select a button corresponding to the desired response. Returns the index
@@ -459,42 +512,17 @@ int stream_paged_prompt(Options *op, const char *question,
                         const char **answers, int num_answers,
                         int default_answer)
 {
-    int ret = default_answer;
+    nv_info_msg(NULL, "");
+    nv_info_msg(NULL, "________");
+    nv_info_msg(NULL, "");
+    nv_info_msg(NULL, "%s", pager_title);
+    nv_info_msg(NULL, "");
+    nv_info_msg(NULL, "%s", pager_text);
+    nv_info_msg(NULL, "");
+    nv_info_msg(NULL, "________");
 
-    fmtout("");
-    fmtout("________");
-    fmtout("");
-    fmtout("%s", pager_title);
-    fmtout("");
-    fmtout("%s", pager_text);
-    fmtout("");
-    fmtout("________");
-
-    do {
-        char *str;
-        int i;
-
-        if (ret < 0) {
-            fmterr("Invalid response!");
-        }
-
-        fmtout("");
-        fmtout("%s", question);
-        fmtout("Valid responses are: ");
-
-        for (i = 0; i < num_answers; i++) {
-            fmtout(" (%d)\t\"%s\"%s", i + 1, answers[i],
-                   i == default_answer ? " [ default ]" : "");
-        }
-
-        fmtout("Please select your response by number or name:");
-        str = fget_next_line(stdin, NULL);
-
-        ret = select_option(answers, num_answers, default_answer, str);
-        free(str);
-    } while (ret < 0);
-
-    return ret;
+    return stream_multiple_choice(op, question, answers, num_answers,
+                                  default_answer);
 }
 
 
@@ -510,7 +538,7 @@ void stream_status_begin(Options *op, const char *title, const char *msg)
     
     d->status_active = TRUE;
     
-    fmtout("%s", title);
+    nv_info_msg(NULL, "%s", title);
     d->status_label = nvstrdup(msg);
     
     print_status_bar(d, STATUS_BEGIN, 0.0);

@@ -127,6 +127,19 @@ typedef struct __nv_installer_ui {
 
     int (*yes_no)(Options *op, const int def, const char *msg);
 
+
+    /*
+     * multiple_choice - ask the question 'question' with 'num_answers' possible
+     * multiple choice answers in 'answers', with 'default_answer' as the
+     * default answer. Returns the index into 'answers' of the user-selected
+     * answer to 'question'. The names of answers must not begin with digits,
+     * and the caller is responsible for enforcing this.
+     */
+
+    int (*multiple_choice)(Options *op, const char *question,
+                           const char **answers, int num_answers,
+                           int default_answer);
+
     /*
      * paged_prompt - ask the question 'question' with 'num_answers' possible
      * multiple choice answers in 'answers', with 'default_answer' as the

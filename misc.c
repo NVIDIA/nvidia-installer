@@ -54,7 +54,6 @@
 #include "manifest.h"
 
 static int check_symlink(Options*, const char*, const char*, const char*);
-static int check_file(Options*, const char*, const mode_t, const uint32);
 
 
 /*
@@ -158,16 +157,22 @@ int check_runlevel(Options *op)
     nvfree(data);
 
     if (runlevel == 's' || runlevel == 'S' || runlevel == '1') {
-        ret = ui_yes_no(op, TRUE, "You appear to be running in runlevel 1; "
-                        "this may cause problems.  For example: some "
-                        "distributions that use devfs do not run the devfs "
-                        "daemon in runlevel 1, making it difficult for "
-                        "`nvidia-installer` to correctly setup the kernel "
-                        "module configuration files.  It is recommended "
-                        "that you quit installation now and switch to "
-                        "runlevel 3 (`telinit 3`) before installing.\n\n"
-                        "Quit installation now? (select 'No' to continue "
-                        "installation)");
+
+        const char *choices[2] = {
+            "Continue installation",
+            "Abort installation"
+        };
+
+        ret = (ui_multiple_choice(op, choices, 2, 1, "You appear to be running "
+                                  "in runlevel 1; this may cause problems.  "
+                                  "For example: some distributions that use "
+                                  "devfs do not run the devfs daemon in "
+                                  "runlevel 1, making it difficult for "
+                                  "`nvidia-installer` to correctly setup the "
+                                  "kernel module configuration files.  It is "
+                                  "recommended that you quit installation now "
+                                  "and switch to runlevel 3 (`telinit 3`) "
+                                  "before installing.") == 1);
         
         if (ret) return FALSE;
     }
@@ -487,67 +492,84 @@ int read_text_file(const char *filename, char **buf)
  * additional directories) for the utilities that the installer will
  * need to use.  Returns TRUE on success and assigns the util fields
  * in the option struct; it returns FALSE on failure.
- *
- * XXX requiring ld may cause problems
  */
 
 #define EXTRA_PATH "/bin:/usr/bin:/sbin:/usr/sbin:/usr/X11R6/bin:/usr/bin/X11"
 
+/*
+ * Utils list; keep in sync with SystemUtils, SystemOptionalUtils, ModuleUtils
+ * and DevelopUtils enum types
+ */
+
+typedef struct {
+    const char *util;
+    const char *package;
+} Util;
+
+static const Util __utils[] = {
+
+    /* SystemUtils */
+    [LDCONFIG] = { "ldconfig", "glibc" },
+    [LDD]      = { "ldd",      "glibc" },
+    [GREP]     = { "grep",     "grep" },
+    [DMESG]    = { "dmesg",    "util-linux" },
+    [TAIL]     = { "tail",     "coreutils" },
+    [CUT]      = { "cut",      "coreutils" },
+    [TR]       = { "tr",       "coreutils" },
+    [SED]      = { "sed",      "sed" },
+
+    /* SystemOptionalUtils */
+    [OBJCOPY]         = { "objcopy",        "binutils" },
+    [CHCON]           = { "chcon",          "selinux" },
+    [SELINUX_ENABLED] = { "selinuxenabled", "selinux" },
+    [GETENFORCE]      = { "getenforce",     "selinux" },
+    [EXECSTACK]       = { "execstack",      "selinux" },
+    [PKG_CONFIG]      = { "pkg-config",     "pkg-config" },
+    [XSERVER]         = { "X",              "xserver" },
+    [OPENSSL]         = { "openssl",        "openssl" },
+
+    /* ModuleUtils */
+    [INSMOD]   = { "insmod",   "module-init-tools' or 'kmod" },
+    [MODPROBE] = { "modprobe", "module-init-tools' or 'kmod" },
+    [RMMOD]    = { "rmmod",    "module-init-tools' or 'kmod" },
+    [LSMOD]    = { "lsmod",    "module-init-tools' or 'kmod" },
+    [DEPMOD]   = { "depmod",   "module-init-tools' or 'kmod" },
+
+    /* DevelopUtils */
+    [CC]   = { "cc",   "gcc"  },
+    [MAKE] = { "make", "make" },
+    [LD]   = { "ld",   "binutils" },
+
+};
+
 int find_system_utils(Options *op)
 {
-    /* keep in sync with the SystemUtils enum type */
-    const struct { const char *util, *package; } needed_utils[] = {
-        { "ldconfig", "glibc" },
-        { "ldd",      "glibc" },
-        { "ld",       "binutils" },
-        { "objcopy",  "binutils" },
-        { "grep",     "grep" },
-        { "dmesg",    "util-linux" },
-        { "tail",     "coreutils" },
-        { "cut",      "coreutils" },
-        { "tr",       "coreutils" },
-        { "sed",      "sed" }
-    };
-
-    /* keep in sync with the SystemOptionalUtils enum type */
-    const struct { const char *util, *package; } optional_utils[] = {
-        { "chcon",          "selinux" },
-        { "selinuxenabled", "selinux" },
-        { "getenforce",     "selinux" },
-        { "execstack",      "selinux" },
-        { "pkg-config",     "pkg-config" },
-        { "X",              "xserver" },
-        { "openssl",        "openssl" }
-    };
-    
-    int i, j;
+    int i;
 
     ui_expert(op, "Searching for system utilities:");
 
     /* search the PATH for each utility */
 
-    for (i = 0; i < MAX_SYSTEM_UTILS; i++) {
-        op->utils[i] = find_system_util(needed_utils[i].util);
+    for (i = MIN_SYSTEM_UTILS; i < MAX_SYSTEM_UTILS; i++) {
+        op->utils[i] = find_system_util(__utils[i].util);
         if (!op->utils[i]) {
             ui_error(op, "Unable to find the system utility `%s`; please "
                      "make sure you have the package '%s' installed.  If "
                      "you do have %s installed, then please check that "
                      "`%s` is in your PATH.",
-                     needed_utils[i].util, needed_utils[i].package,
-                     needed_utils[i].package, needed_utils[i].util);
+                     __utils[i].util, __utils[i].package,
+                     __utils[i].package, __utils[i].util);
             return FALSE;
         }
 
-        ui_expert(op, "found `%s` : `%s`",
-                  needed_utils[i].util, op->utils[i]);
+        ui_expert(op, "found `%s` : `%s`", __utils[i].util, op->utils[i]);
     }
 
-    for (j = 0, i = MAX_SYSTEM_UTILS; i < MAX_SYSTEM_OPTIONAL_UTILS; i++, j++) {
-        
-        op->utils[i] = find_system_util(optional_utils[j].util);
-        if (op->utils[i]) {     
-            ui_expert(op, "found `%s` : `%s`",
-                      optional_utils[j].util, op->utils[i]);
+    for (i = MIN_SYSTEM_OPTIONAL_UTILS; i < MAX_SYSTEM_OPTIONAL_UTILS; i++) {
+
+        op->utils[i] = find_system_util(__utils[i].util);
+        if (op->utils[i]) {
+            ui_expert(op, "found `%s` : `%s`", __utils[i].util, op->utils[i]);
         }
     }
 
@@ -571,30 +593,6 @@ int find_system_utils(Options *op)
 } /* find_system_utils() */
 
 
-
-typedef struct {
-    const char *util;
-    const char *package;
-} Util;
-
-/* keep in sync with the ModuleUtils enum type */
-static Util __module_utils[] = {
-    { "insmod",   "module-init-tools" },
-    { "modprobe", "module-init-tools" },
-    { "rmmod",    "module-init-tools" },
-    { "lsmod",    "module-init-tools" },
-    { "depmod",   "module-init-tools" },
-};
-
-/* keep in sync with the ModuleUtils enum type */
-static Util __module_utils_linux24[] = {
-    { "insmod",   "modutils" },
-    { "modprobe", "modutils" },
-    { "rmmod",    "modutils" },
-    { "lsmod",    "modutils" },
-    { "depmod",   "modutils" },
-};
-
 /*
  * find_module_utils() - search the $PATH (as well as some common
  * additional directories) for the utilities that the installer will
@@ -604,30 +602,25 @@ static Util __module_utils_linux24[] = {
 
 int find_module_utils(Options *op)
 {
-    int i, j;
-    Util *needed_utils = __module_utils;
-
-    if (strncmp(get_kernel_name(op), "2.4", 3) == 0)
-        needed_utils = __module_utils_linux24;
+    int i;
 
     ui_expert(op, "Searching for module utilities:");
 
     /* search the PATH for each utility */
 
-    for (j=0, i = MAX_SYSTEM_OPTIONAL_UTILS; i < MAX_UTILS; i++, j++) {
-        op->utils[i] = find_system_util(needed_utils[j].util);
+    for (i = MIN_MODULE_UTILS; i < MAX_MODULE_UTILS; i++) {
+        op->utils[i] = find_system_util(__utils[i].util);
         if (!op->utils[i]) {
             ui_error(op, "Unable to find the module utility `%s`; please "
                      "make sure you have the package '%s' installed.  If "
-                     "you do have %s installed, then please check that "
+                     "you do have '%s' installed, then please check that "
                      "`%s` is in your PATH.",
-                     needed_utils[j].util, needed_utils[j].package,
-                     needed_utils[j].package, needed_utils[j].util);
+                     __utils[i].util, __utils[i].package,
+                     __utils[i].package, __utils[i].util);
             return FALSE;
         }
 
-        ui_expert(op, "found `%s` : `%s`",
-                  needed_utils[j].util, op->utils[i]);
+        ui_expert(op, "found `%s` : `%s`", __utils[i].util, op->utils[i]);
     };
 
     return TRUE;
@@ -744,18 +737,31 @@ int check_proc_modprobe_path(Options *op)
  * to build custom kernel interfaces are available.
  */
 
+static int check_development_tool(Options *op, int idx)
+{
+    if (!op->utils[idx]) {
+        ui_error(op, "Unable to find the development tool `%s` in "
+                 "your path; please make sure that you have the "
+                 "package '%s' installed.  If %s is installed on your "
+                 "system, then please check that `%s` is in your "
+                 "PATH.",
+                 __utils[idx].util, __utils[idx].package,
+                 __utils[idx].package, __utils[idx].util);
+        return FALSE;
+    }
+
+    ui_expert(op, "found `%s` : `%s`", __utils[idx].util, op->utils[idx]);
+
+    return TRUE;
+}
+
 int check_development_tools(Options *op, Package *p)
 {
-#define MAX_TOOLS 2
-    const struct { char *tool, *package; } needed_tools[] = {
-        { "cc",   "gcc"  },
-        { "make", "make" }
-    };
 
     int i, ret;
-    char *tool, *cmd, *CC, *result;
+    char *cmd, *result;
 
-    CC = getenv("CC");
+    op->utils[CC] = getenv("CC");
 
     ui_expert(op, "Checking development tools:");
 
@@ -768,20 +774,13 @@ int check_development_tools(Options *op, Package *p)
      * checked below.
      */
 
-    for (i = (CC != NULL) ? 1 : 0; i < MAX_TOOLS; i++) {
-        tool = find_system_util(needed_tools[i].tool);
-        if (!tool) {
-            ui_error(op, "Unable to find the development tool `%s` in "
-                     "your path; please make sure that you have the "
-                     "package '%s' installed.  If %s is installed on your "
-                     "system, then please check that `%s` is in your "
-                     "PATH.",
-                     needed_tools[i].tool, needed_tools[i].package,
-                     needed_tools[i].package, needed_tools[i].tool);
+    for (i = (op->utils[CC] != NULL) ? MIN_DEVELOP_UTILS + 1 : MIN_DEVELOP_UTILS;
+         i < MAX_DEVELOP_UTILS; i++) {
+
+        op->utils[i] = find_system_util(__utils[i].util);
+        if (!check_development_tool(op, i)) {
             return FALSE;
         }
-
-        ui_expert(op, "found `%s` : `%s`", needed_tools[i].tool, tool);
     }
 
     /*
@@ -795,12 +794,12 @@ int check_development_tools(Options *op, Package *p)
         return FALSE;
     }
 
-    if (!CC) CC = "cc";
+    if (!op->utils[CC]) op->utils[CC] = "cc";
 
-    ui_log(op, "Performing CC sanity check with CC=\"%s\".", CC);
+    ui_log(op, "Performing CC sanity check with CC=\"%s\".", op->utils[CC]);
 
     cmd = nvstrcat("sh ", p->kernel_module_build_directory,
-                   "/conftest.sh ", CC, " ", CC, " ",
+                   "/conftest.sh ", op->utils[CC], " ", op->utils[CC], " ",
                    "DUMMY_SOURCE DUMMY_OUTPUT ",
                    "cc_sanity_check just_msg", NULL);
 
@@ -817,6 +816,23 @@ int check_development_tools(Options *op, Package *p)
     return FALSE;
 
 } /* check_development_tools() */
+
+
+/*
+ * check_precompiled_kernel_interface_tools() - check if the development tools
+ * needed to link precompiled kernel interfaces are available.
+ */
+
+int check_precompiled_kernel_interface_tools(Options *op)
+{
+    /*
+     * If precompiled info has been found we only need to check for
+     * a linker
+     */
+    op->utils[LD] = find_system_util(__utils[LD].util);
+    return check_development_tool(op, LD);
+
+} /* check_precompiled_kernel_interface_tools() */
 
 
 /*
@@ -876,11 +892,17 @@ int continue_after_error(Options *op, const char *fmt, ...)
     char *msg;
     int ret;
 
+    const char *choices[2] = {
+        "Continue installation",
+        "Abort installation"
+    };
+
     NV_VSNPRINTF(msg, fmt);
     
-    ret = ui_yes_no(op, TRUE, "The installer has encountered the following "
-                    "error during installation: '%s'.  Continue anyway? "
-                    "(\"no\" will abort)?", msg);
+    ret = (ui_multiple_choice(op, choices, 2, 0, "The installer has encountered "
+                              "the following error during installation: '%s'.  "
+                              "Would you like to continue installation anyway?",
+                              msg) == 0);
 
     nvfree(msg);
 
@@ -1172,15 +1194,23 @@ void should_install_compat32_files(Options *op, Package *p)
 
     if (install_compat32_files && (op->compat32_chroot != NULL) &&
           access(op->compat32_chroot, F_OK) < 0) {
-        install_compat32_files = ui_yes_no(op, FALSE,
-            "The NVIDIA 32-bit compatibility libraries are "
-            "to be installed relative to the top-level prefix (chroot) "
-            "'%s'; however, this directory does not exist.  Please "
-            "consult your distribution's documentation to confirm the "
-            "correct top-level installation prefix for 32-bit "
-            "compatiblity libraries.\n\nDo you wish to install the "
-            "NVIDIA 32-bit compatibility libraries anyway?",
-            op->compat32_chroot);
+
+        const char *choices[2] = {
+            "Install compatibility libraries",
+            "Do not install compatibility libraries"
+        };
+
+        install_compat32_files = (ui_multiple_choice(op, choices, 2, 1,
+                                  "The NVIDIA 32-bit compatibility libraries "
+                                  "are to be installed relative to the "
+                                  "top-level prefix (chroot) '%s'; however, "
+                                  "this directory does not exist.  Please "
+                                  "consult your distribution's documentation "
+                                  "to confirm the correct top-level "
+                                  "installation prefix for 32-bit compatiblity "
+                                  "libraries.\n\nWould you like to install "
+                                  "NVIDIA 32-bit compatibility libraries "
+                                  "anyway?", op->compat32_chroot) == 0);
     }
 
     if (!install_compat32_files) {
@@ -1330,7 +1360,8 @@ void check_installed_files_from_package(Options *op, Package *p)
                 ret = FALSE;
             }
         } else if (installable_files.types[p->entries[i].type]) {
-            if (!check_file(op, p->entries[i].dst, p->entries[i].mode, 0)) {
+            if (!check_installed_file(op, p->entries[i].dst,
+                                      p->entries[i].mode, 0, ui_warn)) {
                 ret = FALSE;
             }
         }
@@ -1400,7 +1431,7 @@ static int check_symlink(Options *op, const char *target, const char *link,
  * unprelink() - attempt to run `prelink -u` on a file to restore it to
  * its pre-prelinked state.
  */
-int unprelink(Options *op, const char *filename)
+static int unprelink(Options *op, const char *filename)
 {
     char *cmd;
     int ret = ENOENT;
@@ -1437,33 +1468,39 @@ int verify_crc(Options *op, const char *filename, unsigned int crc,
 
 
 /*
- * check_file() - check that the specified installed file exists, has
- * the correct permissions, and has the correct crc.
+ * check_installed_file() - check that the specified installed file exists,
+ * has the correct permissions, and has the correct crc. Takes a function
+ * pointer to either ui_log() or ui_warn() depending on how errors should
+ * be reported.
  *
  * If anything is incorrect, print a warning and return FALSE,
  * otherwise return TRUE.
  */
 
-static int check_file(Options *op, const char *filename,
-                      const mode_t mode, const uint32 crc)
+int check_installed_file(Options *op, const char *filename,
+                         const mode_t mode, const uint32 crc,
+                         ui_message_func *logwarn)
 {
     struct stat stat_buf;
     uint32 actual_crc;
 
     if (lstat(filename, &stat_buf) == -1) {
-        ui_warn(op, "Unable to find installed file '%s' (%s).",
+        logwarn(op, "Unable to find installed file '%s' (%s).",
                 filename, strerror(errno));
         return FALSE;
     }
 
     if (!S_ISREG(stat_buf.st_mode)) {
-        ui_warn(op, "The installed file '%s' is not of the correct filetype.",
+        logwarn(op, "The installed file '%s' is not of the correct filetype.",
                 filename);
         return FALSE;
     }
 
-    if ((stat_buf.st_mode & PERM_MASK) != (mode & PERM_MASK)) {
-        ui_warn(op, "The installed file '%s' has permissions %04o, but it "
+    /* Don't check the mode if we don't have one: backup log entries for
+       installed files don't preserve the mode. */
+
+    if (mode && ((stat_buf.st_mode & PERM_MASK) != (mode & PERM_MASK))) {
+        logwarn(op, "The installed file '%s' has permissions %04o, but it "
                 "was installed with permissions %04o.", filename,
                 (stat_buf.st_mode & PERM_MASK),
                 (mode & PERM_MASK));
@@ -1474,6 +1511,17 @@ static int check_file(Options *op, const char *filename,
     if (!verify_crc(op, filename, crc, &actual_crc)) {
         int ret;
 
+        /* If this is not an ELF file, we should not try to unprelink it. */
+
+        if (get_elf_architecture(filename) == ELF_INVALID_FILE) {
+            logwarn(op, "The installed file '%s' has a different checksum "
+                    "(%ul) than when it was installed (%ul).", filename,
+                    actual_crc, crc);
+            return FALSE;
+        }
+
+        /* Otherwise, unprelinking may be able to restore the original file. */
+
         ui_expert(op, "The installed file '%s' has a different checksum (%ul) "
                   "than when it was installed (%ul). This may be due to "
                   "prelinking; attemping `prelink -u %s` to restore the file.",
@@ -1481,24 +1529,27 @@ static int check_file(Options *op, const char *filename,
 
         ret = unprelink(op, filename);
         if (ret != 0) {
-            ui_warn(op, "The installed file '%s' seems to have changed, but "
+            logwarn(op, "The installed file '%s' seems to have changed, but "
                     "`prelink -u` failed; unable to restore '%s' to an "
                     "un-prelinked state.", filename, filename);
             return FALSE;
         }
 
         if (!verify_crc(op, filename, crc, &actual_crc)) {
-            ui_warn(op, "The installed file '%s' has a different checksum "
+            logwarn(op, "The installed file '%s' has a different checksum "
                     "(%ul) after running `prelink -u` than when it was "
                     "installed (%ul).",
                     filename, actual_crc, crc);
             return FALSE;
         }
+
+        ui_expert(op, "Un-prelinking successful: %s was restored to its "
+                  "original state.", filename);
     }
 
     return TRUE;
     
-} /* check_file() */
+}
 
 
 
@@ -2519,7 +2570,7 @@ int run_nvidia_xconfig(Options *op, int restore)
  * run_distro_hook() - run a distribution-provided hook script
  */
 
-int run_distro_hook(Options *op, const char *hook)
+HookScriptStatus run_distro_hook(Options *op, const char *hook)
 {
     int ret, status, shouldrun = op->run_distro_scripts;
     char *cmd = nvstrcat(DISTRO_HOOK_DIRECTORY, hook, NULL);
@@ -2529,14 +2580,13 @@ int run_distro_hook(Options *op, const char *hook)
                   "Not running distribution-provided %s script %s because "
                   "--kernel-module-only was specified.",
                   hook, cmd);
-        ret = TRUE;
+        ret = HOOK_SCRIPT_NO_RUN;
         goto done;
     }
 
     if (access(cmd, X_OK) < 0) {
-        /* it's okay if the script doesn't exist or isn't executable */
         ui_expert(op, "No distribution %s script found.", hook);
-        ret = TRUE;
+        ret = HOOK_SCRIPT_NO_RUN;
         goto done;
     }
 
@@ -2551,7 +2601,7 @@ int run_distro_hook(Options *op, const char *hook)
         ui_expert(op,
                   "Not running distribution-provided %s script %s",
                   hook, cmd);
-        ret = TRUE;
+        ret = HOOK_SCRIPT_NO_RUN;
         goto done;
     }
 
@@ -2559,7 +2609,7 @@ int run_distro_hook(Options *op, const char *hook)
     status = run_command(op, cmd, NULL, TRUE, 0, TRUE);
     ui_status_end(op, "done.");
 
-    ret = (status == 0);
+    ret = (status == 0) ? HOOK_SCRIPT_SUCCESS : HOOK_SCRIPT_FAIL;
 
 done:
     nvfree(cmd);

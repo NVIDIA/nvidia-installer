@@ -161,6 +161,8 @@ static void  nv_ncurses_command_output      (Options*, const char*);
 static int   nv_ncurses_approve_command_list(Options*, CommandList*,
                                              const char*);
 static int   nv_ncurses_yes_no              (Options*, const int, const char*);
+static int   nv_ncurses_multiple_choice     (Options *, const char*,
+                                             const char **, int, int);
 static void  nv_ncurses_status_begin        (Options*, const char*,
                                              const char*);
 static void  nv_ncurses_status_update       (Options*, const float,
@@ -189,6 +191,9 @@ static void nv_ncurses_destroy_region(RegionStruct *);
 static void nv_ncurses_draw_button(DataStruct *, RegionStruct *, int, int,
                                    int, int, const char *, bool, bool);
 static void nv_ncurses_erase_button(RegionStruct *, int, int, int, int);
+static void draw_buttons(DataStruct *d, const char **buttons, int num_buttons,
+                         int button, int button_w, const int *buttons_x,
+                         int button_y);
 
 
 /* helper functions for drawing regions and stuff */
@@ -247,6 +252,7 @@ InstallerUI ui_dispatch_table = {
     nv_ncurses_command_output,
     nv_ncurses_approve_command_list,
     nv_ncurses_yes_no,
+    nv_ncurses_multiple_choice,
     nv_ncurses_paged_prompt,
     nv_ncurses_status_begin,
     nv_ncurses_status_update,
@@ -802,112 +808,27 @@ static int nv_ncurses_approve_command_list(Options *op, CommandList *cl,
 
 static int nv_ncurses_yes_no(Options *op, const int def, const char *msg)
 {
-    DataStruct *d = (DataStruct *) op->ui_priv;
-    int yes_x, no_x, x, y, w, h, yes, ch;
-    char *str;
-   
-    if (!msg) return FALSE;
+    const char *buttons[2] = { "Yes", "No" };
 
-    /* check if the window was resized */
-
-    nv_ncurses_check_resize(d, FALSE);
-    yes = def;
-
- draw_yes_no:
-
-    if (d->message) {
-        
-        /*
-         * XXX we may already have a message region allocated when we
-         * enter nv_ncurses_yes_no(): we may have been in the middle
-         * of displaying a progress bar when we encountered an error
-         * that we need to report.  To deal with this situation, throw
-         * out the existing message region; nv_ncurses_status_update()
-         * and nv_ncurses_status_end() will have to recreate their
-         * message region.
-         */
-        
-        nv_ncurses_destroy_region(d->message);
-        d->message = NULL;
-    }
-
-    /* create the message region and print the message in it */
-
-    nv_ncurses_do_message_region(d, NULL, msg, FALSE, 2);
-
-    /* draw the yes/no buttons */
-    
-    w = 7;
-    h = 1;
-    y = d->message->h - 2;
-    yes_x = (d->message->w - w*3)/2 + 0;
-    no_x  = (d->message->w - w*3)/2 + 2*w;
-    
-    nv_ncurses_draw_button(d, d->message, yes_x, y, w, h, "Yes", yes,FALSE);
-    nv_ncurses_draw_button(d, d->message, no_x, y, w, h, "No", !yes, FALSE);
-    
-    refresh();
-
-    /* process key strokes */
-
-    do {
-        if (nv_ncurses_check_resize(d, FALSE)) goto draw_yes_no;
-        ch = getch();
-
-        switch (ch) {
-        case NV_NCURSES_TAB:
-        case KEY_LEFT:
-        case KEY_RIGHT:
-            
-            /*
-             * any of left, right, and tab will toggle which button is
-             * selected
-             */
-
-            yes ^= 1;
-
-            nv_ncurses_draw_button(d, d->message, yes_x, y, w, h,
-                                   "Yes", yes, FALSE);
-            nv_ncurses_draw_button(d, d->message, no_x, y, w, h,
-                                   "No", !yes, FALSE);
-            refresh();
-            break;
-
-        case NV_NCURSES_CTRL('L'):
-            nv_ncurses_check_resize(d, TRUE);
-            goto draw_yes_no;
-            break;
-
-        default:
-            break;
-        }
-    } while (ch != NV_NCURSES_ENTER);
-    
-    /* animate the button being pushed down */
-    
-    x = yes ? yes_x : no_x;
-    str = yes ? "Yes" : "No";
-    
-    nv_ncurses_erase_button(d->message, x, y, w, h);
-    nv_ncurses_draw_button(d, d->message, x, y, w, 1, str, TRUE, TRUE);
-    refresh();
-    usleep(NV_NCURSES_BUTTON_PRESS_TIME);
-    
-    nv_ncurses_erase_button(d->message, x, y, w, h);
-    nv_ncurses_draw_button(d, d->message, x, y, w, h, str, TRUE, FALSE);
-    refresh();
-    usleep(NV_NCURSES_BUTTON_PRESS_TIME);
-    
-    /* free the message region */
-
-    nv_ncurses_destroy_region(d->message);
-    d->message = NULL;
-    
-    refresh();
-
-    return yes;
-   
+    return (nv_ncurses_multiple_choice(op, msg, buttons, 2,
+                                       (def) ? 0 : 1) == 0);
 } /* nv_ncurses_yes_no() */
+
+
+/*
+ * nv_ncurses_multiple_choice() - display a question with multiple-choice
+ * buttons allowing the user to select a button corresponding to the desired
+ * response. Returns the index of the button selected from the passed-in
+ * buttons array.
+ */
+
+static int nv_ncurses_multiple_choice(Options *op, const char *question,
+                                      const char **buttons, int num_buttons,
+                                      int default_button)
+{
+    return nv_ncurses_paged_prompt(op, question, NULL, NULL, buttons,
+                                   num_buttons, default_button);
+} /* nv_ncurses_multiple_choice() */
 
 
 
@@ -1714,6 +1635,17 @@ static int nv_ncurses_paged_prompt(Options *op, const char *question,
     /* free any existing message region, pager, and pager textrows */
 
     if (d->message) {
+
+        /*
+         * XXX we may already have a message region allocated when we
+         * enter nv_ncurses_paged_prompt(): we may have been in the middle
+         * of displaying a progress bar when we encountered an error
+         * that we need to report.  To deal with this situation, throw
+         * out the existing message region; nv_ncurses_status_update()
+         * and nv_ncurses_status_end() will have to recreate their
+         * message region.
+         */
+
         nv_ncurses_destroy_region(d->message);
         d->message = NULL;
     }
@@ -1729,7 +1661,8 @@ static int nv_ncurses_paged_prompt(Options *op, const char *question,
 
     /* create the message region and print the question in it */
 
-    nv_ncurses_do_message_region(d, NULL, question, TRUE, 2);
+    nv_ncurses_do_message_region(d, NULL, question,
+                                 (pager_title && pager_text), 2);
 
     button_y = d->message->h - 2;
 
@@ -1743,10 +1676,13 @@ static int nv_ncurses_paged_prompt(Options *op, const char *question,
 
     /* draw the paged text */
 
-    t_pager = d->format_text_rows(NULL, pager_text, d->message->w, TRUE);
-    p = nv_ncurses_create_pager(d, 1, d->message->h + 2, d->message->w,
-                                d->height - d->message->h - 4, t_pager,
-                                pager_title, cur);
+    if (pager_title && pager_text) {
+        t_pager = d->format_text_rows(NULL, pager_text, d->message->w, TRUE);
+        p = nv_ncurses_create_pager(d, 1, d->message->h + 2, d->message->w,
+                                    d->height - d->message->h - 4, t_pager,
+                                    pager_title, cur);
+    }
+
     refresh();
 
     /* process key strokes */
@@ -1754,7 +1690,9 @@ static int nv_ncurses_paged_prompt(Options *op, const char *question,
     do {
         /* if a resize occurred, jump back to the top and redraw */
             if (nv_ncurses_check_resize(d, FALSE)) {
-                cur = p->cur;
+                if (p) {
+                    cur = p->cur;
+                }
                 goto print_message;
         }
 
@@ -1778,7 +1716,9 @@ static int nv_ncurses_paged_prompt(Options *op, const char *question,
 
             case NV_NCURSES_CTRL('L'):
                 nv_ncurses_check_resize(d, TRUE);
-                cur = p->cur;
+                if (p) {
+                    cur = p->cur;
+                }
                 goto print_message;
                 break;
 
@@ -1786,7 +1726,9 @@ static int nv_ncurses_paged_prompt(Options *op, const char *question,
                 break;
         }
 
-        nv_ncurses_pager_handle_events(d, p, ch);
+        if (p) {
+            nv_ncurses_pager_handle_events(d, p, ch);
+        }
     } while (ch != NV_NCURSES_ENTER);
 
     /* animate the button being pushed down */
@@ -1812,8 +1754,12 @@ static int nv_ncurses_paged_prompt(Options *op, const char *question,
 
     /* clean up */
 
-    nv_ncurses_free_text_rows(t_pager);
-    nv_ncurses_destroy_pager(p);
+    if (t_pager) {
+        nv_ncurses_free_text_rows(t_pager);
+    }
+    if (p) {
+        nv_ncurses_destroy_pager(p);
+    }
     nv_ncurses_destroy_region(d->message);
     d->message = NULL;
 

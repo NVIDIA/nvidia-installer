@@ -335,15 +335,22 @@ CommandList *build_command_list(Options *op, Package *p)
      */
     
     if (op->no_abi_note) {
-        for (i = 0; i < p->num_entries; i++) {
-            if (p->entries[i].type == FILE_TYPE_OPENGL_LIB) {
-                tmp = nvstrcat(op->utils[OBJCOPY],
-                               " --remove-section=.note.ABI-tag ",
-                               p->entries[i].dst,
-                               " 2> /dev/null ; true", NULL);
-                add_command(c, RUN_CMD, tmp);
-                nvfree(tmp);
+
+        if (op->utils[OBJCOPY]) {
+            for (i = 0; i < p->num_entries; i++) {
+                if (p->entries[i].type == FILE_TYPE_OPENGL_LIB) {
+                    tmp = nvstrcat(op->utils[OBJCOPY],
+                            " --remove-section=.note.ABI-tag ",
+                            p->entries[i].dst,
+                            " 2> /dev/null ; true", NULL);
+                    add_command(c, RUN_CMD, tmp);
+                    nvfree(tmp);
+                }
             }
+        } else {
+            ui_warn(op, "--no-abi-note option was specified but the system "
+                    "utility `objcopy` (package 'binutils') was not found; this "
+                    "operation will be skipped.");
         }
     }
     
@@ -358,13 +365,11 @@ CommandList *build_command_list(Options *op, Package *p)
      * <Nigel.Spowage@energis.com>
      */
     
-    if ( op->kernel_name && op->kernel_name[0] ) {
-    	tmp = nvstrcat(op->utils[DEPMOD], " -aq ", op->kernel_name, NULL);
-    } else {
-    	tmp = nvstrcat(op->utils[DEPMOD], " -aq", NULL);
+    if (!op->no_kernel_module) {
+        tmp = nvstrcat(op->utils[DEPMOD], " -aq ", op->kernel_name, NULL);
+        add_command(c, RUN_CMD, tmp);
+        nvfree(tmp);
     }
-    add_command(c, RUN_CMD, tmp);
-    nvfree(tmp);
     
     /*
      * if on SuSE or United Linux, also do `/usr/bin/chrc.config
@@ -624,16 +629,14 @@ static ConflictingFileInfo __xfree86_opengl_libs[] = {
     { "libglamoregl.",       13, /* strlen("libglamoregl.") */
                              NULL,            CONFLICT_ARCH_ALL        },
 
-    /* Conflicting EGL libraries:
-     * XXX we do not currently build 64-bit EGL libraries due to problems
-     * with the ABI, so only conflict with 32-bit EGL libraries for now. */
+    /* Conflicting EGL libraries: */
 
     { "libEGL.",             7,  /* strlen("libEGL.") */
-                             NULL,            CONFLICT_ARCH_32         },
+                             NULL,            CONFLICT_ARCH_ALL        },
     { "libGLESv1_CM.",       13, /* strlen("libGLESv1_CM." */
-                             NULL,            CONFLICT_ARCH_32         },
+                             NULL,            CONFLICT_ARCH_ALL        },
     { "libGLESv2.",          10, /* strlen("libGLESv2." */
-                             NULL,            CONFLICT_ARCH_32         },
+                             NULL,            CONFLICT_ARCH_ALL        },
     { NULL,                  0,     NULL,     CONFLICT_ARCH_ALL        }
 };
 
