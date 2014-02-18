@@ -598,11 +598,13 @@ static int build_kernel_module_helper(Options *op, const char *dir,
         ui_status_end(op, "Error.");
         ui_error(op, "Unable to build the %s kernel module.", module);
         /* XXX need more descriptive error message */
+
+        return FALSE;
     }
 
     ui_status_end(op, "done.");
 
-    return ret == 0;
+    return TRUE;
 }
 
 

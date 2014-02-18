@@ -173,7 +173,8 @@ void get_installable_file_type_list(
             continue;
         }
 
-        if ((type == FILE_TYPE_KERNEL_MODULE_SRC) &&
+        if (((type == FILE_TYPE_KERNEL_MODULE_SRC) ||
+             (type == FILE_TYPE_UVM_MODULE_SRC)) &&
             op->no_kernel_module_source) {
             continue;
         }
