@@ -557,7 +557,7 @@ static int reverse_strlen_compare(const void *a, const void *b)
 static int rmdir_recursive(Options *op)
 {
     FILE *log;
-    char *dir, **dirs;
+    char **dirs;
     int eof = FALSE, ret = TRUE, lines, i;
 
     /* open the log file */
@@ -572,6 +572,7 @@ static int rmdir_recursive(Options *op)
     /* Count the number of lines */
 
     for (lines = 0; !eof; lines++) {
+        char *dir;
         dir = fget_next_line(log, &eof);
         nvfree(dir);
     }
@@ -590,7 +591,7 @@ static int rmdir_recursive(Options *op)
         if (dirs[i]) {
             /* Ignore empty lines and the backup directory itself, since it is 
              * never empty as long as the dirs file is still around. */
-            if (strlen(dirs[i]) && strcmp(dir, BACKUP_DIRECTORY) != 0) {
+            if (strlen(dirs[i]) && strcmp(dirs[i], BACKUP_DIRECTORY) != 0) {
                 if (rmdir(dirs[i]) != 0) {
                     ui_log(op, "Failed to delete the directory '%s' (%s).",
                            dirs[i], strerror(errno));

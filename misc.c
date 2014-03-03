@@ -2646,13 +2646,20 @@ static int prompt_for_user_cancel(Options *op, const char *file,
                       NULL);
 
     ret = ui_paged_prompt(op, prompt, msglen > 0 ? "Information about the "
-                          "alternate information method" : "", message,
+                          "alternate installation method" : "", message,
                           buttons, 2, default_cancel);
 
     nvfree(message);
     nvfree(prompt);
 
-    return ret == 1;
+    if (ret == 1) {
+        ui_error(op, "The installation was canceled due to the availability "
+                 "or presence of an alternate driver installation. Please "
+                 "see %s for more details.", op->log_file_name);
+        return TRUE;
+    }
+
+    return FALSE;
 }
 
 #define INSTALL_PRESENT_FILE "alternate-install-present"

@@ -409,7 +409,7 @@ int ui_multiple_choice (Options *op, const char **answers, int num_answers,
                                     default_answer);
     }
 
-    tmp = nvstrcat("(Answer: ", answers[ret], ")", NULL);
+    tmp = nvstrcat(question, " (Answer: ", answers[ret], ")", NULL);
 
     if (!op->silent) {
         __ui->message(op, NV_MSG_LEVEL_LOG, tmp);
@@ -438,7 +438,8 @@ int ui_paged_prompt (Options *op, const char *question, const char *pager_title,
                                  num_answers, default_answer);
     }
 
-    tmp = nvstrcat("(Answer: ", answers[ret], ")", NULL);
+    tmp = nvstrcat(question, "\n\n", pager_text,
+                   "\n(Answer: ", answers[ret], ")", NULL);
 
     if (!op->silent) {
         __ui->message(op, NV_MSG_LEVEL_LOG, tmp);
