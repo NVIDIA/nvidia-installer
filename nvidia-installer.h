@@ -470,9 +470,9 @@ typedef struct __package {
 #define XORG7_DEFAULT_X_MODULEDIR       "xorg/modules"
 
 /*
- * Debian GNU/Linux for x86-64 installs 32-bit compatibility
- * libraries relative to a chroot-like top-level directory; the
- * prefix below is prepended to the full paths.
+ * Older versions of Debian GNU/Linux for x86-64 install 32-bit
+ * compatibility libraries relative to a chroot-like top-level 
+ * directory; the prefix below is prepended to the full paths.
  */
 #define DEBIAN_DEFAULT_COMPAT32_CHROOT  "/emul/ia32-linux"
 
@@ -491,6 +491,13 @@ typedef struct __package {
  */
 #define UBUNTU_DEFAULT_COMPAT32_LIBDIR  "lib32"
 
+/*
+ * Newer versions of Debian GNU/Linux may install 32-bit
+ * compatibility libraries to ../lib/i386-linux-gnu instead
+ * of ../lib32.
+ */
+
+#define DEBIAN_DEFAULT_COMPAT32_LIBDIR "lib/i386-linux-gnu"
 
 #define DEFAULT_PROC_MOUNT_POINT "/proc"
 
