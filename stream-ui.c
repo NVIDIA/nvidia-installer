@@ -46,10 +46,10 @@ void  stream_message             (Options*, int level, const char*);
 void  stream_command_output      (Options*, const char*);
 int   stream_approve_command_list(Options*, CommandList*, const char*);
 int   stream_yes_no              (Options*, const int, const char*);
-int   stream_multiple_choice     (Options *op, const char *, const char **,
+int   stream_multiple_choice     (Options *op, const char *, const char * const *,
                                   int, int);
 int   stream_paged_prompt        (Options *op, const char *, const char *,
-                                  const char *, const char **, int, int);
+                                  const char *, const char * const *, int, int);
 void  stream_status_begin        (Options*, const char*, const char*);
 void  stream_status_update       (Options*, const float, const char*);
 void  stream_status_end          (Options*, const char*);
@@ -429,7 +429,7 @@ int stream_yes_no(Options *op, const int def, const char *msg)
  * matched the user's input.
  */
 
-static int select_option(const char **options, int num_options,
+static int select_option(const char * const *options, int num_options,
                          int default_option, const char *selection)
 {
     int i;
@@ -466,7 +466,7 @@ static int select_option(const char **options, int num_options,
  */
 
 int stream_multiple_choice(Options *op, const char *question,
-                           const char **answers, int num_answers,
+                           const char * const *answers, int num_answers,
                            int default_answer)
 {
     int ret = default_answer;
@@ -509,7 +509,7 @@ int stream_multiple_choice(Options *op, const char *question,
 
 int stream_paged_prompt(Options *op, const char *question,
                         const char *pager_title, const char *pager_text,
-                        const char **answers, int num_answers,
+                        const char * const *answers, int num_answers,
                         int default_answer)
 {
     nv_info_msg(NULL, "");

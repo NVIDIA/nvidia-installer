@@ -1285,11 +1285,6 @@ int check_for_existing_driver(Options *op, Package *p)
     int ret = FALSE;
     int localRet;
 
-    const char *choices[2] = {
-        "Continue installation",
-        "Abort installation"
-    };
-
     if (!check_for_existing_rpms(op)) goto done;
 
     localRet = get_installed_driver_version_and_descr(op, &version, &descr);
@@ -1332,11 +1327,14 @@ int check_for_existing_driver(Options *op, Package *p)
      * downgrading is any different than upgrading.
      */
     
-    if (ui_multiple_choice(op, choices, 2, 0, "There appears to already be a "
-                           "driver installed on your system (version: %s).  As "
-                           "part of installing this driver (version: %s), the "
-                           "existing driver will be uninstalled.  Are you sure "
-                           "you want to continue?", version, p->version) == 1) {
+    if (ui_multiple_choice(op, CONTINUE_ABORT_CHOICES,
+                           NUM_CONTINUE_ABORT_CHOICES,
+                           CONTINUE_CHOICE, /* Default choice */
+                           "There appears to already be a driver installed on "
+                           "your system (version: %s).  As part of installing "
+                           "this driver (version: %s), the existing driver will "
+                           "be uninstalled.  Are you sure you want to continue?",
+                           version, p->version) == ABORT_CHOICE) {
 
         ui_log(op, "Installation aborted.");
         goto done;

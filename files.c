@@ -1580,18 +1580,15 @@ int check_for_existing_rpms(Options *op)
         nvfree(cmd);
 
         if (ret == 0) {
-
-            const char *choices[2] = {
-                "Continue installation",
-                "Abort installation"
-            };
-
-            if (ui_multiple_choice(op, choices, 2, 0, "An %s rpm appears to "
-                                   "already be installed on your system.  As "
-                                   "part of installing the new driver, this %s "
-                                   "rpm will be uninstalled. Are you sure you "
-                                   "want to continue?",
-                                   rpms[i], rpms[i]) == 1) {
+            if (ui_multiple_choice(op, CONTINUE_ABORT_CHOICES,
+                                   NUM_CONTINUE_ABORT_CHOICES,
+                                   CONTINUE_CHOICE, /* Default choice */
+                                   "An %s rpm appears to already be installed "
+                                   "on your system.  As part of installing the "
+                                   "new driver, this %s rpm will be "
+                                   "uninstalled. Are you sure you want to "
+                                   "continue?",
+                                   rpms[i], rpms[i]) == ABORT_CHOICE) {
                 ui_log(op, "Installation aborted.");
                 return FALSE;
             }

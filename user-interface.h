@@ -26,6 +26,13 @@
 #include "nvidia-installer.h"
 #include "command-list.h"
 
+enum {
+    CONTINUE_CHOICE = 0,
+    ABORT_CHOICE,
+    NUM_CONTINUE_ABORT_CHOICES /* Must be the last one */
+};
+extern const char * const CONTINUE_ABORT_CHOICES[];
+
 int   ui_init                (Options*);
 void  ui_set_title           (Options*, const char*, ...)              NV_ATTRIBUTE_PRINTF(2, 3);
 char *ui_get_input           (Options*, const char*, const char*, ...) NV_ATTRIBUTE_PRINTF(3, 4);
@@ -38,10 +45,10 @@ void  ui_expert              (Options*, const char*, ...)              NV_ATTRIB
 void  ui_command_output      (Options*, const char*, ...)              NV_ATTRIBUTE_PRINTF(2, 3);
 int   ui_approve_command_list(Options*, CommandList*,const char*, ...) NV_ATTRIBUTE_PRINTF(3, 4);
 int   ui_yes_no              (Options*, const int, const char*, ...)   NV_ATTRIBUTE_PRINTF(3, 4);
-int   ui_multiple_choice     (Options *, const char **, int, int,
+int   ui_multiple_choice     (Options *, const char * const*, int, int,
                               const char *, ...)                       NV_ATTRIBUTE_PRINTF(5, 6);
 int   ui_paged_prompt        (Options *, const char *, const char *,
-                              const char *, const char **, int, int);
+                              const char *, const char * const *, int, int);
 void  ui_status_begin        (Options*, const char*, const char*, ...) NV_ATTRIBUTE_PRINTF(3, 4);
 void  ui_status_update       (Options*, const float, const char*, ...) NV_ATTRIBUTE_PRINTF(3, 4);
 void  ui_status_end          (Options*, const char*, ...)              NV_ATTRIBUTE_PRINTF(2, 3);

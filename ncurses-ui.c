@@ -162,7 +162,7 @@ static int   nv_ncurses_approve_command_list(Options*, CommandList*,
                                              const char*);
 static int   nv_ncurses_yes_no              (Options*, const int, const char*);
 static int   nv_ncurses_multiple_choice     (Options *, const char*,
-                                             const char **, int, int);
+                                             const char * const *, int, int);
 static void  nv_ncurses_status_begin        (Options*, const char*,
                                              const char*);
 static void  nv_ncurses_status_update       (Options*, const float,
@@ -191,9 +191,9 @@ static void nv_ncurses_destroy_region(RegionStruct *);
 static void nv_ncurses_draw_button(DataStruct *, RegionStruct *, int, int,
                                    int, int, const char *, bool, bool);
 static void nv_ncurses_erase_button(RegionStruct *, int, int, int, int);
-static void draw_buttons(DataStruct *d, const char **buttons, int num_buttons,
-                         int button, int button_w, const int *buttons_x,
-                         int button_y);
+static void draw_buttons(DataStruct *d, const char * const *buttons,
+                         int num_buttons, int button, int button_w,
+                         const int *buttons_x, int button_y);
 
 
 /* helper functions for drawing regions and stuff */
@@ -212,7 +212,7 @@ static void nv_ncurses_pager_update(DataStruct *, PagerStruct *);
 static void nv_ncurses_pager_handle_events(DataStruct *, PagerStruct *, int);
 static void nv_ncurses_destroy_pager(PagerStruct *);
 static int nv_ncurses_paged_prompt(Options *, const char*, const char*,
-                                   const char*, const char **, int, int);
+                                   const char*, const char * const *, int, int);
 
 
 /* progress bar helper functions */
@@ -823,7 +823,7 @@ static int nv_ncurses_yes_no(Options *op, const int def, const char *msg)
  */
 
 static int nv_ncurses_multiple_choice(Options *op, const char *question,
-                                      const char **buttons, int num_buttons,
+                                      const char * const *buttons, int num_buttons,
                                       int default_button)
 {
     return nv_ncurses_paged_prompt(op, question, NULL, NULL, buttons,
@@ -1587,9 +1587,9 @@ static void nv_ncurses_pager_handle_events(DataStruct *d,
     }
 } /* nv_ncurses_pager_handle_events() */
 
-static void draw_buttons(DataStruct *d, const char **buttons, int num_buttons,
-                         int button, int button_w, const int *buttons_x,
-                         int button_y)
+static void draw_buttons(DataStruct *d, const char * const *buttons,
+                         int num_buttons, int button, int button_w,
+                         const int *buttons_x, int button_y)
 {
     int i;
 
@@ -1608,7 +1608,8 @@ static void draw_buttons(DataStruct *d, const char **buttons, int num_buttons,
 
 static int nv_ncurses_paged_prompt(Options *op, const char *question,
                                    const char *pager_title,
-                                   const char *pager_text, const char **buttons,
+                                   const char *pager_text,
+                                   const char * const *buttons,
                                    int num_buttons, int default_button)
 {
     DataStruct *d = (DataStruct *) op->ui_priv;

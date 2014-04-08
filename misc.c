@@ -157,22 +157,19 @@ int check_runlevel(Options *op)
     nvfree(data);
 
     if (runlevel == 's' || runlevel == 'S' || runlevel == '1') {
-
-        const char *choices[2] = {
-            "Continue installation",
-            "Abort installation"
-        };
-
-        ret = (ui_multiple_choice(op, choices, 2, 1, "You appear to be running "
-                                  "in runlevel 1; this may cause problems.  "
-                                  "For example: some distributions that use "
-                                  "devfs do not run the devfs daemon in "
-                                  "runlevel 1, making it difficult for "
-                                  "`nvidia-installer` to correctly setup the "
-                                  "kernel module configuration files.  It is "
-                                  "recommended that you quit installation now "
-                                  "and switch to runlevel 3 (`telinit 3`) "
-                                  "before installing.") == 1);
+        ret = (ui_multiple_choice(op, CONTINUE_ABORT_CHOICES,
+                                  NUM_CONTINUE_ABORT_CHOICES,
+                                  ABORT_CHOICE, /* Default choice */
+                                  "You appear to be running in runlevel 1; "
+                                  "this may cause problems.  For example: some "
+                                  "distributions that use devfs do not run the "
+                                  "devfs daemon in runlevel 1, making it "
+                                  "difficult for `nvidia-installer` to "
+                                  "correctly set up the kernel module "
+                                  "configuration files.  It is recommended "
+                                  "that you quit installation now and switch "
+                                  "to runlevel 3 (`telinit 3`) before "
+                                  "installing.") == ABORT_CHOICE);
         
         if (ret) return FALSE;
     }
@@ -892,17 +889,15 @@ int continue_after_error(Options *op, const char *fmt, ...)
     char *msg;
     int ret;
 
-    const char *choices[2] = {
-        "Continue installation",
-        "Abort installation"
-    };
-
     NV_VSNPRINTF(msg, fmt);
     
-    ret = (ui_multiple_choice(op, choices, 2, 0, "The installer has encountered "
-                              "the following error during installation: '%s'.  "
-                              "Would you like to continue installation anyway?",
-                              msg) == 0);
+    ret = (ui_multiple_choice(op, CONTINUE_ABORT_CHOICES,
+                              NUM_CONTINUE_ABORT_CHOICES,
+                              CONTINUE_CHOICE, /* Default choice */
+                              "The installer has encountered the following "
+                              "error during installation: '%s'.  Would you "
+                              "like to continue installation anyway?",
+                              msg) == CONTINUE_CHOICE);
 
     nvfree(msg);
 
@@ -2625,12 +2620,10 @@ done:
  * returns FALSE if the user decides not to cancel.
  */
 static int prompt_for_user_cancel(Options *op, const char *file,
-                                  int default_cancel, const char *text)
+                                  int default_choice, const char *text)
 {
     int ret, file_read, msglen;
     char *message = NULL, *prompt;
-
-    const char *buttons[2] = {"Continue Installation", "Cancel Installation"};
 
     file_read = read_text_file(file, &message);
 
@@ -2647,12 +2640,13 @@ static int prompt_for_user_cancel(Options *op, const char *file,
 
     ret = ui_paged_prompt(op, prompt, msglen > 0 ? "Information about the "
                           "alternate installation method" : "", message,
-                          buttons, 2, default_cancel);
+                          CONTINUE_ABORT_CHOICES, NUM_CONTINUE_ABORT_CHOICES,
+                          default_choice);
 
     nvfree(message);
     nvfree(prompt);
 
-    if (ret == 1) {
+    if (ret == ABORT_CHOICE) {
         ui_error(op, "The installation was canceled due to the availability "
                  "or presence of an alternate driver installation. Please "
                  "see %s for more details.", op->log_file_name);
@@ -2702,7 +2696,7 @@ int check_for_alternate_install(Options *op)
               "uninstall the existing installation before installing this "
               "driver.";
 
-        return !prompt_for_user_cancel(op, alt_inst_present, 1, msg);
+        return !prompt_for_user_cancel(op, alt_inst_present, ABORT_CHOICE, msg);
     }
 
     if (access(alt_inst_avail, F_OK) == 0) {
@@ -2714,7 +2708,7 @@ int check_for_alternate_install(Options *op)
               "better with your system than a driver installed by "
               "nvidia-installer.";
 
-        return !prompt_for_user_cancel(op, alt_inst_avail, 0, msg);
+        return !prompt_for_user_cancel(op, alt_inst_avail, CONTINUE_CHOICE, msg);
     }
 
     return TRUE;

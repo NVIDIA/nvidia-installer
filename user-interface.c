@@ -75,6 +75,16 @@ static int extract_user_interface(Options *op, user_interface_attribute_t *ui);
 static void ui_signal_handler(int n);
 
 /*
+ * Definitions of very common answer choices used by callers of
+ * ui_multiple_choice() or ui_paged_prompt()
+ */
+
+const char * const CONTINUE_ABORT_CHOICES[] = {
+    [CONTINUE_CHOICE] = "Continue installation",
+    [ABORT_CHOICE]    = "Abort installation"
+};
+
+/*
  * ui_init() - initialize the user interface; we start by looping over
  * each of the possible ui shared libs (gtk, ncurses) until we find
  * one that will work; if neither will work, then fall back to the
@@ -394,8 +404,9 @@ int ui_yes_no (Options *op, const int def, const char *fmt, ...)
 } /* ui_yes_no() */
 
 
-int ui_multiple_choice (Options *op, const char **answers, int num_answers,
-                        int default_answer, const char *fmt, ...)
+int ui_multiple_choice (Options *op, const char * const *answers,
+                        int num_answers, int default_answer,
+                        const char *fmt, ...)
 {
     char *question, *tmp = NULL;
     int ret;
@@ -425,7 +436,7 @@ int ui_multiple_choice (Options *op, const char **answers, int num_answers,
 
 
 int ui_paged_prompt (Options *op, const char *question, const char *pager_title,
-                     const char *pager_text, const char **answers,
+                     const char *pager_text, const char * const *answers,
                      int num_answers, int default_answer)
 {
     char *tmp;

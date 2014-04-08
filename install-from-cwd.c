@@ -91,11 +91,6 @@ int install_from_cwd(Options *op)
         "appropriate; see the file /usr/share/doc/"
         "NVIDIA_GLX-1.0/README.txt for details.";
 
-    const char *choices[2] = {
-        "Continue installation",
-        "Abort installation"
-    };
-
     /*
      * validate the manifest file in the cwd, and process it, building
      * a Package struct
@@ -145,20 +140,26 @@ int install_from_cwd(Options *op)
 
     res = run_distro_hook(op, "pre-install");
     if (res == HOOK_SCRIPT_FAIL) {
-        if (ui_multiple_choice(op, choices, 2, 0, "The distribution-provided "
-                               "pre-install script failed!  Are you sure you "
-                               "want to continue?") == 1) {
+        if (ui_multiple_choice(op, CONTINUE_ABORT_CHOICES,
+                               NUM_CONTINUE_ABORT_CHOICES,
+                               CONTINUE_CHOICE, /* Default choice */
+                               "The distribution-provided pre-install "
+                               "script failed!  Are you sure you want "
+                               "to continue?") == ABORT_CHOICE) {
             goto failed;
         }
     } else if (res == HOOK_SCRIPT_SUCCESS) {
-        if (ui_multiple_choice(op, choices, 2, 0, "The distribution-provided "
-                               "pre-install script completed successfully. If "
-                               "this is the first time you have run the "
-                               "installer, this script may have helped disable "
-                               "Nouveau, but a reboot may be required first.  "
+        if (ui_multiple_choice(op, CONTINUE_ABORT_CHOICES,
+                               NUM_CONTINUE_ABORT_CHOICES,
+                               CONTINUE_CHOICE, /* Default choice */
+                               "The distribution-provided pre-install script "
+                               "completed successfully. If this is the first "
+                               "time you have run the installer, this script "
+                               "may have helped disable Nouveau, but a reboot "
+                               "may be required first.  "
                                "Would you like to continue, or would you "
                                "prefer to abort installation to reboot the "
-                               "system?") == 1) {
+                               "system?") == ABORT_CHOICE) {
             goto exit_install;
         }
         ran_pre_install_hook = TRUE;

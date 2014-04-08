@@ -137,7 +137,7 @@ typedef struct __nv_installer_ui {
      */
 
     int (*multiple_choice)(Options *op, const char *question,
-                           const char **answers, int num_answers,
+                           const char * const *answers, int num_answers,
                            int default_answer);
 
     /*
@@ -151,7 +151,7 @@ typedef struct __nv_installer_ui {
 
     int (*paged_prompt)(Options *op, const char *question,
                         const char *pager_title, const char *pager_text,
-                        const char **answers, int num_answers,
+                        const char * const *answers, int num_answers,
                         int default_answer);
 
     /*
