@@ -574,8 +574,13 @@ int set_destinations(Options *op, Package *p)
 
         case FILE_TYPE_UTILITY_LIB:
         case FILE_TYPE_UTILITY_LIB_SYMLINK:
-            prefix = op->utility_prefix;
-            dir = op->utility_libdir;
+            if (p->entries[i].compat_arch == FILE_COMPAT_ARCH_COMPAT32) {
+                prefix = op->compat32_prefix;
+                dir = op->compat32_libdir;
+            } else {
+                prefix = op->utility_prefix;
+                dir = op->utility_libdir;
+            }
             path = "";
             break;
 
