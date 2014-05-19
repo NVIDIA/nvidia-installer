@@ -277,12 +277,10 @@ CommandList *build_command_list(Options *op, Package *p)
         nvfree(tmp);
 
         /*
-         * delete the temporary libGL.la and .desktop files generated
-         * based on templates earlier.
+         * delete any temporary generated files
          */
 
-        if ((p->entries[i].type == FILE_TYPE_LIBGL_LA) ||
-            (p->entries[i].type == FILE_TYPE_DOT_DESKTOP)) {
+        if (p->entries[i].caps.is_temporary) {
             add_command(c, DELETE_CMD,
                         p->entries[i].file);
         }

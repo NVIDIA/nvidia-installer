@@ -308,30 +308,37 @@ char *write_temp_file(Options *op, const int len,
         goto done;
     }
 
-    /* set the temporary file's size */
+    /* If a length of zero or a NULL data pointer was provided, skip writing
+     * to the file and just set the desired permissions. */
 
-    if (lseek(fd, len - 1, SEEK_SET) == -1) {
-        ui_warn(op, "Unable to set file size for temporary file (%s).",
-                strerror(errno));
-        goto done;
-    }
-    if (write(fd, "", 1) != 1) {
-        ui_warn(op, "Unable to write file size for temporary file (%s).",
-                strerror(errno));
-        goto done;
-    }
-    
-    /* mmap the temporary file */
+    if (len && data) {
 
-    if ((dst = mmap(0, len, PROT_READ | PROT_WRITE,
+        /* set the temporary file's size */
+
+        if (lseek(fd, len - 1, SEEK_SET) == -1) {
+            ui_warn(op, "Unable to set file size for temporary file (%s).",
+                    strerror(errno));
+            goto done;
+        }
+        if (write(fd, "", 1) != 1) {
+            ui_warn(op, "Unable to write file size for temporary file (%s).",
+                    strerror(errno));
+            goto done;
+        }
+
+        /* mmap the temporary file */
+
+        if ((dst = mmap(0, len, PROT_READ | PROT_WRITE,
                     MAP_FILE | MAP_SHARED, fd, 0)) == (void *) -1) {
         ui_warn(op, "Unable to map temporary file (%s).", strerror(errno));
         goto done;
+
+        }
+    
+        /* copy the data out to the file */
+
+        memcpy(dst, data, len);
     }
-    
-    /* copy the data out to the file */
-    
-    memcpy(dst, data, len);
 
     /* set the desired permissions on the file */
     

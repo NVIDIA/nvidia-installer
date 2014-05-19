@@ -47,11 +47,6 @@
 #include "sanity.h"
 #include "manifest.h"
 
-/* default names for generated signing keys */
-
-#define SECKEY_NAME "tmp.key"
-#define PUBKEY_NAME "tmp.der"
-
 /* local prototypes */
 
 
@@ -1144,8 +1139,8 @@ static int assisted_module_signing(Options *op, Package *p)
                                    "existing key pair, or 'No' to generate a "
                                    "new key pair.");
         if (generate_keys) {
-            char *cmdline, *x509_hash;
-            int ret;
+            char *cmdline, *x509_hash, *private_key_path, *public_key_path;
+            int ret, generate_failed = FALSE;
 
             if (!op->utils[OPENSSL]) {
                 ui_error(op, "Unable to generate key pair: openssl not "
@@ -1210,6 +1205,18 @@ guess_fail:
 
             log_printf(op, NULL, "Generating key pair for module signing...");
 
+            /* Generate temporary files for the signing key and certificate */
+
+            private_key_path = write_temp_file(op, 0, NULL, 0600);
+            public_key_path = write_temp_file(op, 0, NULL, 0644);
+
+            if (!private_key_path || !public_key_path) {
+                ui_error(op, "Failed to create one or more temporary files for "
+                         "the module signing keys.");
+                generate_failed = TRUE;
+                goto generate_done;
+            }
+
             /* Generate a key pair using openssl.
              * XXX We assume that sign-file requires the X.509 certificate
              * in DER format; if this changes in the future we will need
@@ -1219,8 +1226,9 @@ guess_fail:
                                op->utils[OPENSSL], " req -new -x509 -newkey "
                                "rsa:2048 -days 7300 -nodes -subj "
                                "\"/CN=nvidia-installer generated signing key/\""
-                               " -keyout " SECKEY_NAME " -outform DER -out "
-                               PUBKEY_NAME, " -", x509_hash, NULL);
+                               " -keyout ", private_key_path,
+                               " -outform DER -out ", public_key_path,
+                               " -", x509_hash, NULL);
             nvfree(x509_hash);
 
             ret = run_command(op, cmdline, NULL, TRUE, 8, TRUE);
@@ -1229,16 +1237,24 @@ guess_fail:
 
             if (ret != 0) {
                 ui_error(op, "Failed to generate key pair!");
-                return FALSE;
+                generate_failed = TRUE;
+                goto generate_done;
             }
 
             log_printf(op, NULL, "Signing keys generated successfully.");
 
-            /* Set the signing keys to the newly generated pair. The paths
-             * are relative to p->kernel_module_build_directory, since we
-             * cd to it before signing the module. */
-            op->module_signing_secret_key = SECKEY_NAME;
-            op->module_signing_public_key = PUBKEY_NAME;
+            /* Set the signing keys to the newly generated pair. */
+
+            op->module_signing_secret_key = nvstrdup(private_key_path);
+            op->module_signing_public_key = nvstrdup(public_key_path);
+
+generate_done:
+            nvfree(private_key_path);
+            nvfree(public_key_path);
+
+            if (generate_failed) {
+                return FALSE;
+            }
         } else {
             /* The user already has keys; prompt for their locations. */
             op->module_signing_secret_key =
@@ -1286,7 +1302,7 @@ guess_fail:
         /* If keys were generated, we should install the verification cert
          * so that the user can make the kernel trust it, and either delete
          * or install the private signing key. */
-        char *file, *name, *result = NULL, *fingerprint, *cmdline;
+        char *name, *result = NULL, *fingerprint, *cmdline;
         char short_fingerprint[9];
         int ret, delete_secret_key;
 
@@ -1299,8 +1315,8 @@ guess_fail:
            openssl to create a keypair at this point, so we know we have it;
            otherwise, we would have already returned by now. */
         cmdline = nvstrcat(op->utils[OPENSSL], " x509 -noout -fingerprint ",
-                           "-inform DER -in ", p->kernel_module_build_directory,
-                           "/"PUBKEY_NAME, NULL);
+                           "-inform DER -in ", op->module_signing_public_key,
+                           NULL);
         ret = run_command(op, cmdline, &result, FALSE, 0, FALSE);
         nvfree(cmdline);
 
@@ -1313,8 +1329,8 @@ guess_fail:
             if (sha1sum) {
                 /* the openssl command failed, or we parsed its output
                  * incorrectly; try to get a sha1sum of the DER certificate */
-                cmdline = nvstrcat(sha1sum, p->kernel_module_build_directory,
-                                   "/"PUBKEY_NAME, NULL);
+                cmdline = nvstrcat(sha1sum, " ", op->module_signing_public_key,
+                                   NULL);
                 ret = run_command(op, cmdline, &result, FALSE, 0, FALSE);
                 nvfree(sha1sum);
                 nvfree(cmdline);
@@ -1339,13 +1355,12 @@ guess_fail:
         short_fingerprint[sizeof(short_fingerprint) - 1] = '\0';
 
         /* Add the public key to the package */
-        file = nvstrcat(p->kernel_module_build_directory, "/"PUBKEY_NAME, NULL);
 
         /* XXX name will be leaked when freeing package */
         name = nvstrcat("nvidia-modsign-crt-", short_fingerprint, ".der", NULL);
 
         add_package_entry(p,
-                          file,
+                          nvstrdup(op->module_signing_public_key),
                           NULL, /* path */
                           name,
                           NULL, /* target */
@@ -1366,10 +1381,9 @@ guess_fail:
         nvfree(result);
 
         /* Delete or install the private key */
-        file = nvstrcat(p->kernel_module_build_directory, "/"SECKEY_NAME, NULL);
 
         if (delete_secret_key) {
-            secure_delete(op, file);
+            secure_delete(op, op->module_signing_secret_key);
         } else {
 
             /* Add the private key to the package */
@@ -1378,7 +1392,7 @@ guess_fail:
                             NULL);
 
             add_package_entry(p,
-                              file,
+                              nvstrdup(op->module_signing_secret_key),
                               NULL, /* path */
                               name,
                               NULL, /* target */
