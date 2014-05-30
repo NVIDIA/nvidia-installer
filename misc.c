@@ -632,6 +632,7 @@ int find_module_utils(Options *op)
  */
 
 #define PROC_MODPROBE_PATH_FILE "/proc/sys/kernel/modprobe"
+#define DEFAULT_MODPROBE "/sbin/modprobe"
 
 int check_proc_modprobe_path(Options *op)
 {
@@ -648,8 +649,7 @@ int check_proc_modprobe_path(Options *op)
         fclose(fp);
     }
 
-    /* If either the modprobe utility reported at /proc/sys/kernel/modprobe or
-     * the one found by find_system_utils() is a symlink, resolve its target. */
+    /* If the modprobe found by find_system_utils() is a symlink, resolve it */
 
     ret = lstat(found_modprobe, &st);
 
@@ -661,6 +661,9 @@ int check_proc_modprobe_path(Options *op)
     }
 
     if (proc_modprobe) {
+
+        /* If the modprobe reported by the kernel is a symlink, resolve it */
+
         ret = lstat(proc_modprobe, &st);
 
         if (ret == 0 && S_ISLNK(st.st_mode)) {
@@ -670,53 +673,69 @@ int check_proc_modprobe_path(Options *op)
                 proc_modprobe = target;
             }
         }
-    }
 
-    if (proc_modprobe && strcmp(proc_modprobe, found_modprobe)) {
-        if (access(proc_modprobe, F_OK | X_OK) == 0) {
-            ui_warn(op, "The path to the `modprobe` utility reported by "
-                    "'%s', `%s`, differs from the path determined by "
-                    "`nvidia-installer`, `%s`.  Please verify that `%s` "
-                    "works correctly and correct the path in '%s' if "
-                    "it does not.",
-                    PROC_MODPROBE_PATH_FILE, proc_modprobe, found_modprobe,
-                    proc_modprobe, PROC_MODPROBE_PATH_FILE);
+        /* Check to see if the modprobe reported by the kernel and the
+         * modprobe found by nvidia-installer match. */
+
+        if (strcmp(proc_modprobe, found_modprobe) == 0) {
             success = TRUE;
         } else {
-           ui_error(op, "The path to the `modprobe` utility reported by "
-                    "'%s', `%s`, differs from the path determined by "
-                    "`nvidia-installer`, `%s`, and does not appear to "
-                    "point to a valid `modprobe` binary.  Please correct "
-                    "the path in '%s'.",
-                    PROC_MODPROBE_PATH_FILE, proc_modprobe, found_modprobe,
-                    PROC_MODPROBE_PATH_FILE);
+            if (access(proc_modprobe, F_OK | X_OK) == 0) {
+                ui_warn(op, "The path to the `modprobe` utility reported by "
+                        "'%s', `%s`, differs from the path determined by "
+                        "`nvidia-installer`, `%s`.  Please verify that `%s` "
+                        "works correctly and correct the path in '%s' if "
+                        "it does not.",
+                        PROC_MODPROBE_PATH_FILE, proc_modprobe, found_modprobe,
+                        proc_modprobe, PROC_MODPROBE_PATH_FILE);
+                success = TRUE;
+            } else {
+               ui_error(op, "The path to the `modprobe` utility reported by "
+                        "'%s', `%s`, differs from the path determined by "
+                        "`nvidia-installer`, `%s`, and does not appear to "
+                        "point to a valid `modprobe` binary.  Please correct "
+                        "the path in '%s'.",
+                        PROC_MODPROBE_PATH_FILE, proc_modprobe, found_modprobe,
+                        PROC_MODPROBE_PATH_FILE);
+            }
         }
-    } else if (!proc_modprobe && strcmp("/sbin/modprobe", found_modprobe)) {
-        if (access(proc_modprobe, F_OK | X_OK) == 0) {
-            ui_warn(op, "The file '%s' is unavailable, the X server will "
-                    "use `/sbin/modprobe` as the path to the `modprobe` "
-                    "utility.  This path differs from the one determined "
-                    "by `nvidia-installer`, `%s`.  Please verify that "
-                    "`/sbin/modprobe` works correctly or mount the /proc "
-                    "file system and verify that '%s' reports the "
-                    "correct path.",
-                    PROC_MODPROBE_PATH_FILE, found_modprobe,
+    } else {
+        /* We failed to read from /proc/sys/kernel/modprobe, possibly because
+         * it doesn't exist or /proc isn't mounted. Assume a default modprobe
+         * path of /sbin/modprobe. */
+
+        char * found_mismatch;
+
+        if (strcmp(DEFAULT_MODPROBE, found_modprobe) == 0) {
+            found_mismatch = nvstrdup("");
+        } else {
+            found_mismatch = nvstrcat("This path differs from the one "
+                                      "determined by `nvidia-installer`, ",
+                                      found_modprobe, ".  ", NULL);
+        }
+
+        if (access(DEFAULT_MODPROBE, F_OK | X_OK) == 0) {
+            ui_warn(op, "The file '%s' is unavailable; the X server will "
+                    "use `" DEFAULT_MODPROBE "` as the path to the `modprobe` "
+                    "utility.  %sPlease verify that `" DEFAULT_MODPROBE
+                    "` works correctly or mount the /proc file system and "
+                    "verify that '%s' reports the correct path.",
+                    PROC_MODPROBE_PATH_FILE, found_mismatch,
                     PROC_MODPROBE_PATH_FILE);
             success = TRUE;
         } else {
-           ui_error(op, "The file '%s' is unavailable, the X server will "
-                    "use `/sbin/modprobe` as the path to the `modprobe` "
-                    "utility.  This path differs from the one determined "
-                    "by `nvidia-installer`, `%s`, and does not appear to "
-                    "point to a valid `modprobe` binary.  Please create "
-                    "a symbolic link from `/sbin/modprobe` to `%s` or "
-                    "mount the /proc file system and verify that '%s' "
-                    "reports the correct path.",
-                    PROC_MODPROBE_PATH_FILE, found_modprobe,
+           ui_error(op, "The file '%s' is unavailable; the X server will "
+                    "use `" DEFAULT_MODPROBE "` as the path to the `modprobe` "
+                    "utility.  %s`" DEFAULT_MODPROBE "` does not appear to "
+                    "point to a valid `modprobe` binary.  Please create a "
+                    "symbolic link from `" DEFAULT_MODPROBE "` to `%s` or "
+                    "mount the /proc file system and verify that '%s' reports "
+                    "the correct path.",
+                    PROC_MODPROBE_PATH_FILE, found_mismatch,
                     found_modprobe, PROC_MODPROBE_PATH_FILE);
         }
-    } else if (strcmp(proc_modprobe, found_modprobe) == 0) {
-        success = TRUE;
+
+        nvfree(found_mismatch);
     }
 
     nvfree(proc_modprobe);

@@ -315,6 +315,7 @@ typedef struct {
     unsigned int is_symlink    : 1;
     unsigned int is_shared_lib : 1;
     unsigned int is_opengl     : 1;
+    unsigned int is_temporary  : 1;
 } PackageEntryFileCapabilities;
 
 /*
