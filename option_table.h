@@ -398,14 +398,6 @@ static const NVGetoptOption __options[] = {
     { "no-precompiled-interface", 'n', 0, NULL,
       "Disable use of precompiled kernel interfaces." },
 
-    { "no-runlevel-check", NO_RUNLEVEL_CHECK_OPTION, 0, NULL,
-      "Normally, the installer checks the current runlevel and "
-      "warns users if they are in runlevel 1: in runlevel 1, some "
-      "services that are normally active are disabled (such as devfs), "
-      "making it difficult for the installer to properly setup the "
-      "kernel module configuration files.  This option disables the "
-      "runlevel check." },
-
     { "no-abi-note", NO_ABI_NOTE_OPTION, 0, NULL,
       "The NVIDIA OpenGL libraries contain an OS ABI note tag, "
       "which identifies the minimum kernel version needed to use the "
@@ -425,9 +417,8 @@ static const NVGetoptOption __options[] = {
       "conflicting files, rather than back them up." },
 
     { "no-network", 'N', 0, NULL,
-      "This option instructs the installer to not attempt to "
-      "connect to the NVIDIA ftp site (for updated precompiled kernel "
-      "interfaces, for example)." },
+      "This option instructs the installer to not attempt to access the "
+      "network." },
 
     { "no-recursion", NO_RECURSION_OPTION, 0, NULL,
       "Normally, nvidia-installer will recursively search for "
@@ -649,6 +640,11 @@ static const NVGetoptOption __options[] = {
     { "no-rpms",                  NO_RPMS_OPTION, 0, NULL, NULL},
     { "advanced-options-args-only", ADVANCED_OPTIONS_ARGS_ONLY_OPTION, 0,
       NULL, NULL },
+
+    /* Deprecated options: These options are no longer used, but
+     * nvidia-installer will allow the user to set them anyway, for
+     * backwards-compatibility purposes. */
+    { "no-runlevel-check", NO_RUNLEVEL_CHECK_OPTION, 0, NULL, NULL },
 
     { NULL, 0, 0, NULL, NULL },
 };

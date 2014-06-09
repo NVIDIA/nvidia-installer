@@ -143,7 +143,6 @@ typedef struct __options {
     int which_tls_compat32;
     int sanity;
     int add_this_kernel;
-    int no_runlevel_check;
     int no_backup;
     int no_network;
     int kernel_module_only;

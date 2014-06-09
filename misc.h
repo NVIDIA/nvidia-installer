@@ -53,7 +53,6 @@ typedef enum {
 char *read_next_word (char *buf, char **e);
 
 int check_euid(Options *op);
-int check_runlevel(Options *op);
 int adjust_cwd(Options *op, const char *program_name);
 char *get_next_line(char *buf, char **e, char *start, int length);
 int run_command(Options *op, const char *cmd, char **data,

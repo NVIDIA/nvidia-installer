@@ -328,7 +328,9 @@ static void parse_commandline(int argc, char *argv[], Options *op)
             op->rpm_file_list = strval;
             break;
         case NO_RUNLEVEL_CHECK_OPTION:
-            op->no_runlevel_check = TRUE;
+            /* This option is no longer used; ignore it. */
+            nv_warning_msg("The '--no-runlevel-check' option is deprecated:  "
+                           "nvidia-installer will ignore this option.");
             break;
         case 'N':
             op->no_network = TRUE;
@@ -548,10 +550,6 @@ int main(int argc, char *argv[])
     
     if (!check_euid(op)) goto done;
     
-    /* check that we're in a safe runlevel */
-
-    if (!check_runlevel(op)) goto done;
-
     /*
      * find the system utilities we'll need
      *
