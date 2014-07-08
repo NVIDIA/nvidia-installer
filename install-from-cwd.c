@@ -662,6 +662,7 @@ static Package *parse_manifest (Options *op)
     struct stat stat_buf;
     Package *p;
     char *manifest = MAP_FAILED, *ptr;
+    int opengl_files_packaged = FALSE;
     
     p = (Package *) nvalloc(sizeof (Package));
     
@@ -846,6 +847,12 @@ static Package *parse_manifest (Options *op)
                 op->uvm_files_packaged = TRUE;
             }
 
+            /* set opengl_files_packaged if any OpenGL files were packaged */
+
+            if (entry.caps.is_opengl) {
+                opengl_files_packaged = TRUE;
+            }
+
             nvfree(flag);
 
             /* some libs/symlinks have an arch field */
@@ -936,7 +943,13 @@ static Package *parse_manifest (Options *op)
         line++;
 
     } while (!done);
-    
+
+    /* If the package does not contain any OpenGL files, do not install
+     * OpenGL files */
+    if (!opengl_files_packaged) {
+        op->no_opengl_files = TRUE;
+    }
+
     munmap(manifest, len);
     if (fd != -1) close(fd);
 

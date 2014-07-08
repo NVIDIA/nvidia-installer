@@ -1197,6 +1197,8 @@ static int detect_library(const char *library)
 
 void should_install_vdpau_wrapper(Options *op, Package *p)
 {
+    int i, vdpau_packaged = FALSE;
+
     /*
      * If the user did not specifically request installation or non-installation
      * of the VDPAU wrapper, default to installing only if the wrapper was not
@@ -1221,6 +1223,21 @@ void should_install_vdpau_wrapper(Options *op, Package *p)
         }
     }
 
+    for (i = 0; i < p->num_entries; i++) {
+        if (p->entries[i].type == FILE_TYPE_VDPAU_WRAPPER_LIB ||
+            p->entries[i].type == FILE_TYPE_VDPAU_WRAPPER_SYMLINK) {
+            vdpau_packaged = TRUE;
+
+            if (op->install_vdpau_wrapper != NV_OPTIONAL_BOOL_TRUE) {
+                invalidate_package_entry(&(p->entries[i]));
+            }
+        }
+    }
+
+    if (!vdpau_packaged) {
+        return;
+    }
+
     if (op->install_vdpau_wrapper == NV_OPTIONAL_BOOL_TRUE) {
         ui_message(op, "nvidia-installer will install the libvdpau and "
                        "libvdpau_trace libraries that were included with this "
@@ -1233,16 +1250,7 @@ void should_install_vdpau_wrapper(Options *op, Package *p)
                        "from the sources available at:\n\n"
                        "http://people.freedesktop.org/~aplattner/vdpau");
     } else {
-        int i;
-
         ui_log(op, "Skipping installation of the libvdpau wrapper library.");
-
-        for (i = 0; i < p->num_entries; i++) {
-            if (p->entries[i].type == FILE_TYPE_VDPAU_WRAPPER_LIB ||
-                p->entries[i].type == FILE_TYPE_VDPAU_WRAPPER_SYMLINK) {
-                invalidate_package_entry(&(p->entries[i]));
-            }
-        }
     }
 }
 
