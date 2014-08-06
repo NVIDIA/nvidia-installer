@@ -497,6 +497,7 @@ typedef struct __package {
 #define LICENSE_FILE "LICENSE"
 
 #define DEFAULT_LOG_FILE_NAME "/var/log/nvidia-installer.log"
+#define DEFAULT_UNINSTALL_LOG_FILE_NAME "/var/log/nvidia-uninstall.log"
 
 #define NUM_TIMES_QUESTIONS_ASKED 3
 

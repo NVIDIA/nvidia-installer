@@ -152,7 +152,7 @@ int determine_kernel_module_installation_path(Options *op)
         }
     }
 
-    if (!mkdir_recursive(op, op->kernel_module_installation_path, 0755))
+    if (!mkdir_with_log(op, op->kernel_module_installation_path, 0755))
         return FALSE;
 
     ui_expert(op, "Kernel module installation path: %s",
@@ -1050,7 +1050,7 @@ int build_kernel_interface(Options *op, Package *p,
     uvmdir = nvstrcat(tmpdir, "/" UVM_SUBDIR, NULL);
 
     if (op->install_uvm) {
-        if (!mkdir_recursive(op, uvmdir, 0655)) {
+        if (!mkdir_recursive(op, uvmdir, 0655, FALSE)) {
             ui_error(op, "Unable to create a temporary subdirectory for the "
                      "Unified Memory kernel module build.");
             goto failed;
@@ -1478,6 +1478,7 @@ int test_kernel_module(Options *op, Package *p)
     if (fd >= 0) {
         if (read(fd, &old_loglevel, 1) == 1) {
             new_loglevel = '2'; /* KERN_CRIT */
+            lseek(fd, 0, SEEK_SET);
             write(fd, &new_loglevel, 1);
         }
     } else {
@@ -1600,12 +1601,15 @@ test_exit:
     nvfree(data);
 
     if (fd >= 0) {
-        if (new_loglevel != 0)
+        if (new_loglevel != 0) {
+            lseek(fd, 0, SEEK_SET);
             write(fd, &old_loglevel, 1);
+        }
         close(fd);
     } else {
-        if (new_loglevel != 0)
+        if (new_loglevel != 0) {
             sysctl(name, 2, NULL, 0, &old_loglevel, len);
+        }
     }
 
     /*
@@ -1811,7 +1815,7 @@ PrecompiledInfo *find_precompiled_kernel_interface(Options *op, Package *p)
     
     /* make sure the target directory exists */
     
-    if (!mkdir_recursive(op, p->kernel_module_build_directory, 0755))
+    if (!mkdir_recursive(op, p->kernel_module_build_directory, 0755, FALSE))
         goto failed;
 
     memset(search_filelist, 0, sizeof(search_filelist));

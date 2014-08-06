@@ -1220,7 +1220,7 @@ int confirm_path(Options *op, const char *path)
     if (ui_multiple_choice(op, choices, 2, 0, "The directory '%s' does not "
                            "exist; would you like to create it, or would you "
                            "prefer to abort installation?", path) == 0) {
-        if (mkdir_recursive(op, path, 0755)) {
+        if (mkdir_with_log(op, path, 0755)) {
             return TRUE;
         } else {
             return FALSE;
@@ -1237,12 +1237,12 @@ int confirm_path(Options *op, const char *path)
 
 
 /*
- * mkdir_with_log() - create the path specified, also creating parent
+ * mkdir_recursive() - create the path specified, also creating parent
  * directories as needed; this is equivalent to `mkdir -p`. Log created
  * directories if the "log" parameter is set.
  */
 
-int mkdir_with_log(Options *op, const char *path, const mode_t mode, int log)
+int mkdir_recursive(Options *op, const char *path, const mode_t mode, int log)
 {
     char *c, *tmp, ch, *list, *tmplist;
     
@@ -1284,19 +1284,19 @@ int mkdir_with_log(Options *op, const char *path, const mode_t mode, int log)
     free(tmp);
     return TRUE;
 
-} /* mkdir_with_log */
+}
 
 
 
 /*
- * mkdir_recursive() - Wrap mkdir_with_log() to create the path specified
+ * mkdir_with_log() - Wrap mkdir_recursive() to create the path specified
  * with any needed parent directories.
  */
 
-int mkdir_recursive(Options *op, const char *path, const mode_t mode)
+int mkdir_with_log(Options *op, const char *path, const mode_t mode)
 {
-    return mkdir_with_log(op, path, mode, TRUE);
-} /* mkdir_recursive() */
+    return mkdir_recursive(op, path, mode, TRUE);
+}
 
 
 
@@ -1397,7 +1397,7 @@ int install_file(Options *op, const char *srcfile,
     dirc = nvstrdup(dstfile);
     dname = dirname(dirc);
     
-    if (!mkdir_recursive(op, dname, 0755)) {
+    if (!mkdir_with_log(op, dname, 0755)) {
         free(dirc);
         return FALSE;
     }
@@ -1423,7 +1423,7 @@ int install_symlink(Options *op, const char *linkname, const char *dstfile)
     dirc = nvstrdup(dstfile);
     dname = dirname(dirc);
     
-    if (!mkdir_recursive(op, dname, 0755)) {
+    if (!mkdir_with_log(op, dname, 0755)) {
         free(dirc);
         return FALSE;
     }
@@ -1509,7 +1509,7 @@ char *make_tmpdir(Options *op)
         remove_directory(op, tmpdir);
     }
     
-    if (!mkdir_recursive(op, tmpdir, 0655)) {
+    if (!mkdir_recursive(op, tmpdir, 0655, FALSE)) {
         return NULL;
     }
     
@@ -1692,7 +1692,7 @@ int pack_precompiled_files(Options *op, Package *p, int num_files,
 
     /* make sure the precompiled_kernel_interface_directory exists */
 
-    mkdir_recursive(op, p->precompiled_kernel_interface_directory, 0755);
+    mkdir_recursive(op, p->precompiled_kernel_interface_directory, 0755, FALSE);
     
     /* use the time in the output string... should be fairly unique */
 

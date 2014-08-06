@@ -260,7 +260,7 @@ int install_from_cwd(Options *op)
      */
 
     if (!op->kernel_module_only) {
-        if (!uninstall_existing_driver(op, FALSE)) goto failed;
+        if (!run_existing_uninstaller(op)) goto failed;
     }
 
     /*

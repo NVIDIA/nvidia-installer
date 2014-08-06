@@ -149,7 +149,7 @@ int init_backup(Options *op, Package *p)
 
     /* create the backup directory, with perms only for owner */
 
-    if (!mkdir_with_log(op, BACKUP_DIRECTORY, BACKUP_DIRECTORY_PERMS, FALSE)) {
+    if (!mkdir_recursive(op, BACKUP_DIRECTORY, BACKUP_DIRECTORY_PERMS, FALSE)) {
         return FALSE;
     }
 
@@ -507,7 +507,7 @@ int log_mkdir(Options *op, const char *dirs)
      * the existence of BACKUP_DIRECTORY
      */
     if (!directory_exists(op, BACKUP_DIRECTORY) &&
-        !mkdir_with_log(op, BACKUP_DIRECTORY, BACKUP_DIRECTORY_PERMS, FALSE)) {
+        !mkdir_recursive(op, BACKUP_DIRECTORY, BACKUP_DIRECTORY_PERMS, FALSE)) {
         return FALSE;
     }
 
@@ -1410,6 +1410,51 @@ int uninstall_existing_driver(Options *op, const int interactive)
     return TRUE;
 
 } /* uninstall_existing_driver() */
+
+
+
+/*
+ * run_existing_uninstaller() - attempt to run `nvidia-uninstall` if it
+ * exists; if it does not exist or fails, fall back to normal uninstallation.
+ */
+int run_existing_uninstaller(Options *op)
+{
+    char *uninstaller = find_system_util("nvidia-uninstall");
+
+    if (uninstaller) {
+        /* Run the uninstaller non-interactively, and explicitly log to the
+         * uninstall log location: older installers may not do so implicitly. */
+        char *uninstall_cmd = nvstrcat(uninstaller, " -s --log-file-name="
+                                       DEFAULT_UNINSTALL_LOG_FILE_NAME, NULL);
+        char *data;
+        int ret;
+
+        ui_log(op, "Uninstalling the previous installation with %s.",
+               uninstaller);
+
+        ret = run_command(op, uninstall_cmd, &data, FALSE, 0, TRUE);
+
+        nvfree(uninstall_cmd);
+
+        /* if nvidia-uninstall succeeded, return early; otherwise, fall back to
+         * uninstalling via the backup log file. */
+        if (ret == 0) {
+            nvfree(data);
+            return TRUE;
+        } else {
+            ui_log(op, "%s failed; see %s for more details.", uninstaller,
+                   DEFAULT_UNINSTALL_LOG_FILE_NAME);
+            if (data && strlen(data)) {
+                ui_log(op, "The output from %s was:\n%s", uninstaller, data);
+            }
+            nvfree(data);
+        }
+
+        nvfree(uninstaller);
+    }
+
+    return uninstall_existing_driver(op, FALSE);
+}
 
 
 

@@ -131,7 +131,6 @@ static Options *load_default_options(void)
 
     /* statically initialized strings */
     op->proc_mount_point = DEFAULT_PROC_MOUNT_POINT;
-    op->log_file_name = DEFAULT_LOG_FILE_NAME;
     op->ftp_site = DEFAULT_FTP_SITE;
 
     op->tmpdir = get_tmpdir(op);
@@ -498,7 +497,18 @@ static void parse_commandline(int argc, char *argv[], Options *op)
     if (!op->installer_prefix) {
         op->installer_prefix = op->utility_prefix;
     }
-    
+
+    /*
+     * Set the default log file path. This is deferred until after the
+     * command line has been parsed so that the installer has a chance
+     * to determine whether it should be run in uninstall mode.
+     */
+
+    if (!op->log_file_name) {
+        op->log_file_name = op->uninstall ? DEFAULT_UNINSTALL_LOG_FILE_NAME :
+                                            DEFAULT_LOG_FILE_NAME;
+    }
+
     return;
     
  fail:

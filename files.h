@@ -43,8 +43,8 @@ int mode_string_to_mode(Options *op, char *s, mode_t *mode);
 char *mode_to_permission_string(mode_t mode);
 int directory_exists(Options *op, const char *dir);
 int confirm_path(Options *op, const char *path);
-int mkdir_with_log(Options *op, const char *path, const mode_t mode, int log);
-int mkdir_recursive(Options *op, const char *path, const mode_t mode);
+int mkdir_recursive(Options *op, const char *path, const mode_t mode, int log);
+int mkdir_with_log(Options *op, const char *path, const mode_t mode);
 char *get_symlink_target(Options *op, const char *filename);
 char *get_resolved_symlink_target(Options *op, const char *filename);
 int install_file(Options *op, const char *srcfile,
