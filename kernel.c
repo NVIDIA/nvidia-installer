@@ -1478,6 +1478,7 @@ int test_kernel_module(Options *op, Package *p)
     if (fd >= 0) {
         if (read(fd, &old_loglevel, 1) == 1) {
             new_loglevel = '2'; /* KERN_CRIT */
+            lseek(fd, 0, SEEK_SET);
             write(fd, &new_loglevel, 1);
         }
     } else {
@@ -1600,12 +1601,15 @@ test_exit:
     nvfree(data);
 
     if (fd >= 0) {
-        if (new_loglevel != 0)
+        if (new_loglevel != 0) {
+            lseek(fd, 0, SEEK_SET);
             write(fd, &old_loglevel, 1);
+        }
         close(fd);
     } else {
-        if (new_loglevel != 0)
+        if (new_loglevel != 0) {
             sysctl(name, 2, NULL, 0, &old_loglevel, len);
+        }
     }
 
     /*
