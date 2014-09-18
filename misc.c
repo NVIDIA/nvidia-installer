@@ -2499,11 +2499,17 @@ int check_selinux(Options *op)
 int run_nvidia_xconfig(Options *op, int restore)
 {
     int ret, bRet = TRUE;
-    char *data = NULL, *cmd, *args;
+    char *data = NULL, *cmd = NULL, *args, *nvidia_xconfig;
+
+    nvidia_xconfig = find_system_util("nvidia-xconfig");
+
+    if (nvidia_xconfig == NULL) {
+        goto done;
+    }
 
     args = restore ? " --restore-original-backup" : "";
     
-    cmd = nvstrcat(find_system_util("nvidia-xconfig"), args, NULL);
+    cmd = nvstrcat(nvidia_xconfig, args, NULL);
     
     ret = run_command(op, cmd, &data, FALSE, 0, TRUE);
     
@@ -2511,9 +2517,12 @@ int run_nvidia_xconfig(Options *op, int restore)
         ui_error(op, "Failed to run `%s`:\n%s", cmd, data);
         bRet = FALSE;
     }
-    
+
+done:
+
     nvfree(cmd);
     nvfree(data);
+    nvfree(nvidia_xconfig);
 
     return bRet;
     
