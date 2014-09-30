@@ -1376,18 +1376,15 @@ int uninstall_existing_driver(Options *op, const int interactive)
     }
 
     if (interactive && op->uninstall) {
-        ret = ui_yes_no(op, FALSE,
-                       "If you plan to no longer use the NVIDIA driver, you "
-                       "should make sure that no X screens are configured to "
-                       "use the NVIDIA X driver in your X configuration file. "
-                       "If you used nvidia-xconfig to configure X, it may have "
-                       "created a backup of your original configuration. Would "
-                       "you like to run `nvidia-xconfig --restore-original-"
-                       "backup` to attempt restoration of the original X "
-                       "configuration file?");
-        if (ret) {
-            run_nvidia_xconfig(op, TRUE);
-        }
+        const char *msg = "If you plan to no longer use the NVIDIA driver, you "
+                        "should make sure that no X screens are configured to "
+                        "use the NVIDIA X driver in your X configuration file. "
+                        "If you used nvidia-xconfig to configure X, it may have "
+                        "created a backup of your original configuration. Would "
+                        "you like to run `nvidia-xconfig --restore-original-"
+                        "backup` to attempt restoration of the original X "
+                        "configuration file?";
+        run_nvidia_xconfig(op, TRUE, msg, FALSE);
     }
 
     ret = do_uninstall(op, version);

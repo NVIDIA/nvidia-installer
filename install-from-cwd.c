@@ -76,12 +76,11 @@ int install_from_cwd(Options *op)
 {
     Package *p;
     CommandList *c;
-    const char *msg;
     int ret;
     int ran_pre_install_hook = FALSE;
     HookScriptStatus res;
 
-    static const char edit_your_xf86config[] =
+    static const char* edit_your_xf86config =
         "Please update your XF86Config or xorg.conf file as "
         "appropriate; see the file /usr/share/doc/"
         "NVIDIA_GLX-1.0/README.txt for details.";
@@ -92,6 +91,10 @@ int install_from_cwd(Options *op)
      */
     
     if ((p = parse_manifest(op)) == NULL) goto failed;
+
+    if (!op->x_files_packaged) {
+        edit_your_xf86config = "";
+    }
 
     ui_set_title(op, "%s (%s)", p->description, p->version);
     
@@ -321,28 +324,22 @@ int install_from_cwd(Options *op)
         
         /* ask the user if they would like to run nvidia-xconfig */
         
-        ret = ui_yes_no(op, op->run_nvidia_xconfig,
-                        "Would you like to run the nvidia-xconfig utility "
-                        "to automatically update your X configuration file "
-                        "so that the NVIDIA X driver will be used when you "
-                        "restart X?  Any pre-existing X configuration "
-                        "file will be backed up.");
+        const char *msg = "Would you like to run the nvidia-xconfig utility "
+                          "to automatically update your X configuration file "
+                          "so that the NVIDIA X driver will be used when you "
+                          "restart X?  Any pre-existing X configuration "
+                          "file will be backed up.";
         
-        if (ret) {
-            ret = run_nvidia_xconfig(op, FALSE);
-        }
+        ret = run_nvidia_xconfig(op, FALSE, msg, op->run_nvidia_xconfig);
         
         if (ret) {
             ui_message(op, "Your X configuration file has been successfully "
                        "updated.  Installation of the %s (version: %s) is now "
                        "complete.", p->description, p->version);
         } else {
-            
-            msg = edit_your_xf86config;
-            
             ui_message(op, "Installation of the %s (version: %s) is now "
                        "complete.  %s", p->description,
-                       p->version, msg);
+                       p->version, edit_your_xf86config);
         }
     }
     
@@ -841,10 +838,16 @@ static Package *parse_manifest (Options *op)
                 goto invalid_manifest_file;
             }
 
-            /* if any UVM files have been packaged, set uvm_files_packaged. */
+            /* Track whether certain file types were packaged */
 
-            if (entry.type == FILE_TYPE_UVM_MODULE_SRC) {
-                op->uvm_files_packaged = TRUE;
+            switch (entry.type) {
+                case FILE_TYPE_UVM_MODULE_SRC:
+                    op->uvm_files_packaged = TRUE;
+                    break;
+                case FILE_TYPE_XMODULE_SHARED_LIB:
+                    op->x_files_packaged = TRUE;
+                    break;
+                default: break;
             }
 
             /* set opengl_files_packaged if any OpenGL files were packaged */

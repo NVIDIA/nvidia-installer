@@ -706,6 +706,10 @@ static void find_conflicting_xfree86_libraries_fullpath(Options *op,
                                                         char *path,
                                                         FileList *l)
 {
+    if (!op->x_files_packaged) {
+        /* If X files were not packaged, there can be no conflict. */
+        return;
+    }
     if (!op->no_opengl_files) {
         find_conflicting_files(op, path, __xfree86_opengl_libs, l, NULL);
     }

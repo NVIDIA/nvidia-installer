@@ -2491,31 +2491,58 @@ int check_selinux(Options *op)
 /*
  * run_nvidia_xconfig() - run the `nvidia-xconfig` utility.  Without
  * any options, this will just make sure the X config file uses the
- * NVIDIA driver by default. The restore parameter controls whether
- * the --restore-original-backup option is added, which attempts to
- * restore the original backed up X config file.
+ * NVIDIA driver by default.
+ *
+ * Parameters:
+ *
+ *     restore:  controls whether the --restore-original-backup option is added,
+ *               which attempts to restore the original backed up X config file.
+ *     question: if this is non-NULL, the user will be asked 'question' as a
+ *               yes or no question, to determine whether to run nvidia-xconfig.
+ *     answer:   the default answer to 'question'.
+ *
+ * Returns TRUE if nvidia-xconfig ran successfully; returns FALSE if
+ * nvidia-xconfig ran unsuccessfully, or did not run at all.
  */
 
-int run_nvidia_xconfig(Options *op, int restore)
+int run_nvidia_xconfig(Options *op, int restore, const char *question,
+                       int default_answer)
 {
-    int ret, bRet = TRUE;
-    char *data = NULL, *cmd, *args;
+    int ret = FALSE;
+    char *nvidia_xconfig;
 
-    args = restore ? " --restore-original-backup" : "";
-    
-    cmd = nvstrcat(find_system_util("nvidia-xconfig"), args, NULL);
-    
-    ret = run_command(op, cmd, &data, FALSE, 0, TRUE);
-    
-    if (ret != 0) {
-        ui_error(op, "Failed to run `%s`:\n%s", cmd, data);
-        bRet = FALSE;
+    nvidia_xconfig = find_system_util("nvidia-xconfig");
+
+    if (nvidia_xconfig == NULL) {
+        /* nvidia-xconfig not found: don't run it or ask any questions */
+        goto done;
     }
-    
-    nvfree(cmd);
-    nvfree(data);
 
-    return bRet;
+    ret = question ? ui_yes_no(op, default_answer, "%s", question) : TRUE;
+
+    if (ret) {
+        int cmd_ret;
+        char *data, *cmd, *args;
+
+        args = restore ? " --restore-original-backup" : "";
+
+        cmd = nvstrcat(nvidia_xconfig, args, NULL);
+
+        cmd_ret = run_command(op, cmd, &data, FALSE, 0, TRUE);
+
+        if (cmd_ret != 0) {
+            ui_error(op, "Failed to run `%s`:\n%s", cmd, data);
+            ret = FALSE;
+        }
+
+        nvfree(cmd);
+        nvfree(data);
+    }
+
+done:
+    nvfree(nvidia_xconfig);
+
+    return ret;
     
 } /* run_nvidia_xconfig() */
 
