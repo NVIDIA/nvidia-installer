@@ -127,16 +127,19 @@ int check_euid(Options *op)
 
 int adjust_cwd(Options *op, const char *program_name)
 {
-    char *c, *path;
-    int len;
-    
+    char *c;
+    int success = TRUE;
+
     /*
      * extract any pathname portion out of the program_name and chdir
      * to it
      */
-    
+
     c = strrchr(program_name, '/');
     if (c) {
+        int len;
+        char *path;
+
         len = c - program_name + 1;
         path = (char *) nvalloc(len + 1);
         strncpy(path, program_name, len);
@@ -145,14 +148,13 @@ int adjust_cwd(Options *op, const char *program_name)
         if (chdir(path)) {
             fprintf(stderr, "Unable to chdir to %s (%s)",
                     path, strerror(errno));
-            return FALSE;
+            success = FALSE;
         }
         free(path);
     }
-    
-    return TRUE;
-    
-} /* adjust_cwd() */
+
+    return success;
+}
 
 
 /*
@@ -292,13 +294,14 @@ int run_command(Options *op, const char *cmd, char **data, int output,
      * command.
      */
     
-    if ((stream = popen(cmd2, "r")) == NULL) {
+    stream = popen(cmd2, "r");
+    nvfree(cmd2);
+
+    if (stream == NULL) {
         ui_error(op, "Failure executing command '%s' (%s).",
                  cmd, strerror(errno));
         return errno;
     }
-    
-    free(cmd2);
 
     /*
      * read from the stream, filling and growing buf, until we hit
@@ -459,6 +462,7 @@ static const Util __utils[] = {
     [PKG_CONFIG]      = { "pkg-config",     "pkg-config" },
     [XSERVER]         = { "X",              "xserver" },
     [OPENSSL]         = { "openssl",        "openssl" },
+    [DKMS]            = { "dkms",           "dkms"    },
 
     /* ModuleUtils */
     [INSMOD]   = { "insmod",   "module-init-tools' or 'kmod" },
@@ -592,6 +596,8 @@ int check_proc_modprobe_path(Options *op)
         char *target = get_resolved_symlink_target(op, found_modprobe);
         if (target && access(target, F_OK | X_OK) == 0) {
             found_modprobe = target;
+        } else {
+            nvfree(target);
         }
     }
 
@@ -606,6 +612,8 @@ int check_proc_modprobe_path(Options *op)
             if (target && access(target, F_OK | X_OK) == 0) {
                 nvfree(proc_modprobe);
                 proc_modprobe = target;
+            } else {
+                nvfree(target);
             }
         }
 
@@ -1115,54 +1123,35 @@ void should_install_opengl_headers(Options *op, Package *p)
 void should_install_compat32_files(Options *op, Package *p)
 {
 #if defined(NV_X86_64)
-    int i, have_compat32_files = FALSE, install_compat32_files;
 
-    /*
-     * first, scan through the package to see if we have any
-     * 32bit compatibility files to install.
-     */
-
-    for (i = 0; i < p->num_entries; i++) {
-        if (p->entries[i].compat_arch == FILE_COMPAT_ARCH_COMPAT32) {
-            have_compat32_files = TRUE;
-            break;
-        }
-    }
-
-    if (!have_compat32_files)
+    /* If there are no compat32 files, there is nothing to do */
+    if (!op->compat32_files_packaged) {
+        op->install_compat32_libs = NV_OPTIONAL_BOOL_FALSE;
         return;
-
-    /*
-     * Ask the user if the 32-bit compatibility libraries are
-     * to be installed. If yes, check if the chosen prefix
-     * exists. If not, notify the user and ask him/her if the
-     * files are to be installed anyway.
-     */
-    install_compat32_files = ui_yes_no(op, TRUE,
-                "Install NVIDIA's 32-bit compatibility libraries?");
-
-    if (install_compat32_files && (op->compat32_chroot != NULL) &&
-          access(op->compat32_chroot, F_OK) < 0) {
-
-        const char *choices[2] = {
-            "Install compatibility libraries",
-            "Do not install compatibility libraries"
-        };
-
-        install_compat32_files = (ui_multiple_choice(op, choices, 2, 1,
-                                  "The NVIDIA 32-bit compatibility libraries "
-                                  "are to be installed relative to the "
-                                  "top-level prefix (chroot) '%s'; however, "
-                                  "this directory does not exist.  Please "
-                                  "consult your distribution's documentation "
-                                  "to confirm the correct top-level "
-                                  "installation prefix for 32-bit compatiblity "
-                                  "libraries.\n\nWould you like to install "
-                                  "NVIDIA 32-bit compatibility libraries "
-                                  "anyway?", op->compat32_chroot) == 0);
     }
 
-    if (!install_compat32_files) {
+    /* Determine where the compatibility libraries should be installed */
+    get_compat32_path(op);
+
+    /*
+     * If the user hasn't explicitly specified whether to install compat32
+     * files, ask if the 32-bit compatibility libraries are to be installed.
+     * If yes, check if the chosen prefix exists. If not, notify the user and
+     * ask him/her if the files are to be installed anyway.
+     */
+    if (op->install_compat32_libs == NV_OPTIONAL_BOOL_DEFAULT) {
+        int ret;
+
+        ret = ui_yes_no(op, TRUE,
+                        "Install NVIDIA's 32-bit compatibility libraries?");
+
+        op->install_compat32_libs = ret ? NV_OPTIONAL_BOOL_TRUE :
+                                          NV_OPTIONAL_BOOL_FALSE;
+    }
+
+    if (op->install_compat32_libs == NV_OPTIONAL_BOOL_FALSE) {
+        int i;
+
         for (i = 0; i < p->num_entries; i++) {
             if (p->entries[i].compat_arch == FILE_COMPAT_ARCH_COMPAT32) {
                 /* invalidate file */
@@ -1343,6 +1332,7 @@ void check_installed_files_from_package(Options *op, Package *p)
 static int check_symlink(Options *op, const char *target, const char *link,
                          const char *descr)
 {
+    int success = TRUE;
     char *actual_target;
 
     actual_target = get_symlink_target(op, link);
@@ -1375,12 +1365,12 @@ static int check_symlink(Options *op, const char *target, const char *link,
                 actual_target,
                 target,
                 link);
-        free(actual_target);
-        return FALSE;
+        success = FALSE;
     }
-    return TRUE;
-    
-} /* check_symlink() */
+
+    nvfree(actual_target);
+    return success;
+}
 
 
 
@@ -1681,15 +1671,6 @@ static int tls_test_internal(Options *op, int which_tls,
     return ret;
 
 } /* test_tls_internal() */
-
-#else /* defined(NV_TLS_TEST) */
-
-int tls_test(Options *op, int compat_32_libs)
-{
-    /* Assume the TLS test passed. */
-    return TRUE;
-}
-
 #endif /* defined(NV_TLS_TEST) */
 
 
@@ -1730,19 +1711,27 @@ static int rtld_test_internal(Options *op, Package *p,
 
 int check_runtime_configuration(Options *op, Package *p)
 {
-    int ret = TRUE;
+    int ret = TRUE, which_tls, which_tls_compat32;
+
+#if defined(NV_TLS_TEST)
+    which_tls = op->which_tls;
+    which_tls_compat32 = op->which_tls_compat32;
+#else
+    /* Platforms that don't need the TLS test only support "new" ELF TLS. */
+    which_tls = which_tls_compat32 = TLS_LIB_NEW_TLS;
+#endif /* NV_TLS_TEST */
 
     ui_status_begin(op, "Running runtime sanity check:", "Checking");
 
 #if defined(NV_X86_64)
-    ret = rtld_test_internal(op, p, op->which_tls_compat32,
+    ret = rtld_test_internal(op, p, which_tls_compat32,
                              rtld_test_array_32,
                              rtld_test_array_32_size,
                              TRUE);
 #endif /* NV_X86_64 */
 
     if (ret == TRUE) {
-        ret = rtld_test_internal(op, p, op->which_tls,
+        ret = rtld_test_internal(op, p, which_tls,
                                  rtld_test_array,
                                  rtld_test_array_size,
                                  FALSE);
@@ -2015,68 +2004,16 @@ static int rtld_test_internal(Options *op, Package *p,
 } /* rtld_test_internal() */
 
 
-/*
- * get_distribution() - determine what distribution this is; only used
- * for several bits of distro-specific behavior requested by
- * distribution maintainers.
- *
- * XXX should we provide a commandline option to override this
- * detection?
- */
-
-Distribution get_distribution(Options *op)
-{
-    FILE *fp;
-    char *line = NULL, *ptr;
-    int eof = FALSE;
-
-    if (access("/etc/SuSE-release", F_OK) == 0) return SUSE;
-    if (access("/etc/UnitedLinux-release", F_OK) == 0) return UNITED_LINUX;
-    if (access("/etc/gentoo-release", F_OK) == 0) return GENTOO;
-    if (access("/etc/arch-release", F_OK) == 0) return ARCH;
-
-    /*
-     * Attempt to determine if the host system is 'Ubuntu Linux'
-     * based by checking for a line matching DISTRIB_ID=Ubuntu in
-     * the file /etc/lsb-release.
-     */
-    fp = fopen("/etc/lsb-release", "r");
-    if (fp != NULL) {
-        while (((line = fget_next_line(fp, &eof))
-                    != NULL) && !eof) {
-            ptr = strstr(line, "DISTRIB_ID");
-            if (ptr != NULL) {
-                fclose(fp);
-                while (ptr != NULL && *ptr != '=') ptr++;
-                if (ptr != NULL && *ptr == '=') ptr++;
-                if (ptr != NULL && *ptr != '\0')
-                    if (!strcasecmp(ptr, "Ubuntu")) return UBUNTU;
-                break;
-            }
-        }
-    }
-
-    if (access("/etc/debian_version", F_OK) == 0) return DEBIAN;
-
-    return OTHER;
-    
-} /* get_distribution() */
-
-
 
 /*
  * get_xserver_information() - parse the versionString (from `X
  * -version`) and assign relevant information that we infer from the X
  * server version.
- *
- * Note: this implementation should be shared with nvidia-xconfig
  */
 
 static int get_xserver_information(const char *versionString,
-                                   int *isXorg,
                                    int *isModular,
-                                   int *autoloadsGLX,
-                                   int *supportsExtensionSection)
+                                   int *supportsOutputClassSection)
 {
 #define XSERVER_VERSION_FORMAT_1 "X Window System Version"
 #define XSERVER_VERSION_FORMAT_2 "X.Org X Server"
@@ -2087,18 +2024,15 @@ static int get_xserver_information(const char *versionString,
     /* check if this is an XFree86 X server */
 
     if (strstr(versionString, "XFree86 Version")) {
-        *isXorg = FALSE;
         *isModular = FALSE;
-        *autoloadsGLX = FALSE;
-        *supportsExtensionSection = FALSE;
         return TRUE;
     }
 
-    /* this must be an X.Org X server */
 
-    *isXorg = TRUE;
-
-    /* attempt to parse the major.minor version out of the string */
+    /*
+     * This must be an X.Org X server.  Attempt to parse the major.minor version
+     * out of the string
+     */
 
     found = FALSE;
 
@@ -2129,30 +2063,13 @@ static int get_xserver_information(const char *versionString,
     }
 
     /*
-     * supportsExtensionSection: support for the "Extension" xorg.conf
-     * section was added between X.Org 6.7 and 6.8.  To account for
-     * the X server version wrap, it is easier to check for X servers
-     * that do not support the Extension section: 6.x (x < 8) X
-     * servers.
+     * support for using OutputClass sections to automatically match drivers to
+     * platform devices was added in X.Org xserver 1.16.
      */
-
-    if ((major == 6) && (minor < 8)) {
-        *supportsExtensionSection = FALSE;
+    if ((major == 6) || (major == 7) || ((major == 1) && (minor < 16))) {
+        *supportsOutputClassSection = FALSE;
     } else {
-        *supportsExtensionSection = TRUE;
-    }
-
-    /*
-     * support for autoloading GLX was added in X.Org 1.5.  To account
-     * for the X server version wrap, it is easier to check for X
-     * servers that do not support GLX autoloading: 6.x, 7.x, or < 1.5
-     * X servers.
-     */
-
-    if ((major == 6) || (major == 7) || ((major == 1) && (minor < 5))) {
-        *autoloadsGLX = FALSE;
-    } else {
-        *autoloadsGLX = TRUE;
+        *supportsOutputClassSection = TRUE;
     }
 
     return TRUE;
@@ -2162,23 +2079,23 @@ static int get_xserver_information(const char *versionString,
 
 
 /*
- * check_for_modular_xorg() - run the X binary with the '-version'
- * command line option and extract the version in an attempt to
- * determine if it's part of a modular Xorg release. If the version
- * can't be determined, we assume it's not.
+ * query_xorg_version() - run the X binary with the '-version'
+ * command line option and extract the version.
  *
- * This should eventually get collapsed with xconfigGetXServerInUse()
- * in nvidia-xconfig.
+ * Using the version, try to infer if it's part of a modular Xorg release. If
+ * the version can't be determined, we assume it's not.
+ *
+ * This function assigns the following fields:
+ *      op->modular_xorg
  */
 
 #define OLD_VERSION_FORMAT "(protocol Version %d, revision %d, vendor release %d)"
 #define NEW_VERSION_FORMAT "X Protocol Version %d, Revision %d, Release %d."
 
-int check_for_modular_xorg(Options *op)
+void query_xorg_version(Options *op)
 {
     char *cmd = NULL, *data = NULL;
-    int modular_xorg = FALSE;
-    int dummy, ret;
+    int ret = FALSE;
 
     if (!op->utils[XSERVER])
         goto done;
@@ -2195,30 +2112,27 @@ int check_for_modular_xorg(Options *op)
      * modular
      */
 
-    ret = get_xserver_information(data,
-                                  &dummy,        /* isXorg */
-                                  &modular_xorg, /* isModular */
-                                  &dummy,        /* autoloadsGLX */
-                                  &dummy);       /* supportsExtensionSection */
-
-    /*
-     * if get_xserver_information() failed, assume the X server is not
-     * modular
-     */
-
-    if (!ret) {
-        modular_xorg = FALSE;
-    }
+    ret = get_xserver_information(data, &op->modular_xorg,
+                                  &op->xorg_supports_output_class);
 
     /* fall through */
 
 done:
+
+    /*
+     * if no X server was found, or querying the version on the command line
+     * failed, or get_xserver_information() failed, assume the X server is
+     * modular, but does not support OutputClass sections
+     */
+
+    if (!ret) {
+        op->modular_xorg = TRUE;
+        op->xorg_supports_output_class = FALSE;
+    }
+
     nvfree(data);
     nvfree(cmd);
-
-    return modular_xorg;
-
-} /* check_for_modular_xorg() */
+}
 
 
 /*
@@ -2252,8 +2166,12 @@ int check_for_running_x(Options *op)
     for (i = 0; i < 8; i++) {
         snprintf(path, 14, "/tmp/.X%1d-lock", i);
         if (read_text_file(path, &buf) == TRUE) {
-            sscanf(buf, "%d", &pid);
+            int num = sscanf(buf, "%d", &pid);
             nvfree(buf);
+            if (num != 1) {
+                ui_warn(op, "Failed to read a pid from X lock file '%s'", path);
+                return TRUE;
+            }
             snprintf(procpath, 17, "/proc/%d", pid);
             if (access(procpath, F_OK) == 0) {
                 ui_log(op, "The file '%s' exists and appears to contain the "
@@ -2491,40 +2409,58 @@ int check_selinux(Options *op)
 /*
  * run_nvidia_xconfig() - run the `nvidia-xconfig` utility.  Without
  * any options, this will just make sure the X config file uses the
- * NVIDIA driver by default. The restore parameter controls whether
- * the --restore-original-backup option is added, which attempts to
- * restore the original backed up X config file.
+ * NVIDIA driver by default.
+ *
+ * Parameters:
+ *
+ *     restore:  controls whether the --restore-original-backup option is added,
+ *               which attempts to restore the original backed up X config file.
+ *     question: if this is non-NULL, the user will be asked 'question' as a
+ *               yes or no question, to determine whether to run nvidia-xconfig.
+ *     answer:   the default answer to 'question'.
+ *
+ * Returns TRUE if nvidia-xconfig ran successfully; returns FALSE if
+ * nvidia-xconfig ran unsuccessfully, or did not run at all.
  */
 
-int run_nvidia_xconfig(Options *op, int restore)
+int run_nvidia_xconfig(Options *op, int restore, const char *question,
+                       int default_answer)
 {
-    int ret, bRet = TRUE;
-    char *data = NULL, *cmd = NULL, *args, *nvidia_xconfig;
+    int ret = FALSE;
+    char *nvidia_xconfig;
 
     nvidia_xconfig = find_system_util("nvidia-xconfig");
 
     if (nvidia_xconfig == NULL) {
+        /* nvidia-xconfig not found: don't run it or ask any questions */
         goto done;
     }
 
-    args = restore ? " --restore-original-backup" : "";
-    
-    cmd = nvstrcat(nvidia_xconfig, args, NULL);
-    
-    ret = run_command(op, cmd, &data, FALSE, 0, TRUE);
-    
-    if (ret != 0) {
-        ui_error(op, "Failed to run `%s`:\n%s", cmd, data);
-        bRet = FALSE;
+    ret = question ? ui_yes_no(op, default_answer, "%s", question) : TRUE;
+
+    if (ret) {
+        int cmd_ret;
+        char *data, *cmd, *args;
+
+        args = restore ? " --restore-original-backup" : "";
+
+        cmd = nvstrcat(nvidia_xconfig, args, NULL);
+
+        cmd_ret = run_command(op, cmd, &data, FALSE, 0, TRUE);
+
+        if (cmd_ret != 0) {
+            ui_error(op, "Failed to run `%s`:\n%s", cmd, data);
+            ret = FALSE;
+        }
+
+        nvfree(cmd);
+        nvfree(data);
     }
 
 done:
-
-    nvfree(cmd);
-    nvfree(data);
     nvfree(nvidia_xconfig);
 
-    return bRet;
+    return ret;
     
 } /* run_nvidia_xconfig() */
 
@@ -2987,14 +2923,13 @@ int check_for_nouveau(Options *op)
 static int run_dkms(Options *op, const char* verb, const char *version,
                     const char *kernel, char** out)
 {
-    char *cmd, *cmdline, *veropt, *kernopt = NULL, *kernopt_all = "";
+    char *cmdline, *veropt, *kernopt = NULL, *kernopt_all = "";
     const char *modopt = " -m nvidia"; /* XXX real name is in the Package */
     char *output;
     int ret;
 
     /* Fail if DKMS not found */
-    cmd = find_system_util("dkms");
-    if (!cmd) {
+    if (!op->utils[DKMS]) {
         if (strcmp(verb, DKMS_STATUS) != 0) {
             ui_error(op, "Failed to find dkms on the system!");
         }
@@ -3012,9 +2947,8 @@ static int run_dkms(Options *op, const char* verb, const char *version,
         kernopt = kernel ? nvstrcat(" -k ", kernel, NULL) : NULL;
     }
 
-    cmdline = nvstrcat(cmd, verb, modopt, veropt, kernopt_all, kernopt, NULL);
-
-    nvfree(cmd);
+    cmdline = nvstrcat(op->utils[DKMS], verb, modopt, veropt,
+                       kernopt_all, kernopt, NULL);
 
     /* Run DKMS */
     ret = run_command(op, cmdline, &output, FALSE, 0, TRUE);
@@ -3188,5 +3122,50 @@ ElfFileType get_elf_architecture(const char *filename)
         case ELFCLASS64:   return ELF_ARCHITECTURE_64;
         case ELFCLASSNONE: return ELF_ARCHITECTURE_UNKNOWN;
         default:           return ELF_INVALID_FILE;
+    }
+}
+
+
+
+/*
+ * set_concurrency_level() - automatically determine the concurrency level,
+ * if the user has not specified it.
+ */
+
+void set_concurrency_level(Options *op)
+{
+    int detected_cpus;
+
+    if (op->concurrency_level) {
+        ui_log(op, "Concurrency level set to %d on the command line.",
+               op->concurrency_level);
+    } else {
+#if defined _SC_NPROCESSORS_ONLN
+        detected_cpus = sysconf(_SC_NPROCESSORS_ONLN);
+
+        if (detected_cpus >= 1) {
+            ui_log(op, "Detected %d CPUs online; setting concurrency level "
+                   "to %d.", detected_cpus, detected_cpus);
+        } else
+#else
+#warning _SC_NPROCESSORS_ONLN not defined; nvidia-installer will not be able \
+to detect the number of processors.
+#endif
+        {
+            ui_log(op, "Unable to detect the number of processors: setting "
+                   "concurrency level to 1.");
+            detected_cpus = 1;
+        }
+        op->concurrency_level = detected_cpus;
+    }
+
+    if (op->expert) {
+        int val = op->concurrency_level;
+        do {
+           char *strval = nvasprintf("%d", val);
+           val = atoi(ui_get_input(op, strval, "Concurrency level"));
+           nvfree(strval);
+        } while (val < 1);
+        op->concurrency_level = val;
     }
 }

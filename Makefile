@@ -103,7 +103,6 @@ OPTIONS_1_INC      = $(OUTPUTDIR)/options.1.inc
 ifeq ($(TARGET_OS)-$(TARGET_ARCH), Linux-x86_64)
   TLS_MODEL = initial-exec
   PIC = -fPIC
-  CFLAGS += -DNV_X86_64
   # Only Linux-x86_64 needs the tls_test_32 files
   COMPAT_32_SRC = $(TLS_TEST_32_C) $(TLS_TEST_DSO_32_C) \
     $(RTLD_TEST_32_C)
@@ -308,9 +307,9 @@ tls_test: tls_test.c
 # rule to rebuild rtld_test; a precompiled rtld_test is distributed with
 # nvidia-installer to simplify x86-64 builds.
 
-rebuild_rtld_test: rtld_test.c
-	gcc -Wall -O2 -fomit-frame-pointer -o $(RTLD_TEST) -lGL $<
-	strip $(RTLD_TEST)
+rebuild_rtld_test: rtld_test.c $(CONFIG_H)
+	$(call quiet_cmd,LINK) $(CFLAGS) $(LDFLAGS) $(BIN_LDFLAGS) -o $(RTLD_TEST) -lGL $<
+	$(call quiet_cmd,STRIP_CMD) $(RTLD_TEST)
 
 # dummy rule to override implicit rule that builds dls_test from
 # rtld_test.c

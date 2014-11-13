@@ -141,7 +141,7 @@ int init_backup(Options *op, Package *p)
     
     /* remove the directory, if it already exists */
 
-    if (directory_exists(op, BACKUP_DIRECTORY)) {
+    if (directory_exists(BACKUP_DIRECTORY)) {
         if (!remove_directory(op, BACKUP_DIRECTORY)) {
             return FALSE;
         }
@@ -208,7 +208,7 @@ int do_backup(Options *op, const char *filename)
 {
     int len, ret, ret_val;
     struct stat stat_buf;
-    char *tmp;
+    char *tmp = NULL;
     FILE *log;
     uint32 crc;
 
@@ -251,7 +251,6 @@ int do_backup(Options *op, const char *filename)
         fprintf(log, "%u %04o %d %d\n", crc, stat_buf.st_mode,
                 stat_buf.st_uid, stat_buf.st_gid);
         
-        free(tmp);
         backup_file_number++;
     } else if (S_ISLNK(stat_buf.st_mode)) {
         tmp = get_symlink_target(op, filename);
@@ -267,7 +266,6 @@ int do_backup(Options *op, const char *filename)
         fprintf(log, "%s\n", tmp);
         fprintf(log, "%04o %d %d\n", stat_buf.st_mode,
                 stat_buf.st_uid, stat_buf.st_gid);
-        free(tmp);
     } else if (S_ISDIR(stat_buf.st_mode)) {
 
         /* XXX IMPLEMENT ME: recursive moving of a directory */
@@ -283,6 +281,8 @@ int do_backup(Options *op, const char *filename)
     ret_val = TRUE;
 
  done:
+
+    nvfree(tmp);
 
     /* close the log file */
 
@@ -506,7 +506,7 @@ int log_mkdir(Options *op, const char *dirs)
      * is within BACKUP_DIRECTORY, so the below fopen(3) call depends on
      * the existence of BACKUP_DIRECTORY
      */
-    if (!directory_exists(op, BACKUP_DIRECTORY) &&
+    if (!directory_exists(BACKUP_DIRECTORY) &&
         !mkdir_recursive(op, BACKUP_DIRECTORY, BACKUP_DIRECTORY_PERMS, FALSE)) {
         return FALSE;
     }
@@ -832,27 +832,29 @@ static int do_uninstall(Options *op, const char *version)
         /* XXX what to do if this fails?... nothing */
     }
 
-    /*
-     * attempt to unload the kernel module(s), but don't abort if this fails:
-     * the kernel may not have been configured with support for module 
-     * unloading or the user might have unloaded it themselves or the module 
-     * might not have existed at all.
-     */
+    if (!op->skip_module_unload) {
+        /*
+         * attempt to unload the kernel module(s), but don't abort if this
+         * fails: the kernel may not have been configured with support for
+         * module unloading or the user might have unloaded it themselves or the
+         * module might not have existed at all.
+         */
 
-    unload_nvidia_module(op, "-uvm");
+        unload_nvidia_module(op, "-uvm");
 
-    unload_nvidia_module(op, "");
+        unload_nvidia_module(op, "");
 
-    for (i = 0; i < NV_MAX_MODULE_INSTANCES; i++) {
-        char num[5];
-        memset(num, 0, sizeof(num));
-        snprintf(num, sizeof(num), "%d", i);
-        num[sizeof(num) - 1] = '\0';
+        for (i = 0; i < NV_MAX_MODULE_INSTANCES; i++) {
+            char num[5];
+            memset(num, 0, sizeof(num));
+            snprintf(num, sizeof(num), "%d", i);
+            num[sizeof(num) - 1] = '\0';
 
-        unload_nvidia_module(op, num);   
+            unload_nvidia_module(op, num);
+        }
+
+        unload_nvidia_module(op, "-frontend");
     }
-
-    unload_nvidia_module(op, "-frontend");
 
     run_distro_hook(op, "post-uninstall");
 
@@ -902,13 +904,13 @@ static BackupInfo *read_backup_log_file(Options *op)
     if (fstat(fd, &stat_buf) == -1) {
         ui_error(op, "Failure getting file properties for %s (%s).",
                  BACKUP_LOG, strerror(errno));
-        return NULL;
+        goto pre_map_fail;
     }
 
     if ((stat_buf.st_mode & PERM_MASK) != BACKUP_LOG_PERMS) {
         ui_error(op, "The file permissions of %s have been changed since "
                  "the file was written!", BACKUP_LOG);
-        return NULL;
+        goto pre_map_fail;
     }
 
     /* map the file */
@@ -1033,11 +1035,14 @@ static BackupInfo *read_backup_log_file(Options *op)
     ui_status_end(op, "error.");
 
     munmap(buf, stat_buf.st_size);
-    close(fd);
 
     ui_error(op, "Error while parsing line %d of '%s'.", line_num, BACKUP_LOG);
 
-    if (b) free(b);
+    nvfree(b);
+
+ pre_map_fail:
+
+    close(fd);
     return NULL;
 
 } /* read_backup_log_file() */
@@ -1376,18 +1381,15 @@ int uninstall_existing_driver(Options *op, const int interactive)
     }
 
     if (interactive && op->uninstall) {
-        ret = ui_yes_no(op, FALSE,
-                       "If you plan to no longer use the NVIDIA driver, you "
-                       "should make sure that no X screens are configured to "
-                       "use the NVIDIA X driver in your X configuration file. "
-                       "If you used nvidia-xconfig to configure X, it may have "
-                       "created a backup of your original configuration. Would "
-                       "you like to run `nvidia-xconfig --restore-original-"
-                       "backup` to attempt restoration of the original X "
-                       "configuration file?");
-        if (ret) {
-            run_nvidia_xconfig(op, TRUE);
-        }
+        const char *msg = "If you plan to no longer use the NVIDIA driver, you "
+                        "should make sure that no X screens are configured to "
+                        "use the NVIDIA X driver in your X configuration file. "
+                        "If you used nvidia-xconfig to configure X, it may have "
+                        "created a backup of your original configuration. Would "
+                        "you like to run `nvidia-xconfig --restore-original-"
+                        "backup` to attempt restoration of the original X "
+                        "configuration file?";
+        run_nvidia_xconfig(op, TRUE, msg, FALSE);
     }
 
     ret = do_uninstall(op, version);
@@ -1426,13 +1428,40 @@ int run_existing_uninstaller(Options *op)
          * uninstall log location: older installers may not do so implicitly. */
         char *uninstall_cmd = nvstrcat(uninstaller, " -s --log-file-name="
                                        DEFAULT_UNINSTALL_LOG_FILE_NAME, NULL);
-        char *data;
+        char *data = NULL;
         int ret;
 
         ui_log(op, "Uninstalling the previous installation with %s.",
                uninstaller);
 
-        ret = run_command(op, uninstall_cmd, &data, FALSE, 0, TRUE);
+        if (!op->no_kernel_module && !op->kernel_name) {
+            /*
+             * Attempt to run the uninstaller with the --skip-module-unload
+             * option first.  If that fails, fall back to running it without
+             * that option.
+             *
+             * We don't want the uninstaller to unload the module because this
+             * instance of the installer already unloaded the old module and
+             * loaded the new one.
+             */
+            char *uninstall_skip_unload_cmd =
+                nvstrcat(uninstall_cmd, " --skip-module-unload", NULL);
+            ret = run_command(op, uninstall_skip_unload_cmd, NULL, FALSE, 0, TRUE);
+            nvfree(uninstall_skip_unload_cmd);
+        } else {
+            /*
+             * If installing the kernel module was skipped or we're
+             * building/installing for a different kernel, then the new kernel
+             * module wasn't automatically loaded and we should unload whichever
+             * one is loaded now.
+             */
+            ret = 1;
+        }
+
+        if (ret) {
+            /* Try again without --skip-module-unload */
+            ret = run_command(op, uninstall_cmd, &data, FALSE, 0, TRUE);
+        }
 
         nvfree(uninstall_cmd);
 

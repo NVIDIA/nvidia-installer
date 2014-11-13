@@ -220,7 +220,7 @@ int determine_kernel_source_path(Options *op, Package *p)
         result = ui_get_input(op, op->kernel_source_path,
                               "Kernel source path");
         if (result && result[0]) {
-            if (!directory_exists(op, result)) {
+            if (!directory_exists(result)) {
                 ui_warn(op, "Kernel source path '%s' does not exist.",
                         result);
                 free(result);
@@ -272,7 +272,7 @@ int determine_kernel_source_path(Options *op, Package *p)
 
     /* check that the kernel source path exists */
 
-    if (!directory_exists(op, op->kernel_source_path)) {
+    if (!directory_exists(op->kernel_source_path)) {
         ui_error (op, "The kernel source path '%s' does not exist.  %s",
                   op->kernel_source_path, install_your_kernel_source);
         op->kernel_source_path = NULL;
@@ -364,7 +364,7 @@ int determine_kernel_output_path(Options *op)
                "'--kernel-output-path' commandline option.",
                op->kernel_output_path);
 
-        if (!directory_exists(op, op->kernel_output_path)) {
+        if (!directory_exists(op->kernel_output_path)) {
             ui_error(op, "The kernel output path '%s' does not exist.",
                      op->kernel_output_path);
             op->kernel_output_path = NULL;
@@ -382,7 +382,7 @@ int determine_kernel_output_path(Options *op)
                "SYSOUT environment variable.", str);
         op->kernel_output_path = str;
 
-        if (!directory_exists(op, op->kernel_output_path)) {
+        if (!directory_exists(op->kernel_output_path)) {
             ui_error(op, "The kernel output path '%s' does not exist.",
                      op->kernel_output_path);
             op->kernel_output_path = NULL;
@@ -404,7 +404,7 @@ int determine_kernel_output_path(Options *op)
             nvfree(str);
             str = nvstrcat("/lib/modules/", tmp, "/build", NULL);
 
-            if (directory_exists(op, str)) {
+            if (directory_exists(str)) {
                 op->kernel_output_path = str;
                 return TRUE;
             }
@@ -450,13 +450,9 @@ static int attach_signature(Options *op, Package *p,
         if (module_file && fileInfo->signature_size) {
             command_ret = fwrite(fileInfo->signature, 1,
                                  fileInfo->signature_size, module_file);
-            if (command_ret != fileInfo->signature_size) {
-                goto attach_done;
+            if (command_ret == fileInfo->signature_size) {
+                op->kernel_module_signed = ret = !ferror(module_file);
             }
-
-            op->kernel_module_signed = ret = !ferror(module_file);
-attach_done:
-            fclose(module_file);
         } else {
             ret = (ui_multiple_choice(op, choices, 2, 1,
                                       "A detached signature was included with "
@@ -466,6 +462,10 @@ attach_done:
                                       "signature will not be added; would you "
                                       "still like to install the unsigned "
                                       "kernel module?") == 0);
+        }
+
+        if (module_file) {
+            fclose(module_file);
         }
     } else {
         ret = (ui_multiple_choice(op, choices, 2, 1,
@@ -578,12 +578,14 @@ static int build_kernel_module_helper(Options *op, const char *dir,
                                       const char *module, int num_instances)
 {
     int ret;
-    char *instances = NULL, *cmd, *tmp;
+    char *instances = NULL, *cmd, *tmp, *concurrency;
 
     tmp = op->multiple_kernel_modules && num_instances ?
               nvasprintf("%d", num_instances) : NULL;
     instances = nvstrcat(" NV_BUILD_MODULE_INSTANCES=", tmp, NULL);
     nvfree(tmp);
+
+    concurrency = nvasprintf(" -j%d ", op->concurrency_level);
 
     tmp = nvasprintf("Building %s kernel module:", module);
     ui_status_begin(op, tmp, "Building");
@@ -591,9 +593,10 @@ static int build_kernel_module_helper(Options *op, const char *dir,
 
     cmd = nvstrcat("cd ", dir, "; ", op->utils[MAKE], " module",
                    " SYSSRC=", op->kernel_source_path,
-                   " SYSOUT=", op->kernel_output_path,
+                   " SYSOUT=", op->kernel_output_path, concurrency,
                    instances, NULL);
     nvfree(instances);
+    nvfree(concurrency);
 
     ret = run_command(op, cmd, NULL, TRUE, 25, TRUE);
 
@@ -736,7 +739,7 @@ int sign_kernel_module(Options *op, const char *build_directory,
                        const char *module_suffix, int status) {
     char *cmd, *mod_sign_cmd, *mod_sign_hash;
     int ret, success;
-    char *build_module_instances_parameter;
+    char *build_module_instances_parameter, *concurrency;
 
     /* if module_signing_script isn't set, then set mod_sign_cmd below to end
      * the nvstrcat() that builds cmd early. */
@@ -762,15 +765,17 @@ int sign_kernel_module(Options *op, const char *build_directory,
         build_module_instances_parameter = nvstrdup("");
     }
 
+    concurrency = nvasprintf(" -j%d ", op->concurrency_level);
     cmd = nvstrcat("cd ", build_directory, "; ", op->utils[MAKE], " module-sign"
                    " SYSSRC=", op->kernel_source_path,
                    " SYSOUT=", op->kernel_output_path,
                    " MODSECKEY=", op->module_signing_secret_key,
                    " MODPUBKEY=", op->module_signing_public_key,
-                   " NV_MODULE_SUFFIX=", module_suffix,
+                   " BUILD_MODULES_LIST=\"nvidia", module_suffix, "\" ",
                    build_module_instances_parameter,
                    mod_sign_cmd ? mod_sign_cmd : "",
-                   mod_sign_hash ? mod_sign_hash : "", NULL);
+                   mod_sign_hash ? mod_sign_hash : "", concurrency, NULL);
+    nvfree(concurrency);
 
     ret = run_command(op, cmd, NULL, TRUE, 20 /* XXX */, TRUE);
     success = ret == 0;
@@ -878,11 +883,11 @@ done:
 
 static int build_kernel_interface_file(Options *op, const char *tmpdir,
                                        PrecompiledFileInfo *fileInfo,
-                                       const char *kernel_interface_filename,
-                                       const char *module_suffix)
+                                       const char *kernel_interface_filename)
 {
     char *cmd;
     char *kernel_interface, *build_module_instances_parameter = NULL;
+    char *concurrency;
     int ret;
 
     if (op->multiple_kernel_modules) {
@@ -890,14 +895,16 @@ static int build_kernel_interface_file(Options *op, const char *tmpdir,
             nvasprintf(" NV_BUILD_MODULE_INSTANCES=%d", NV_MAX_MODULE_INSTANCES);
     }
 
+    concurrency = nvasprintf(" -j%d ", op->concurrency_level);
+
     cmd = nvstrcat("cd ", tmpdir, "; ", op->utils[MAKE], " ",
                    kernel_interface_filename,
                    " SYSSRC=", op->kernel_source_path,
-                   " SYSOUT=", op->kernel_output_path,
-                   " NV_MODULE_SUFFIX=", module_suffix,
+                   " SYSOUT=", op->kernel_output_path, concurrency,
                    build_module_instances_parameter, NULL);
 
     nvfree(build_module_instances_parameter);
+    nvfree(concurrency);
 
     ret = run_command(op, cmd, NULL, TRUE, 25 /* XXX */, TRUE);
 
@@ -978,7 +985,7 @@ static int build_and_pack_interface(Options *op, Package *p, const char *tmpdir,
                     interface);
 
     dir = nvstrcat(tmpdir, "/", subdir, NULL);
-    ret = build_kernel_interface_file(op, dir, fileInfo, interface, suffix);
+    ret = build_kernel_interface_file(op, dir, fileInfo, interface);
 
     if (!ret) {
         goto done;
@@ -1020,7 +1027,6 @@ int build_kernel_interface(Options *op, Package *p,
                            PrecompiledFileInfo ** fileInfos)
 {
     char *tmpdir = NULL;
-    char *dstfile = NULL;
     int files_packaged = 0, i;
     int num_files = 1, ret = FALSE;
     char *uvmdir = NULL;
@@ -1119,7 +1125,7 @@ interface_done:
         ret = build_and_pack_interface(op, p, tmpdir, "", *fileInfos + num_files,
                                        p->kernel_frontend_interface_filename,
                                        p->kernel_frontend_module_filename,
-                                       "frontend", "");
+                                       "-frontend", "");
          if (!ret) {
             goto failed;
          }
@@ -1131,7 +1137,7 @@ interface_done:
         ret = build_and_pack_interface(op, p, tmpdir, UVM_SUBDIR,
                                        *fileInfos + files_packaged,
                                        p->uvm_interface_filename,
-                                       p->uvm_kernel_module_filename, "uvm", "");
+                                       p->uvm_kernel_module_filename, "-uvm", "");
 
         if (!ret) {
             goto failed;
@@ -1152,8 +1158,6 @@ failed:
         remove_directory(op, tmpdir);
         nvfree(tmpdir);
     }
-
-    if (dstfile) nvfree(dstfile);
 
     return files_packaged;
 
@@ -1449,8 +1453,8 @@ static int ignore_load_error(Options *op, Package *p,
 
 
 /*
- * test_kernel_module() - attempt to insmod the kernel module and then
- * rmmod it.  Return TRUE if the insmod succeeded, or FALSE otherwise.
+ * test_kernel_module() - attempt to insmod the kernel modules and then rmmod
+ * nvidia-uvm.  Return TRUE if the insmod succeeded, or FALSE otherwise.
  */
 
 int test_kernel_module(Options *op, Package *p)
@@ -1559,24 +1563,18 @@ int test_kernel_module(Options *op, Package *p)
     check_for_warning_messages(op);
 
     /*
-     * attempt to unload the kernel module, but don't abort if
-     * this fails: the kernel may not have been configured with
-     * support for module unloading (Linux 2.6).
+     * attempt to unload the UVM kernel module, but don't abort if this fails:
+     * the kernel may not have been configured with support for module unloading
+     * (Linux 2.6).
+     *
+     * The nvidia module is left loaded in case an X server with
+     * OutputClass-based driver matching is being used.  UVM is unloaded to make
+     * it easier to roll back to older versions of the driver whose installers
+     * didn't know how to unload the nvidia-uvm module.
      */
 
     if (op->install_uvm) {
         cmd = nvstrcat(op->utils[RMMOD], " ", p->uvm_kernel_module_name, NULL);
-        run_command(op, cmd, NULL, FALSE, 0, TRUE);
-        nvfree(cmd);
-    }
-
-    cmd = nvstrcat(op->utils[RMMOD], " ", p->kernel_module_name, NULL);
-    run_command(op, cmd, NULL, FALSE, 0, TRUE);
-    nvfree(cmd);
-
-    if (op->multiple_kernel_modules) {
-        cmd = nvstrcat(op->utils[RMMOD], " ",
-                       p->kernel_frontend_module_name, NULL);
         run_command(op, cmd, NULL, FALSE, 0, TRUE);
         nvfree(cmd);
     }
@@ -1811,12 +1809,12 @@ PrecompiledInfo *find_precompiled_kernel_interface(Options *op, Package *p)
 
     proc_version_string = read_proc_version(op, op->proc_mount_point);
     
-    if (!proc_version_string) goto failed;
+    if (!proc_version_string) goto done;
     
     /* make sure the target directory exists */
     
     if (!mkdir_recursive(op, p->kernel_module_build_directory, 0755, FALSE))
-        goto failed;
+        goto done;
 
     memset(search_filelist, 0, sizeof(search_filelist));
 
@@ -1883,7 +1881,7 @@ PrecompiledInfo *find_precompiled_kernel_interface(Options *op, Package *p)
                        "to compile a kernel interface for your kernel.",
                        op->precompiled_kernel_interfaces_url);
             free_search_filelist(search_filelist);
-            return NULL;
+            goto done;
         }
     }
 
@@ -1907,21 +1905,18 @@ PrecompiledInfo *find_precompiled_kernel_interface(Options *op, Package *p)
         }
     }
 
-    if (info) {
-        return info;
-    }
+ done:
 
- failed:
+    nvfree(proc_version_string);
 
-    if (op->expert) {
+    if (!info && op->expert) {
         ui_message(op, "No precompiled kernel interface was found to match "
                    "your kernel; this means that the installer will need to "
                    "compile a new kernel interface.");
     }
 
-    return NULL;
-    
-} /* find_precompiled_kernel_interface() */
+    return info;
+}
 
 
 
@@ -2022,7 +2017,7 @@ static char *default_kernel_module_installation_path(Options *op)
 
     str = nvstrcat("/lib/modules/", tmp, "/kernel", NULL);
     
-    if (directory_exists(op, str)) {
+    if (directory_exists(str)) {
         free(str);
         str = nvstrcat("/lib/modules/", tmp, "/kernel/drivers/video", NULL);
         return str;
@@ -2114,7 +2109,7 @@ static char *default_kernel_source_path(Options *op)
     if (tmp) {
         str = nvstrcat("/lib/modules/", tmp, "/source", NULL);
 
-        if (directory_exists(op, str)) {
+        if (directory_exists(str)) {
             return str;
         }
 
@@ -2122,7 +2117,7 @@ static char *default_kernel_source_path(Options *op)
 
         str = nvstrcat("/lib/modules/", tmp, "/build", NULL);
     
-        if (directory_exists(op, str)) {
+        if (directory_exists(str)) {
             return str;
         }
 
@@ -2134,7 +2129,7 @@ static char *default_kernel_source_path(Options *op)
          */
 
         str = nvstrcat("/usr/src/linux-", tmp, NULL);
-        if (directory_exists(op, str)) {
+        if (directory_exists(str)) {
             return str;
         }
 
@@ -2143,7 +2138,7 @@ static char *default_kernel_source_path(Options *op)
 
     /* finally, try /usr/src/linux */
 
-    if (directory_exists(op, "/usr/src/linux")) {
+    if (directory_exists("/usr/src/linux")) {
         return "/usr/src/linux";
     }
     
@@ -2294,12 +2289,12 @@ download_updated_kernel_interface(Options *op, Package *p,
 {
     int fd = -1;
     int dst_fd = -1;
-    int length, i;
+    int length = 0, i;
     char *url = NULL;
     char *tmpfile = NULL;
     char *dstfile = NULL;
     char *buf = NULL;
-    char *str = (void *) -1;
+    char *str = MAP_FAILED;
     char *ptr, *s;
     struct stat stat_buf;
     PrecompiledInfo *info = NULL;
@@ -2334,7 +2329,7 @@ download_updated_kernel_interface(Options *op, Package *p,
     /* map the file into memory for easier reading */
     
     str = mmap(0, length, PROT_READ, MAP_FILE | MAP_SHARED, fd, 0);
-    if (str == (void *) -1) goto done;
+    if (str == MAP_FAILED) goto done;
     
     /*
      * loop over each line of the updates file: each line should be of
@@ -2431,19 +2426,18 @@ download_updated_kernel_interface(Options *op, Package *p,
 
  done:
 
-    if (dstfile) nvfree(dstfile);
-    if (buf) nvfree(buf);
-    if (str != (void *) -1) munmap(str, stat_buf.st_size);
+    nvfree(dstfile);
+    nvfree(buf);
+    if (str != MAP_FAILED) munmap(str, length);
     if (dst_fd > 0) close(dst_fd);
     if (fd > 0) close(fd);
 
     unlink(tmpfile);
-    if (tmpfile) nvfree(tmpfile);
-    if (url) nvfree(url);
+    nvfree(tmpfile);
+    nvfree(url);
 
     return info;
-
-} /* get_updated_kernel_interfaces() */
+}
 
 
 

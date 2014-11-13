@@ -94,31 +94,41 @@ uint32 compute_crc_from_buffer(const uint8 *buf, int len)
 uint32 compute_crc(Options *op, const char *filename)
 {
     uint32 cword = ~0;
-    uint8 *buf;
+    uint8 *buf = MAP_FAILED;
+    int success = FALSE;
     int fd;
     struct stat stat_buf;
-    size_t len;
+    size_t len = 0;
 
-    if ((fd = open(filename, O_RDONLY)) == -1) goto fail;
-    if (fstat(fd, &stat_buf) == -1) goto fail;
+    if ((fd = open(filename, O_RDONLY)) == -1) goto done;
+    if (fstat(fd, &stat_buf) == -1) goto done;
 
-    if (stat_buf.st_size == 0) return 0;
+    if (stat_buf.st_size == 0) {
+        cword = 0;
+        success = TRUE;
+        goto done;
+    }
     len = stat_buf.st_size;
 
     buf = mmap(0, len, PROT_READ, MAP_FILE | MAP_SHARED, fd, 0);
-    if (buf == (void *) -1) goto fail;
+    if (buf == MAP_FAILED) goto done;
 
     cword = compute_crc_from_buffer(buf, len);
 
-    if (munmap(buf, len) == -1) goto fail;
-    if (close(fd) == -1) goto fail;
+    success = TRUE;
 
-    return cword;
+ done:
+    if (!success) {
+        ui_warn(op, "Unable to compute CRC for file '%s' (%s).",
+                filename, strerror(errno));
+    }
 
- fail:
-    
-    ui_warn(op, "Unable to compute CRC for file '%s' (%s).",
-            filename, strerror(errno));
+    if (buf != MAP_FAILED) {
+        munmap(buf, len);
+    }
+    if (fd >= 0) {
+        close(fd);
+    }
     
     return cword;
         

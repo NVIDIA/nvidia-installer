@@ -57,8 +57,7 @@ int remove_directory(Options *op, const char *victim)
     struct stat stat_buf;
     DIR *dir;
     struct dirent *ent;
-    char *filename;
-    int len;
+    int success = TRUE;
     
     if (lstat(victim, &stat_buf) == -1) {
         ui_error(op, "failure to open '%s'", victim);
@@ -75,7 +74,9 @@ int remove_directory(Options *op, const char *victim)
         return FALSE;
     }
     
-    while ((ent = readdir(dir)) != NULL) {
+    while (success && (ent = readdir(dir)) != NULL) {
+        char *filename;
+        int len;
 
         if (((strcmp(ent->d_name, ".")) == 0) ||
             ((strcmp(ent->d_name, "..")) == 0)) continue;
@@ -86,20 +87,23 @@ int remove_directory(Options *op, const char *victim)
         
         if (lstat(filename, &stat_buf) == -1) {
             ui_error(op, "failure to open '%s'", filename);
-            free(filename);
-            return FALSE;
-        }
-        
-        if (S_ISDIR(stat_buf.st_mode)) {
-            remove_directory(op, filename);
+            success = FALSE;
         } else {
-            if (unlink(filename) != 0) {
-                ui_error(op, "Failure removing file %s (%s)",
-                         filename, strerror(errno));
+            if (S_ISDIR(stat_buf.st_mode)) {
+                success = remove_directory(op, filename);
+            } else {
+                if (unlink(filename) != 0) {
+                    ui_error(op, "Failure removing file %s (%s)",
+                             filename, strerror(errno));
+                    success = FALSE;
+                }
             }
         }
+
         free(filename);
     }
+
+    closedir(dir);
 
     if (rmdir(victim) != 0) {
         ui_error(op, "Failure removing directory %s (%s)",
@@ -107,9 +111,8 @@ int remove_directory(Options *op, const char *victim)
         return FALSE;
     }
 
-    return TRUE;
-    
-} /* remove_directory() */
+    return success;
+}
 
 
 
@@ -125,7 +128,7 @@ int touch_directory(Options *op, const char *victim)
     DIR *dir;
     struct dirent *ent;
     struct utimbuf time_buf;
-    char *filename;
+    int success = FALSE;
 
     if (lstat(victim, &stat_buf) == -1) {
         ui_error(op, "failure to open '%s'", victim);
@@ -150,6 +153,8 @@ int touch_directory(Options *op, const char *victim)
     /* loop over each entry in the directory */
 
     while ((ent = readdir(dir)) != NULL) {
+        char *filename;
+        int entry_failed = FALSE;
         
         if (((strcmp(ent->d_name, ".")) == 0) ||
             ((strcmp(ent->d_name, "..")) == 0)) continue;
@@ -160,16 +165,16 @@ int touch_directory(Options *op, const char *victim)
         
         if (lstat(filename, &stat_buf) == -1) {
             ui_error(op, "failure to open '%s'", filename);
-            nvfree(filename);
-            return FALSE;
+            entry_failed = TRUE;
+            goto entry_done;
         }
         
         /* if it is a directory, call this recursively */
 
         if (S_ISDIR(stat_buf.st_mode)) {
             if (!touch_directory(op, filename)) {
-                nvfree(filename);
-                return FALSE;
+                entry_failed = TRUE;
+                goto entry_done;
             }
         }
 
@@ -177,21 +182,28 @@ int touch_directory(Options *op, const char *victim)
         
         if (utime(filename, &time_buf) != 0) {
             ui_error(op, "Error setting modification time for %s", filename);
-            nvfree(filename);
-            return FALSE;
+            entry_failed = TRUE;
+            goto entry_done;
         }
 
+ entry_done:
         nvfree(filename);
+        if (entry_failed) {
+            goto done;
+        }
     }
+
+    success = TRUE;
+
+ done:
 
     if (closedir(dir) != 0) {
         ui_error(op, "Error while closing directory %s.", victim);
-        return FALSE;
+        success = FALSE;
     }
-    
-    return TRUE;
 
-} /* touch_directory() */
+    return success;
+}
 
 
 /*
@@ -205,48 +217,51 @@ int touch_directory(Options *op, const char *victim)
 int copy_file(Options *op, const char *srcfile,
               const char *dstfile, mode_t mode)
 {
-    int src_fd, dst_fd;
+    int src_fd = -1, dst_fd = -1;
+    int success = FALSE;
     struct stat stat_buf;
     char *src, *dst;
     
     if ((src_fd = open(srcfile, O_RDONLY)) == -1) {
         ui_error (op, "Unable to open '%s' for copying (%s)",
                   srcfile, strerror (errno));
-        goto fail;
+        goto done;
     }
     if ((dst_fd = open(dstfile, O_RDWR | O_CREAT | O_TRUNC, mode)) == -1) {
         ui_error (op, "Unable to create '%s' for copying (%s)",
                   dstfile, strerror (errno));
-        goto fail;
+        goto done;
     }
     if (fstat(src_fd, &stat_buf) == -1) {
         ui_error (op, "Unable to determine size of '%s' (%s)",
                   srcfile, strerror (errno));
-        goto fail;
-    }
-    if (stat_buf.st_size == 0)
         goto done;
+    }
+    if (stat_buf.st_size == 0) {
+        success = TRUE;
+        goto done;
+    }
     if (lseek(dst_fd, stat_buf.st_size - 1, SEEK_SET) == -1) {
         ui_error (op, "Unable to set file size for '%s' (%s)",
                   dstfile, strerror (errno));
-        goto fail;
+        goto done;
     }
     if (write(dst_fd, "", 1) != 1) {
         ui_error (op, "Unable to write file size for '%s' (%s)",
                   dstfile, strerror (errno));
-        goto fail;
+        goto done;
     }
     if ((src = mmap(0, stat_buf.st_size, PROT_READ,
                     MAP_FILE | MAP_SHARED, src_fd, 0)) == (void *) -1) {
         ui_error (op, "Unable to map source file '%s' for copying (%s)",
                   srcfile, strerror (errno));
-        goto fail;
+        goto done;
     }
     if ((dst = mmap(0, stat_buf.st_size, PROT_READ | PROT_WRITE,
                     MAP_FILE | MAP_SHARED, dst_fd, 0)) == (void *) -1) {
         ui_error (op, "Unable to map destination file '%s' for copying (%s)",
                   dstfile, strerror (errno));
-        goto fail;
+        goto done;
     }
     
     memcpy (dst, src, stat_buf.st_size);
@@ -254,31 +269,36 @@ int copy_file(Options *op, const char *srcfile,
     if (munmap (src, stat_buf.st_size) == -1) {
         ui_error (op, "Unable to unmap source file '%s' after copying (%s)",
                  srcfile, strerror (errno));
-        goto fail;
+        goto done;
     }
     if (munmap (dst, stat_buf.st_size) == -1) {
         ui_error (op, "Unable to unmap destination file '%s' after "
                  "copying (%s)", dstfile, strerror (errno));
-        goto fail;
+        goto done;
     }
 
+    success = TRUE;
+
  done:
-    /*
-     * the mode used to create dst_fd may have been affected by the
-     * user's umask; so explicitly set the mode again
-     */
 
-    fchmod(dst_fd, mode);
+    if (success) {
+        /*
+         * the mode used to create dst_fd may have been affected by the
+         * user's umask; so explicitly set the mode again
+         */
 
-    close (src_fd);
-    close (dst_fd);
-    
-    return TRUE;
+        fchmod(dst_fd, mode);
+    }
 
- fail:
-    return FALSE;
+    if (src_fd != -1) {
+        close (src_fd);
+    }
+    if (dst_fd != -1) {
+        close (dst_fd);
+    }
 
-} /* copy_file() */
+    return success;
+}
 
 
 
@@ -368,7 +388,7 @@ char *write_temp_file(Options *op, const int len,
     if (ret) {
         return tmpfile;
     } else {
-        if (tmpfile) nvfree(tmpfile);
+        nvfree(tmpfile);
         return NULL;
     }
     
@@ -385,6 +405,7 @@ char *write_temp_file(Options *op, const int len,
 
 void select_tls_class(Options *op, Package *p)
 {
+#if defined(NV_TLS_TEST)
     int i;
 
     if (!tls_test(op, FALSE)) {
@@ -456,7 +477,7 @@ void select_tls_class(Options *op, Package *p)
     }
 
 #endif /* NV_X86_64 */
-
+#endif /* NV_TLS_TEST */
 } /* select_tls_class() */
 
 
@@ -534,6 +555,10 @@ int set_destinations(Options *op, Package *p)
 
         case FILE_TYPE_CUDA_LIB:
         case FILE_TYPE_CUDA_SYMLINK:
+        case FILE_TYPE_OPENCL_LIB:
+        case FILE_TYPE_OPENCL_WRAPPER_LIB:
+        case FILE_TYPE_OPENCL_LIB_SYMLINK:
+        case FILE_TYPE_OPENCL_WRAPPER_SYMLINK:
             if (p->entries[i].compat_arch == FILE_COMPAT_ARCH_COMPAT32) {
                 prefix = op->compat32_prefix;
                 dir = op->compat32_libdir;
@@ -550,13 +575,6 @@ int set_destinations(Options *op, Package *p)
             path = "";
             break;            
             
-        case FILE_TYPE_XLIB_SHARED_LIB:
-        case FILE_TYPE_XLIB_STATIC_LIB:
-        case FILE_TYPE_XLIB_SYMLINK:
-            prefix = op->x_library_path;
-            dir = path = "";
-            break;
-
         case FILE_TYPE_XMODULE_SHARED_LIB:
         case FILE_TYPE_GLX_MODULE_SHARED_LIB:
         case FILE_TYPE_XMODULE_SYMLINK:
@@ -714,6 +732,11 @@ int set_destinations(Options *op, Package *p)
             path = "";
             break;
 
+        case FILE_TYPE_XORG_OUTPUTCLASS_CONFIG:
+            prefix = op->x_sysconfig_path;
+            dir = path = "";
+            break;
+
         default:
             
             /* 
@@ -768,8 +791,8 @@ int set_destinations(Options *op, Package *p)
 int get_license_acceptance(Options *op)
 {
     struct stat buf;
-    char *text, *tmp;
-    int fd;
+    char *text = MAP_FAILED, *tmp = NULL;
+    int fd = -1, accepted = FALSE, size = 0;
 
     /* trivial accept if the user accepted on the command line */
 
@@ -778,46 +801,50 @@ int get_license_acceptance(Options *op)
         return TRUE;
     }
 
-    if ((fd = open(LICENSE_FILE, 0x0)) == -1) goto failed;
+    if ((fd = open(LICENSE_FILE, 0x0)) == -1) goto done;
    
-    if (fstat(fd, &buf) != 0) goto failed;
+    if (fstat(fd, &buf) != 0) goto done;
+
+    size = buf.st_size;
     
-    if ((text = (char *) mmap(NULL, buf.st_size, PROT_READ,
+    if ((text = (char *) mmap(NULL, size, PROT_READ,
                               MAP_FILE|MAP_SHARED,
-                              fd, 0x0)) == (char *) -1) goto failed;
+                              fd, 0x0)) == MAP_FAILED) goto done;
     
     /*
      * the mmap'ed license file may not be NULL terminated, so copy it
      * into a temporary buffer and explicity NULL terminate the string
      */
 
-    tmp = nvalloc(buf.st_size + 1);
-    memcpy(tmp, text, buf.st_size);
-    tmp[buf.st_size] = '\0';
+    tmp = nvalloc(size + 1);
+    memcpy(tmp, text, size);
+    tmp[size] = '\0';
     
     if (!ui_display_license(op, tmp)) {
         ui_message(op, "License not accepted.  Aborting installation.");
-        nvfree(tmp);
-        munmap(text, buf.st_size);
-        close(fd);
-        return FALSE;
+    } else {
+        ui_log(op, "License accepted.");
+        accepted = TRUE;
     }
     
-    ui_log(op, "License accepted.");
-    
+ done:
+
     nvfree(tmp);
-    munmap(text, buf.st_size);
-    close(fd);
-    
-    return TRUE;
 
- failed:
-    
-    ui_error(op, "Unable to open License file '%s' (%s)",
-             LICENSE_FILE, strerror(errno));
-    return FALSE;
+    if (text == MAP_FAILED || fd == -1) {
+        ui_error(op, "Unable to open License file '%s' (%s)",
+                 LICENSE_FILE, strerror(errno));
+    }
 
-} /* get_license_acceptance() */
+    if (text != MAP_FAILED) {
+        munmap(text, size);
+    }
+    if (fd != -1) {
+        close(fd);
+    }
+
+    return accepted;
+}
 
 
 
@@ -850,8 +877,9 @@ int get_prefixes (Options *op)
      * after the default prefixes/paths are assigned.
      */
 
-    get_x_library_and_module_paths(op);
-    
+    if (op->x_files_packaged) {
+        get_x_library_and_module_paths(op);
+    }
 
     if (op->expert) {
         ret = ui_get_input(op, op->x_library_path,
@@ -1106,23 +1134,6 @@ void remove_opengl_files_from_package(Options *op, Package *p)
 }
 
 
-/*
- * remove_trailing_slashes() - begin at the end of the given string,
- * and overwrite slashes with NULL as long as we find slashes.
- */
-
-void remove_trailing_slashes(char *s)
-{
-    int len;
-
-    if (s == NULL) return;
-    len = strlen(s);
-
-    while (s[len-1] == '/') s[--len] = '\0';
-    
-} /* remove_trailing_slashes() */
-
-
 
 /*
  * mode_string_to_mode() - convert the string s 
@@ -1179,23 +1190,6 @@ char *mode_to_permission_string(mode_t mode)
 
 
 /*
- * directory_exists() - 
- */
-
-int directory_exists(Options *op, const char *dir)
-{
-    struct stat stat_buf;
-
-    if ((stat (dir, &stat_buf) == -1) || (!S_ISDIR(stat_buf.st_mode))) {
-        return FALSE;
-    } else {
-        return TRUE;
-    }
-} /* directory_exists() */
-
-
-
-/*
  * confirm_path() - check that the path exists; if not, ask the user
  * if it's OK to create it and then do mkdir().
  *
@@ -1215,7 +1209,7 @@ int confirm_path(Options *op, const char *path)
 
     /* return TRUE if the path already exists and is a directory */
 
-    if (directory_exists(op, path)) return TRUE;
+    if (directory_exists(path)) return TRUE;
     
     if (ui_multiple_choice(op, choices, 2, 0, "The directory '%s' does not "
                            "exist; would you like to create it, or would you "
@@ -1244,46 +1238,23 @@ int confirm_path(Options *op, const char *path)
 
 int mkdir_recursive(Options *op, const char *path, const mode_t mode, int log)
 {
-    char *c, *tmp, ch, *list, *tmplist;
-    
-    if (!path || !path[0]) return FALSE;
-        
-    tmp = nvstrdup(path);
-    remove_trailing_slashes(tmp);
+    char *error_str = NULL;
+    char *log_str   = NULL;
+    int success = FALSE;
 
-    list = NULL;
+    success = nv_mkdir_recursive(path, mode, &error_str, log ? &log_str : NULL);
 
-    c = tmp;
-    do {
-        c++;
-        if ((*c == '/') || (*c == '\0')) {
-            ch = *c;
-            *c = '\0';
-            if (!directory_exists(op, tmp)) {
-                if (mkdir(tmp, mode) != 0) {
-                    ui_error(op, "Failure creating directory '%s': (%s)",
-                             tmp, strerror(errno));
-                    free(tmp);
-                    return FALSE;
-                }
-                /* Prepend the created directory path to a running list */
-                tmplist = list;
-                list = nvstrcat(tmp, "\n", tmplist, NULL);
-                free(tmplist);
-            }
-            *c = ch;
-        }
-    } while (*c);
-
-    /* Log any created directories */
-    if (log && list) {
-        log_mkdir(op, list);
+    if (log_str) {
+        log_mkdir(op, log_str);
+        free(log_str);
     }
 
-    free(list);
-    free(tmp);
-    return TRUE;
+    if (error_str) {
+        ui_error(op, "%s", error_str);
+        free(error_str);
+    }
 
+    return success;
 }
 
 
@@ -1481,7 +1452,7 @@ char *get_tmpdir(Options *op)
     tmpdirs[3] = getenv("HOME");
     
     for (i = 0; i < 4; i++) {
-        if (tmpdirs[i] && directory_exists(op, tmpdirs[i])) {
+        if (tmpdirs[i] && directory_exists(tmpdirs[i])) {
             return (tmpdirs[i]);
         }
     }
@@ -1505,7 +1476,7 @@ char *make_tmpdir(Options *op)
     
     tmpdir = nvstrcat(op->tmpdir, "/nvidia-", tmp, NULL);
     
-    if (directory_exists(op, tmpdir)) {
+    if (directory_exists(tmpdir)) {
         remove_directory(op, tmpdir);
     }
     
@@ -1629,8 +1600,7 @@ int copy_directory_contents(Options *op, const char *src, const char *dst)
 {
     DIR *dir;
     struct dirent *ent;
-    char *srcfile, *dstfile;
-    struct stat stat_buf;
+    int status = FALSE;
 
     if ((dir = opendir(src)) == NULL) {
         ui_error(op, "Unable to open directory '%s' (%s).",
@@ -1639,6 +1609,9 @@ int copy_directory_contents(Options *op, const char *src, const char *dst)
     }
 
     while ((ent = readdir(dir)) != NULL) {
+        struct stat stat_buf;
+        char *srcfile, *dstfile;
+        int ret;
         
         if (((strcmp(ent->d_name, ".")) == 0) ||
             ((strcmp(ent->d_name, "..")) == 0)) continue;
@@ -1654,11 +1627,19 @@ int copy_directory_contents(Options *op, const char *src, const char *dst)
         
         dstfile = nvstrcat(dst, "/", ent->d_name, NULL);
         
-        if (!copy_file(op, srcfile, dstfile, stat_buf.st_mode)) return FALSE;
+        ret = copy_file(op, srcfile, dstfile, stat_buf.st_mode);
 
         nvfree(srcfile);
         nvfree(dstfile);
+
+        if (!ret) {
+            goto done;
+        }
     }
+
+    status = TRUE;
+
+  done:
 
     if (closedir(dir) != 0) {
         ui_error(op, "Failure while closing directory '%s' (%s).",
@@ -1667,7 +1648,7 @@ int copy_directory_contents(Options *op, const char *src, const char *dst)
         return FALSE;
     }
     
-    return TRUE;
+    return status;
     
 } /* copy_directory_contents() */
 
@@ -1692,24 +1673,32 @@ int pack_precompiled_files(Options *op, Package *p, int num_files,
 
     /* make sure the precompiled_kernel_interface_directory exists */
 
-    mkdir_recursive(op, p->precompiled_kernel_interface_directory, 0755, FALSE);
+    if (!mkdir_recursive(op, p->precompiled_kernel_interface_directory, 0755,
+                         FALSE)) {
+        ui_error(op, "Failed to create the directory '%s'!",
+                 p->precompiled_kernel_interface_directory);
+        return FALSE;
+    }
     
     /* use the time in the output string... should be fairly unique */
 
     t = time(NULL);
     snprintf(time_str, 256, "%lu", t);
-    
-    /* read the proc version string */
-
-    proc_version_string = read_proc_version(op, op->proc_mount_point);
 
     /* use the uname string as the description */
 
-    uname(&buf);
+    if (uname(&buf) != 0) {
+        ui_error(op, "Failed to retrieve uname identifiers from the kernel!");
+        return FALSE;
+    }
     descr = nvstrcat(buf.sysname, " ",
                      buf.release, " ",
                      buf.version, " ",
                      buf.machine, NULL);
+    
+    /* read the proc version string */
+
+    proc_version_string = read_proc_version(op, op->proc_mount_point);
 
     /* build the PrecompiledInfo struct */
 
@@ -1729,7 +1718,7 @@ int pack_precompiled_files(Options *op, Package *p, int num_files,
 
     nvfree(outfile);
     free_precompiled(info);
-    
+
     if (ret) {
         return TRUE;
     }
@@ -1738,7 +1727,6 @@ int pack_precompiled_files(Options *op, Package *p, int num_files,
         ui_error(op, "Unable to package precompiled kernel interface.");
         return FALSE;
     }
-
 }
 
 
@@ -2129,10 +2117,137 @@ int set_security_context(Options *op, const char *filename)
     ret = run_command(op, cmd, NULL, FALSE, 0, TRUE);
     
     ret = ((ret == 0) ? TRUE : FALSE);
-    if (cmd) nvfree(cmd);
+    nvfree(cmd);
     
     return ret;
 } /* set_security_context() */
+
+
+static char * const native_libdirs[] = {
+#if defined(NV_X86_64)
+    DEFAULT_AMD64_TRIPLET_LIBDIR,
+#elif defined(NV_X86)
+    DEFAULT_IA32_TRIPLET_LIBDIR,
+#elif defined(NV_ARMV7)
+#if defined(NV_GNUEABIHF)
+    DEFAULT_ARMV7HF_TRIPLET_LIBDIR,
+#else
+    DEFAULT_ARMV7_TRIPLET_LIBDIR,
+#endif /* GNUEABIHF */
+#elif defined(NV_AARCH64)
+    DEFAULT_AARCH64_TRIPLET_LIBDIR,
+#elif defined(NV_PPC64LE)
+    DEFAULT_PPC64LE_TRIPLET_LIBDIR,
+#endif
+#if NV_ARCH_BITS == 32
+    DEFAULT_32BIT_LIBDIR,
+#elif NV_ARCH_BITS == 64
+    DEFAULT_64BIT_LIBDIR,
+#else
+#error Unknown architecture! Please update utils.mk to add support for this \
+TARGET_ARCH, and make sure that an architecture-specific NV_$ARCH macro gets \
+defined, and that NV_ARCH_BITS gets defined to the correct word size in bits.
+#endif
+    DEFAULT_LIBDIR,
+    NULL
+};
+
+
+#if defined(NV_X86_64)
+static char * const compat_libdirs[] = {
+    DEFAULT_IA32_TRIPLET_LIBDIR,
+    DEFAULT_32BIT_LIBDIR,
+    DEFAULT_LIBDIR,
+    NULL
+};
+#endif
+
+
+
+/*
+ * get_ldconfig_cache() - retrieve the ldconfig(8) cache, or NULL on error
+ */
+
+static char *get_ldconfig_cache(Options *op)
+{
+    char *data, *cmd;
+    int ret;
+
+    cmd = nvstrcat(op->utils[LDCONFIG], " -p", NULL);
+    ret = run_command(op, cmd, &data, FALSE, 0, FALSE);
+    nvfree(cmd);
+
+    if (ret != 0) {
+        nvfree(data);
+        return NULL;
+    }
+
+    return data;
+}
+
+
+/*
+ * find_libdir() - search in 'prefix' (optionally under 'chroot'/'prefix')
+ * for directories in 'list', either in the ldconfig(8) cache or on the
+ * filesystem. return the first directory found, or NULL if none found.
+ */
+
+static char *find_libdir(char * const * list, const char *prefix,
+                         const char *ldconfig_cache, const char *chroot)
+{
+    int i;
+    char *path = NULL;
+
+    for (i = 0; list[i]; i++) {
+        nvfree(path);
+
+        path = nvstrcat(chroot ? chroot : "",
+                        "/", prefix, "/", list[i], "/", NULL);
+        collapse_multiple_slashes(path);
+
+        if (ldconfig_cache) {
+            if (strstr(ldconfig_cache, path)) {
+                break;
+            }
+        } else {
+            if (directory_exists(path)) {
+                break;
+            }
+        }
+    }
+
+    nvfree(path);
+    return list[i];
+}
+
+
+/*
+ * find_libdir_and_fall_back() - search for the first available directory from
+ * 'list' under 'prefix' that appears in the 'ldconfig_cache'. If no directory
+ * is found in 'ldconfig_cache', test for directory existence; if no directory
+ * from 'list' exists under 'prefix', default to DEFAULT_LIBDIR and print a
+ * warning message.
+ */
+static char * find_libdir_and_fall_back(Options *op, char * const * list,
+                                        const char *prefix,
+                                        const char *ldconfig_cache,
+                                        const char *name)
+{
+    char *libdir = find_libdir(list, prefix, ldconfig_cache, NULL);
+    if (!libdir) {
+        libdir = find_libdir(list, prefix, NULL, NULL);
+    }
+    if (!libdir) {
+        libdir = DEFAULT_LIBDIR;
+        ui_warn(op, "Unable to determine the default %s path. The path %s/%s "
+                    "will be used, but this path was not detected in the "
+                    "ldconfig(8) cache, and no directory exists at this path, "
+                    "so it is likely that libraries installed there will not "
+                    "be found by the loader.", name, prefix, libdir);
+    }
+
+    return libdir;
+}
 
 
 /*
@@ -2143,22 +2258,18 @@ int set_security_context(Options *op, const char *filename)
 
 void get_default_prefixes_and_paths(Options *op)
 {
-    char *default_libdir;
-    
-#if defined(NV_X86_64)
-    if ((op->distro == DEBIAN) ||
-        (op->distro == UBUNTU) ||
-        (op->distro == ARCH)) {
-        default_libdir = DEBIAN_DEFAULT_64BIT_LIBDIR;
-    } else {
-        default_libdir = DEFAULT_64BIT_LIBDIR;
-    }
-#else
-    default_libdir = DEFAULT_LIBDIR;
-#endif
+    char *default_libdir, *ldconfig_cache;
 
     if (!op->opengl_prefix)
         op->opengl_prefix = DEFAULT_OPENGL_PREFIX;
+
+    ldconfig_cache = get_ldconfig_cache(op);
+
+    default_libdir = find_libdir_and_fall_back(op, native_libdirs,
+                                               op->opengl_prefix,
+                                               ldconfig_cache, "library");
+
+
     if (!op->opengl_libdir)
         op->opengl_libdir = default_libdir;
     if (!op->opengl_incdir)
@@ -2171,8 +2282,20 @@ void get_default_prefixes_and_paths(Options *op)
             op->x_prefix = DEFAULT_X_PREFIX;
         }
     }
-    if (!op->x_libdir)
-        op->x_libdir = default_libdir;
+    if (!op->x_libdir) {
+        /* XXX if we just inherit default_libdir from above, we could end up
+         * with e.g. /usr/lib/x86_64-linux-gnu/xorg/modules as the module path.
+         * In practice, we haven't seen the tuplet-based paths used for X
+         * module paths, so skip the first (tuplet-based) entry from
+         * native_libdirs when getting a default value for x_libdir. This is
+         * only used when we have to guess the paths when the query fails. */
+        op->x_libdir = find_libdir_and_fall_back(op, &native_libdirs[1],
+                                                 op->x_prefix, ldconfig_cache,
+                                                 "X library");
+    }
+
+    nvfree(ldconfig_cache);
+
     if (!op->x_moddir) {
         if (op->modular_xorg) {
             op->x_moddir = XORG7_DEFAULT_X_MODULEDIR ;
@@ -2184,58 +2307,6 @@ void get_default_prefixes_and_paths(Options *op)
 #if defined(NV_X86_64)
     if (!op->compat32_prefix)
         op->compat32_prefix = DEFAULT_OPENGL_PREFIX;
-
-    if (!op->compat32_libdir) {
-        if ((op->distro == UBUNTU) ||
-            (op->distro == GENTOO) ||
-            (op->distro == ARCH)) {
-            op->compat32_libdir = UBUNTU_DEFAULT_COMPAT32_LIBDIR;
-        } else {
-            op->compat32_libdir = DEFAULT_LIBDIR;
-        }
-    }
-
-    if (op->distro == DEBIAN && !op->compat32_chroot) {
-        /*
-         * Newer versions of Debian install 32-bit compatibility libraries
-         * to dedicated directories that are not part of a chroot structure.
-         * Search for the known paths and use the first one that is found.
-         */
-
-        char *debian_compat32_paths[] = { DEBIAN_DEFAULT_COMPAT32_LIBDIR,
-                                          UBUNTU_DEFAULT_COMPAT32_LIBDIR };
-        int i, found = FALSE;
-
-        for (i = 0; i < ARRAY_LEN(debian_compat32_paths); i++) {
-            char *default_path = nvstrcat(op->compat32_prefix, "/",
-                                          debian_compat32_paths[i], NULL);
-
-            struct stat buf;
-
-            if (lstat(default_path, &buf) == 0 && !S_ISLNK(buf.st_mode)) {
-                /* path exists and is not a symbolic link, so use it */
-                op->compat32_libdir = debian_compat32_paths[i];
-                found = TRUE;
-            }
-
-            nvfree(default_path);
-
-            if (found) {
-                break;
-            }
-        }
-
-        if (!found) {
-            /*
-             * Paths don't exist or are symbolic links. Use the compat32
-             * chroot path instead.
-             */
-
-            op->compat32_chroot = DEBIAN_DEFAULT_COMPAT32_CHROOT;
-        }
-
-    }
-
 #endif
 
     if (!op->utility_prefix)
@@ -2267,6 +2338,119 @@ void get_default_prefixes_and_paths(Options *op)
 
 } /* get_default_prefixes_and_paths() */
 
+
+#if defined NV_X86_64
+/*
+ * compat32_conflict() - given a value for the compatibility library directory,
+ * determines whether a conflict exists between the proposed compatibility
+ * library path and the existing OpenGL library path. e.g. if the native path
+ * is /usr/lib/x86_64-linux-gnu, then /usr/lib is probably not a good path for
+ * compat32 libs. On the other hand, /usr/lib/i386-linux-gnu might be a valid
+ * compat32 directory for a system where /usr/lib is the native library
+ * directory, so the comparison is one-directional.
+ *
+ * XXX this assumes that the native directory would never be a subdirectory of
+ *     the compat directory, which might not actually be true.
+ */
+static int compat32_conflict(Options *op, const char *compat_libdir)
+{
+    char *native_path, *compat_path;
+    int ret, is_subdir;
+
+    native_path = nvstrcat(op->opengl_prefix, "/", op->opengl_libdir, NULL);
+    compat_path = nvstrcat(op->compat32_chroot ? op->compat32_chroot : "",
+                           "/", op->compat32_prefix, "/", compat_libdir, NULL);
+
+    ret = is_subdirectory(compat_path, native_path, &is_subdir);
+
+    if (!ret) {
+        ui_error(op, "Failed to determine whether '%s' is a subdirectory of "
+                 "'%s'; '%s' will not be considered as a candidate location "
+                 "for installing 32-bit compatibility libraries.",
+                 native_path, compat_path, compat_path);
+        is_subdir = TRUE;
+    }
+
+    nvfree(native_path);
+    nvfree(compat_path);
+
+    return is_subdir;
+}
+#endif
+
+
+/*
+ * get_compat32_path() - detect the appropriate path for installing the 32-bit
+ * compatibility files. This function must be called after parse_manifest(),
+ * and before set_destinations().
+ */
+void get_compat32_path(Options *op)
+{
+#if defined(NV_X86_64)
+    char *ldconfig_cache = get_ldconfig_cache(op);
+
+    if (!op->compat32_prefix)
+        op->compat32_prefix = DEFAULT_OPENGL_PREFIX;
+
+    if(!op->compat32_libdir) {
+        char *compat_libdir;
+
+
+        /* First, search the ldconfig(8) cache and filesystem normally */
+        compat_libdir = find_libdir(compat_libdirs, op->compat32_prefix,
+                                    ldconfig_cache, op->compat32_chroot);
+
+        if (!compat_libdir || compat32_conflict(op, compat_libdir)) {
+            compat_libdir = find_libdir(compat_libdirs, op->compat32_prefix,
+                                        NULL, op->compat32_chroot);
+        }
+
+        /*
+         * If we still didn't find a suitable directory, and the user did not
+         * specify an explicit chroot, try the old Debian 32-bit chroot.
+         */
+        if ((!compat_libdir || compat32_conflict(op, compat_libdir)) &&
+            !op->compat32_chroot) {
+            op->compat32_chroot = DEBIAN_DEFAULT_COMPAT32_CHROOT;
+
+            compat_libdir = find_libdir(compat_libdirs, op->compat32_prefix,
+                                        ldconfig_cache, op->compat32_chroot);
+
+            if (!compat_libdir || compat32_conflict(op, compat_libdir)) {
+                compat_libdir = find_libdir(compat_libdirs, op->compat32_prefix,
+                                            NULL, op->compat32_chroot);
+            }
+
+            /*
+             * If we still didn't find a suitable path in the old Debian chroot,
+             * reset the chroot path and the detected directory.
+             */
+            if (!compat_libdir || compat32_conflict(op, compat_libdir)) {
+                op->compat32_chroot = NULL;
+                compat_libdir = NULL;
+            }
+        }
+
+        /* If we still failed to find a directory, don't install 32-bit files */
+        if (op->install_compat32_libs != NV_OPTIONAL_BOOL_FALSE &&
+            (!compat_libdir || compat32_conflict(op, compat_libdir))) {
+            ui_warn(op, "Unable to find a suitable destination to install "
+                    "32-bit compatibility libraries. Your system may not "
+                    "be set up for 32-bit compatibility. 32-bit "
+                    "compatibility files will not be installed; if you "
+                    "wish to install them, re-run the installation and set "
+                    "a valid directory with the --compat32-libdir option.");
+            op->install_compat32_libs = NV_OPTIONAL_BOOL_FALSE;
+        }
+
+        if (op->install_compat32_libs != NV_OPTIONAL_BOOL_FALSE) {
+            op->compat32_libdir = compat_libdir;
+        }
+    }
+
+    nvfree(ldconfig_cache);
+#endif
+}
 
 /*
  * get_xdg_data_dir() - determine if the XDG_DATA_DIRS environment
@@ -2347,19 +2531,25 @@ static char *extract_x_path(char *str, char **next)
 } /* extract_x_path() */
 
 
+enum XPathType {
+    XPathLibrary,
+    XPathModule,
+    XPathSysConfig
+};
 
 /*
  * get_x_paths_helper() - helper function for determining the X
- * library and module paths; returns 'TRUE' if we had to guess at the
- * path
+ * library, module, and system xorg.conf.d paths; returns 'TRUE' if we had to
+ * guess at the path
  */
 
 static int get_x_paths_helper(Options *op,
-                              int library,
+                              enum XPathType pathType,
                               char *xserver_cmd,
                               char *pkg_config_cmd,
                               char *name,
-                              char **path)
+                              char **path,
+                              int require_existing_directory)
 {
     char *dirs, *cmd, *dir, *next;
     int ret, guessed = 0;
@@ -2381,7 +2571,7 @@ static int get_x_paths_helper(Options *op,
      * first, try the X server commandline option; this is the
      * recommended query mechanism as of X.Org 7.2
      */
-    if (op->utils[XSERVER]) {
+    if (op->utils[XSERVER] && xserver_cmd) {
 
         dirs = NULL;
         cmd = nvstrcat(op->utils[XSERVER], " ", xserver_cmd, NULL);
@@ -2396,8 +2586,8 @@ static int get_x_paths_helper(Options *op,
             
             while (dir) {
                 
-                if (directory_exists(op, dir)) {
-                    
+                if (!require_existing_directory || directory_exists(dir)) {
+
                     ui_expert(op, "X %s path '%s' determined from `%s %s`",
                               name, dir, op->utils[XSERVER], xserver_cmd);
                     
@@ -2443,7 +2633,7 @@ static int get_x_paths_helper(Options *op,
  
             while (dir) {
                 
-                if (directory_exists(op, dir)) {
+                if (!require_existing_directory || directory_exists(dir)) {
 
                     ui_expert(op, "X %s path '%s' determined from `%s %s`",
                               name, dir, op->utils[PKG_CONFIG],
@@ -2483,11 +2673,19 @@ static int get_x_paths_helper(Options *op,
 
 
     /* build the path */
-    
-    if (library) {
-        *path = nvstrcat(op->x_prefix, "/", op->x_libdir, NULL);
-    } else {
-        *path = nvstrcat(op->x_library_path, "/", op->x_moddir, NULL);
+
+    switch (pathType) {
+        case XPathLibrary:
+            *path = nvstrcat(op->x_prefix, "/", op->x_libdir, NULL);
+            break;
+
+        case XPathModule:
+            *path = nvstrcat(op->x_library_path, "/", op->x_moddir, NULL);
+            break;
+
+        case XPathSysConfig:
+            *path = nvstrcat(DEFAULT_X_DATAROOT_PATH, "/", DEFAULT_CONFDIR, NULL);
+            break;
     }
     
     remove_trailing_slashes(*path);
@@ -2512,19 +2710,35 @@ static void get_x_library_and_module_paths(Options *op)
      */
     
     guessed |= get_x_paths_helper(op,
-                                  TRUE,
+                                  XPathLibrary,
                                   "-showDefaultLibPath",
                                   "--variable=libdir xorg-server",
                                   "library",
-                                  &op->x_library_path);
+                                  &op->x_library_path,
+                                  TRUE);
     
     guessed |= get_x_paths_helper(op,
-                                  FALSE,
+                                  XPathModule,
                                   "-showDefaultModulePath",
                                   "--variable=moduledir xorg-server",
                                   "module",
-                                  &op->x_module_path);
-    
+                                  &op->x_module_path,
+                                  TRUE);
+
+    /*
+     * Get the sysconfig path (typically /usr/share/X11/xorg.conf.d).  This is
+     * only needed if the nvidia.conf OutputClass config snippet is going to be
+     * installed.  Don't complain if we had to guess the path; the server will
+     * still work without it if xorg.conf is set up.
+     */
+    get_x_paths_helper(op,
+                       XPathSysConfig,
+                       NULL,
+                       "--variable=sysconfigdir xorg-server",
+                       "sysconfig",
+                       &op->x_sysconfig_path,
+                       FALSE);
+
     /*
      * done assigning op->x_library_path and op->x_module_path; if we
      * had to guess at either of the paths, print a warning
@@ -2551,31 +2765,33 @@ static void get_x_library_and_module_paths(Options *op)
  */
 char *get_filename(Options *op, const char *def, const char *msg)
 {
-    struct stat stat_buf;
-    char *file = NULL;
+    char *oldfile = nvstrdup(def);
 
     /* XXX This function should never be called if op->no_questions is set,
      * but just in case that happens by accident, do something besides looping
      * infinitely if def is a filename that doesn't exist. */
     if (op->no_questions) {
-        return nvstrdup(def);
+        return oldfile;
     }
 
-    file = ui_get_input(op, file ? file : def, "%s", msg);
+    while (TRUE) {
+        struct stat stat_buf;
+        char *file = ui_get_input(op, oldfile, "%s", msg);
 
-    while (stat(file, &stat_buf) == -1 ||
-           !(S_ISREG(stat_buf.st_mode) || S_ISLNK(stat_buf.st_mode))) {
-        char *oldfile = file;
+        nvfree(oldfile);
+
+        if (file && stat(file, &stat_buf) != -1 &&
+           (S_ISREG(stat_buf.st_mode) || S_ISLNK(stat_buf.st_mode))) {
+            return file;
+        }
 
         ui_message(op, "File \"%s\" does not exist, or is not a regular "
-                   "file. Please enter another filename.", file);
+                   "file. Please enter another filename.", file ?
+                   file : "(null)");
 
-        file = ui_get_input(op, oldfile ? oldfile : def, "%s", msg);
-        nvfree(oldfile);
+        oldfile = file;
     }
-
-    return file;
-} /* get_filename() */
+}
 
 
 
@@ -2623,4 +2839,149 @@ void invalidate_package_entry(PackageEntry *entry)
      */
     entry->dst = NULL;
     memset(&(entry->caps), 0, sizeof(entry->caps));
+}
+
+
+/*
+ * is_subdirectory() - test whether subdir is a subdir of dir
+ * returns TRUE on successful test, or FALSE on error
+ * sets *is_subdir based on the result of a successful test
+ *
+ * The testing is performed two ways: first, walk from subdir up to "/"
+ * and check at each step along the way if subdir's device and inode
+ * match dir's. If a match is not found this way, simply compare dir
+ * and subdir as normalized strings, up to the length of subdir, since
+ * the first method will fail if subdir is a symlink located inside dir
+ * whose target is outside of dir.
+ */
+
+int is_subdirectory(const char *dir, const char *subdir, int *is_subdir)
+{
+    struct stat root_st, dir_st;
+
+    if (stat("/", &root_st) != 0 || stat(dir, &dir_st) != 0) {
+        return FALSE;
+    } else {
+        struct stat testdir_st;
+        char *testdir = nvstrdup(subdir);
+
+        *is_subdir = FALSE;
+
+        do {
+            char *oldtestdir;
+
+            if (stat(testdir, &testdir_st) != 0) {
+                nvfree(testdir);
+                return FALSE;
+            }
+
+            if (testdir_st.st_dev == dir_st.st_dev &&
+                testdir_st.st_ino == dir_st.st_ino) {
+                *is_subdir = TRUE;
+                break;
+            }
+
+            oldtestdir = testdir;
+            testdir = nvstrcat(oldtestdir, "/..", NULL);
+            nvfree(oldtestdir);
+        } while (testdir_st.st_dev != root_st.st_dev ||
+                 testdir_st.st_ino != root_st.st_ino);
+
+        nvfree(testdir);
+    }
+
+    if (!*is_subdir) {
+        char *dir_with_slash, *subdir_with_slash;
+
+        dir_with_slash = nvstrcat(dir, "/", NULL);
+        collapse_multiple_slashes(dir_with_slash);
+        subdir_with_slash = nvstrcat(subdir, "/", NULL);
+        collapse_multiple_slashes(subdir_with_slash);
+
+        *is_subdir = (strncmp(dir_with_slash, subdir_with_slash,
+                              strlen(dir_with_slash)) == 0);
+
+        nvfree(dir_with_slash);
+        nvfree(subdir_with_slash);
+    }
+
+    return TRUE;
+}
+
+/*
+ * directory_equals() - if a is a subdirectory of b, and b is a subdirectory
+ * of a, then a and b are the same directory. Uses is_subdirectory() to do the
+ * subdirectory check, since the inode-based comparison will be resilient
+ * against symbolic links in either direction.
+ */
+static int directory_equals(const char *a, const char *b)
+{
+    int a_b, b_a;
+
+    if (is_subdirectory(a, b, &a_b) && is_subdirectory(b, a, &b_a)) {
+        return a_b && b_a;
+    }
+
+    return FALSE;
+}
+
+/*
+ * get_opengl_libdir() - get the path where OpenGL libraries will be installed.
+ */
+static char *get_opengl_libdir(const Options *op)
+{
+    return nvstrcat(op->opengl_prefix, "/", op->opengl_libdir, "/", NULL);
+}
+
+/*
+ * get_compat32_libdir() - get the path where 32-bit compatibility libraries
+ * will be installed, where applicable, or NULL when not applicable.
+ */
+static char *get_compat32_libdir(const Options *op)
+{
+#if defined NV_X86_64
+    return nvstrcat(op->compat32_chroot ? op->compat32_chroot : "", "/",
+                    op->compat32_prefix, "/", op->compat32_libdir, "/", NULL);
+#else
+    return NULL;
+#endif
+}
+
+/*
+ * add_libgl_abi_symlink() - check to see if either native or compatibility
+ * OpenGL libraries are destined to be installed to /usr/lib. If not, then
+ * create a symlink /usr/lib/libGL.so.1 that points to the native libGL.so.1,
+ * for compliance with the OpenGL ABI. Note: this function must be called
+ * after set_destinations() to avoid the hardcoded "/usr/lib" destination from
+ * being overwritten.
+ */
+void add_libgl_abi_symlink(Options *op, Package *p)
+{
+    static const char *usrlib = "/usr/lib/";
+    char *libgl = nvstrdup("libGL.so.1");
+    char *opengl_path = get_opengl_libdir(op);
+    char *opengl32_path = get_compat32_libdir(op);
+
+    if (!directory_equals(usrlib, opengl_path)
+#if defined (NV_X86_64)
+        && !directory_equals(usrlib, opengl32_path)
+#endif
+       ) {
+        char *target = nvstrcat(opengl_path, "libGL.so.1", NULL);
+        add_package_entry(p,
+                          libgl,
+                          NULL,
+                          libgl,
+                          target,
+                          nvstrcat(usrlib, libgl, NULL),
+                          FILE_TYPE_OPENGL_SYMLINK,
+                          FILE_TLS_CLASS_NONE,
+                          FILE_COMPAT_ARCH_NATIVE,
+                          0000);
+    } else {
+        nvfree(libgl);
+    }
+
+    nvfree(opengl_path);
+    nvfree(opengl32_path);
 }

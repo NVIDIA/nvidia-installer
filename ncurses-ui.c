@@ -898,7 +898,7 @@ static void nv_ncurses_status_update(Options *op, const float percent,
          */
         if (ch == NV_NCURSES_CTRL('L')) {
             nv_ncurses_check_resize(d, TRUE);
-            if (d->message) nv_ncurses_destroy_region(d->message);
+            nv_ncurses_destroy_region(d->message);
             nv_ncurses_do_progress_bar_region(d);
         }
     }

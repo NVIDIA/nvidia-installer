@@ -134,7 +134,6 @@ static Options *load_default_options(void)
     op->ftp_site = DEFAULT_FTP_SITE;
 
     op->tmpdir = get_tmpdir(op);
-    op->distro = get_distribution(op);
 
     op->logging = TRUE; /* log by default */
     op->opengl_headers = FALSE; /* do not install our GL headers by default */
@@ -150,6 +149,7 @@ static Options *load_default_options(void)
     op->check_for_alternate_installs = TRUE;
     op->num_kernel_modules = 1;
     op->install_uvm = TRUE;
+    op->install_compat32_libs = NV_OPTIONAL_BOOL_DEFAULT;
 
     return op;
 
@@ -206,7 +206,6 @@ static void parse_commandline(int argc, char *argv[], Options *op)
             op->driver_info = TRUE;
             op->ui_str = "none";
             break;
-            
         case 'n': op->no_precompiled_interface = TRUE; break;
         case 'c': op->no_ncurses_color = TRUE; break;
         case 'l': op->latest = TRUE; break;
@@ -230,11 +229,19 @@ static void parse_commandline(int argc, char *argv[], Options *op)
             break;
         case 'z': op->no_nouveau_check = TRUE; break;
         case 'Z': op->disable_nouveau = TRUE; break;
-
         case 'k':
             op->kernel_name = strval;
             op->no_precompiled_interface = TRUE;
             op->ignore_cc_version_check = TRUE;
+            break;
+        case 'j':
+            if (intval < 1) {
+                nv_error_msg("Invalid concurrency level %d: nvidia-installer "
+                             "will attempt to autodetect the number of CPUs.",
+                             intval);
+                intval = 0;
+            }
+            op->concurrency_level = intval;
             break;
             
         case XFREE86_PREFIX_OPTION:
@@ -244,6 +251,8 @@ static void parse_commandline(int argc, char *argv[], Options *op)
             op->x_library_path = strval; break;
         case X_MODULE_PATH_OPTION:
             op->x_module_path = strval; break;
+        case X_SYSCONFIG_PATH_OPTION:
+            op->x_sysconfig_path = strval; break;
         case OPENGL_PREFIX_OPTION:
             op->opengl_prefix = strval; break;
         case OPENGL_LIBDIR_OPTION:
@@ -255,6 +264,10 @@ static void parse_commandline(int argc, char *argv[], Options *op)
             op->compat32_prefix = strval; break;
         case COMPAT32_LIBDIR_OPTION:
             op->compat32_libdir = strval; break;
+        case INSTALL_COMPAT32_LIBS_OPTION:
+            op->install_compat32_libs = boolval ? NV_OPTIONAL_BOOL_TRUE :
+                                                  NV_OPTIONAL_BOOL_FALSE;
+            break;
 #endif
         case DOCUMENTATION_PREFIX_OPTION:
             op->documentation_prefix = strval; break;
@@ -276,6 +289,8 @@ static void parse_commandline(int argc, char *argv[], Options *op)
             op->kernel_module_installation_path = strval; break;
         case UNINSTALL_OPTION:
             op->uninstall = TRUE; break;
+        case SKIP_MODULE_UNLOAD_OPTION:
+            op->skip_module_unload = TRUE; break;
         case PROC_MOUNT_POINT_OPTION:
             op->proc_mount_point = strval; break;
         case USER_INTERFACE_OPTION:
@@ -291,6 +306,7 @@ static void parse_commandline(int argc, char *argv[], Options *op)
             op->opengl_headers = TRUE; break;
         case NO_NVIDIA_MODPROBE_OPTION:
             op->nvidia_modprobe = FALSE; break;
+#if defined(NV_TLS_TEST)
         case FORCE_TLS_OPTION:
             if (strcasecmp(strval, "new") == 0)
                 op->which_tls = FORCE_NEW_TLS;
@@ -312,7 +328,8 @@ static void parse_commandline(int argc, char *argv[], Options *op)
                 goto fail;
             }
             break;
-#endif
+#endif /* NV_X86_64 */
+#endif /* NV_TLS_TEST */
         case SANITY_OPTION:
             op->sanity = TRUE;
             break;
@@ -555,6 +572,11 @@ int main(int argc, char *argv[])
     /* initialize the user interface */
     
     if (!ui_init(op)) return 1;
+
+    /* determine the concurrency level: do this early on, to allow for
+     * parallelization of as much of the install as possible. */
+
+    set_concurrency_level(op);
     
     /* check that we're running as root */
     
@@ -571,11 +593,10 @@ int main(int argc, char *argv[])
     if (!find_module_utils(op)) goto done;
     if (!check_selinux(op)) goto done;
 
-    /* check if we need to worry about modular Xorg */
+    /* check for X server properties based on the version of the server */
 
-    op->modular_xorg =
-        check_for_modular_xorg(op);
-    
+    query_xorg_version(op);
+
     /* get the default installation prefixes/paths */
 
     get_default_prefixes_and_paths(op);

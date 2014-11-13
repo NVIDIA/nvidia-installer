@@ -73,11 +73,9 @@ DIST_FILES += rtld_test_Linux-x86_64
 DIST_FILES += rtld_test_Linux-armv7l-gnueabi
 DIST_FILES += rtld_test_Linux-armv7l-gnueabihf
 
-DIST_FILES += tls_test_Linux-ia64
 DIST_FILES += tls_test_Linux-x86
 DIST_FILES += tls_test_Linux-x86_64
 
-DIST_FILES += tls_test_dso_Linux-ia64.so
 DIST_FILES += tls_test_dso_Linux-x86.so
 DIST_FILES += tls_test_dso_Linux-x86_64.so
 

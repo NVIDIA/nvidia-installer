@@ -126,7 +126,7 @@ int ui_init(Options *op)
         i = 1;
     }
     
-    for (; ui_list[i].descr && !__ui; i++) {
+    for (; i < ARRAY_LEN(ui_list) && ui_list[i].descr && !__ui; i++) {
 
         if (!extract_user_interface(op, &ui_list[i])) continue;
         
@@ -605,7 +605,7 @@ static int extract_user_interface(Options *op, user_interface_attribute_t *ui)
 
     if (dst != (void *) -1) munmap(dst, ui->data_array_size);
     if (fd != -1) { close(fd); unlink(ui->filename); }
-    if (ui->filename) free(ui->filename);
+    free(ui->filename);
 
     return FALSE;
 

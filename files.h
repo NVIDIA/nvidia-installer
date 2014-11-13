@@ -38,10 +38,8 @@ int get_prefixes(Options *op); /* XXX move? */
 int add_kernel_modules_to_package(Options *op, Package *p);
 void remove_non_kernel_module_files_from_package(Options *op, Package *p);
 void remove_opengl_files_from_package(Options *op, Package *p);
-void remove_trailing_slashes(char *s);
 int mode_string_to_mode(Options *op, char *s, mode_t *mode);
 char *mode_to_permission_string(mode_t mode);
-int directory_exists(Options *op, const char *dir);
 int confirm_path(Options *op, const char *path);
 int mkdir_recursive(Options *op, const char *path, const mode_t mode, int log);
 int mkdir_with_log(Options *op, const char *path, const mode_t mode);
@@ -66,9 +64,12 @@ void process_libGL_la_files(Options *op, Package *p);
 void process_dot_desktop_files(Options *op, Package *p);
 int set_security_context(Options *op, const char *filename);
 void get_default_prefixes_and_paths(Options *op);
+void get_compat32_path(Options *op);
 char *nv_strreplace(char *src, char *orig, char *replace);
 char *get_filename(Options *op, const char *def, const char *msg);
 int secure_delete(Options *op, const char *file);
 void invalidate_package_entry(PackageEntry *entry);
+int is_subdirectory(const char *dir, const char *subdir, int *is_subdir);
+void add_libgl_abi_symlink(Options *op, Package *p);
 
 #endif /* __NVIDIA_INSTALLER_FILES_H__ */

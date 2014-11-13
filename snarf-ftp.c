@@ -317,8 +317,8 @@ int ftp_transfer(UrlResource *rsrc)
     /* do the password dance */
     if (!check_numeric("230", line)) {
         if (!check_numeric("331", line)) {
-            nvfree(line);
             ui_error(rsrc->op, "bad/unexpected response: %s", line);
+            nvfree(line);
             return FALSE;
         } else {
             nvfree(line);

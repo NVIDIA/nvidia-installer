@@ -265,11 +265,11 @@ static int get_latest_driver_version_and_filename(Options *op,
                                                   char **pFileName)
 {
     int fd = -1;
-    int length;
+    int length = 0;
     int ret = FALSE;
     char *tmpfile = NULL;
     char *url = NULL;
-    char *str = (void *) -1;
+    char *str = MAP_FAILED;
     char *s = NULL;
     char *buf = NULL;
     char *buf2 = NULL;
@@ -311,7 +311,7 @@ static int get_latest_driver_version_and_filename(Options *op,
     length = stat_buf.st_size;
     
     str = mmap(0, length, PROT_READ, MAP_FILE | MAP_SHARED, fd, 0);
-    if (str == (void *) -1) {
+    if (str == MAP_FAILED) {
         ui_error(op, "Unable to determine most recent NVIDIA %s-%s driver "
                  "version (%s).", INSTALLER_OS, INSTALLER_ARCH,
                  strerror(errno));
@@ -354,7 +354,7 @@ static int get_latest_driver_version_and_filename(Options *op,
     
     nvfree(buf);
     nvfree(buf2);
-    if (str != (void *) -1) munmap(str, stat_buf.st_size);
+    if (str != MAP_FAILED) munmap(str, length);
     if (fd != -1) close(fd);
 
     unlink(tmpfile);
@@ -364,5 +364,4 @@ static int get_latest_driver_version_and_filename(Options *op,
     nvfree(version);
 
     return ret;
-
-} /* get_latest_driver_version() */
+}

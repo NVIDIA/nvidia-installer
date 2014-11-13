@@ -32,7 +32,8 @@
               _is_symlink,                                              \
               _is_shared_lib,                                           \
               _is_opengl,                                               \
-              _is_temporary)                                            \
+              _is_temporary,                                            \
+              _is_wrapper)                                              \
     #_name , FILE_TYPE_ ## _name ,                                      \
         {                                                               \
             .has_arch      = _has_arch,                                 \
@@ -43,6 +44,7 @@
             .is_shared_lib = _is_shared_lib,                            \
             .is_opengl     = _is_opengl,                                \
             .is_temporary  = _is_temporary,                             \
+            .is_wrapper    = _is_wrapper,                               \
         }
 
 /*
@@ -56,62 +58,65 @@ static const struct {
 } packageEntryFileTypeTable[] = {
 
     /*
-     * is_temporary  ------------------------------------+
-     * is_opengl     ---------------------------------+  |
-     * is_shared_lib ------------------------------+  |  |
-     * is_symlink    ---------------------------+  |  |  |
-     * has_path      ------------------------+  |  |  |  |
-     * installable   ---------------------+  |  |  |  |  |
-     * has_tls_class ------------------+  |  |  |  |  |  |
-     * has_arch      ---------------+  |  |  |  |  |  |  |
-     *                              |  |  |  |  |  |  |  |
+     * is_wrapper    ---------------------------------------+
+     * is_temporary  ------------------------------------+  |
+     * is_opengl     ---------------------------------+  |  |
+     * is_shared_lib ------------------------------+  |  |  |
+     * is_symlink    ---------------------------+  |  |  |  |
+     * has_path      ------------------------+  |  |  |  |  |
+     * installable   ---------------------+  |  |  |  |  |  |
+     * has_tls_class ------------------+  |  |  |  |  |  |  |
+     * has_arch      ---------------+  |  |  |  |  |  |  |  |
+     *                              |  |  |  |  |  |  |  |  |
      */
-    { ENTRY(KERNEL_MODULE_SRC,      F, F, T, F, F, F, F, F ) },
-    { ENTRY(KERNEL_MODULE_CMD,      F, F, F, F, F, F, F, F ) },
-    { ENTRY(KERNEL_MODULE,          F, F, T, F, F, F, F, F ) },
-    { ENTRY(OPENGL_HEADER,          F, F, T, T, F, F, T, F ) },
-    { ENTRY(CUDA_ICD,               F, F, T, F, F, F, F, F ) },
-    { ENTRY(OPENGL_LIB,             T, F, T, F, F, T, T, F ) },
-    { ENTRY(CUDA_LIB,               T, F, T, T, F, T, F, F ) },
-    { ENTRY(LIBGL_LA,               T, F, T, F, F, F, T, T ) },
-    { ENTRY(XLIB_STATIC_LIB,        F, F, T, F, F, F, F, F ) },
-    { ENTRY(XLIB_SHARED_LIB,        F, F, T, F, F, T, F, F ) },
-    { ENTRY(TLS_LIB,                T, T, T, T, F, T, T, F ) },
-    { ENTRY(UTILITY_LIB,            T, F, T, F, F, T, F, F ) },
-    { ENTRY(DOCUMENTATION,          F, F, T, T, F, F, F, F ) },
-    { ENTRY(APPLICATION_PROFILE,    F, F, T, T, F, F, F, F ) },
-    { ENTRY(MANPAGE,                F, F, T, T, F, F, F, F ) },
-    { ENTRY(EXPLICIT_PATH,          F, F, T, T, F, F, F, F ) },
-    { ENTRY(OPENGL_SYMLINK,         T, F, F, F, T, F, T, F ) },
-    { ENTRY(CUDA_SYMLINK,           T, F, F, T, T, F, F, F ) },
-    { ENTRY(XLIB_SYMLINK,           F, F, F, F, T, F, F, F ) },
-    { ENTRY(TLS_SYMLINK,            T, T, F, T, T, F, T, F ) },
-    { ENTRY(UTILITY_LIB_SYMLINK,    T, F, F, F, T, F, F, F ) },
-    { ENTRY(INSTALLER_BINARY,       F, F, T, F, F, F, F, F ) },
-    { ENTRY(UTILITY_BINARY,         F, F, T, F, F, F, F, F ) },
-    { ENTRY(UTILITY_BIN_SYMLINK,    F, F, F, F, T, F, F, F ) },
-    { ENTRY(DOT_DESKTOP,            F, F, T, T, F, F, F, T ) },
-    { ENTRY(XMODULE_SHARED_LIB,     F, F, T, T, F, T, F, F ) },
-    { ENTRY(XMODULE_SYMLINK,        F, F, F, T, T, F, F, F ) },
-    { ENTRY(GLX_MODULE_SHARED_LIB,  F, F, T, T, F, T, T, F ) },
-    { ENTRY(GLX_MODULE_SYMLINK,     F, F, F, T, T, F, T, F ) },
-    { ENTRY(XMODULE_NEWSYM,         F, F, F, T, T, F, F, F ) },
-    { ENTRY(VDPAU_LIB,              T, F, T, T, F, T, F, F ) },
-    { ENTRY(VDPAU_WRAPPER_LIB,      T, F, T, T, F, T, F, F ) },
-    { ENTRY(VDPAU_SYMLINK,          T, F, F, T, T, F, F, F ) },
-    { ENTRY(VDPAU_WRAPPER_SYMLINK,  T, F, F, T, T, F, F, F ) },
-    { ENTRY(NVCUVID_LIB,            T, F, T, F, F, T, F, F ) },
-    { ENTRY(NVCUVID_LIB_SYMLINK,    T, F, F, F, T, F, F, F ) },
-    { ENTRY(ENCODEAPI_LIB,          T, F, T, F, F, T, F, F ) },
-    { ENTRY(ENCODEAPI_LIB_SYMLINK,  T, F, F, F, T, F, F, F ) },
-    { ENTRY(VGX_LIB,                F, F, T, F, F, T, F, F ) },
-    { ENTRY(VGX_LIB_SYMLINK,        F, F, F, F, T, F, F, F ) },
-    { ENTRY(NVIDIA_MODPROBE,        F, F, T, T, F, F, F, F ) },
-    { ENTRY(NVIDIA_MODPROBE_MANPAGE,F, F, T, T, F, F, F, F ) },
-    { ENTRY(MODULE_SIGNING_KEY,     F, F, T, F, F, F, F, T ) },
-    { ENTRY(NVIFR_LIB,              T, F, T, F, F, T, F, F ) },
-    { ENTRY(NVIFR_LIB_SYMLINK,      T, F, F, F, T, F, F, F ) },
-    { ENTRY(UVM_MODULE_SRC,         F, F, T, F, F, F, F, F ) },
+    { ENTRY(KERNEL_MODULE_SRC,      F, F, T, F, F, F, F, F, F) },
+    { ENTRY(KERNEL_MODULE_CMD,      F, F, F, F, F, F, F, F, F) },
+    { ENTRY(KERNEL_MODULE,          F, F, T, F, F, F, F, F, F) },
+    { ENTRY(OPENGL_HEADER,          F, F, T, T, F, F, T, F, F) },
+    { ENTRY(CUDA_ICD,               F, F, T, F, F, F, F, F, F) },
+    { ENTRY(OPENGL_LIB,             T, F, T, F, F, T, T, F, F) },
+    { ENTRY(CUDA_LIB,               T, F, T, T, F, T, F, F, F) },
+    { ENTRY(OPENCL_LIB,             T, F, T, T, F, T, F, F, F) },
+    { ENTRY(OPENCL_WRAPPER_LIB,     T, F, T, T, F, T, F, F, T) },
+    { ENTRY(OPENCL_LIB_SYMLINK,     T, F, F, T, T, F, F, F, F) },
+    { ENTRY(OPENCL_WRAPPER_SYMLINK, T, F, F, T, T, F, F, F, T) },
+    { ENTRY(LIBGL_LA,               T, F, T, F, F, F, T, T, F) },
+    { ENTRY(TLS_LIB,                T, T, T, T, F, T, T, F, F) },
+    { ENTRY(UTILITY_LIB,            T, F, T, F, F, T, F, F, F) },
+    { ENTRY(DOCUMENTATION,          F, F, T, T, F, F, F, F, F) },
+    { ENTRY(APPLICATION_PROFILE,    F, F, T, T, F, F, F, F, F) },
+    { ENTRY(MANPAGE,                F, F, T, T, F, F, F, F, F) },
+    { ENTRY(EXPLICIT_PATH,          F, F, T, T, F, F, F, F, F) },
+    { ENTRY(OPENGL_SYMLINK,         T, F, F, F, T, F, T, F, F) },
+    { ENTRY(CUDA_SYMLINK,           T, F, F, T, T, F, F, F, F) },
+    { ENTRY(TLS_SYMLINK,            T, T, F, T, T, F, T, F, F) },
+    { ENTRY(UTILITY_LIB_SYMLINK,    T, F, F, F, T, F, F, F, F) },
+    { ENTRY(INSTALLER_BINARY,       F, F, T, F, F, F, F, F, F) },
+    { ENTRY(UTILITY_BINARY,         F, F, T, F, F, F, F, F, F) },
+    { ENTRY(UTILITY_BIN_SYMLINK,    F, F, F, F, T, F, F, F, F) },
+    { ENTRY(DOT_DESKTOP,            F, F, T, T, F, F, F, T, F) },
+    { ENTRY(XMODULE_SHARED_LIB,     F, F, T, T, F, T, F, F, F) },
+    { ENTRY(XMODULE_SYMLINK,        F, F, F, T, T, F, F, F, F) },
+    { ENTRY(GLX_MODULE_SHARED_LIB,  F, F, T, T, F, T, T, F, F) },
+    { ENTRY(GLX_MODULE_SYMLINK,     F, F, F, T, T, F, T, F, F) },
+    { ENTRY(XMODULE_NEWSYM,         F, F, F, T, T, F, F, F, F) },
+    { ENTRY(VDPAU_LIB,              T, F, T, T, F, T, F, F, F) },
+    { ENTRY(VDPAU_WRAPPER_LIB,      T, F, T, T, F, T, F, F, T) },
+    { ENTRY(VDPAU_SYMLINK,          T, F, F, T, T, F, F, F, F) },
+    { ENTRY(VDPAU_WRAPPER_SYMLINK,  T, F, F, T, T, F, F, F, T) },
+    { ENTRY(NVCUVID_LIB,            T, F, T, F, F, T, F, F, F) },
+    { ENTRY(NVCUVID_LIB_SYMLINK,    T, F, F, F, T, F, F, F, F) },
+    { ENTRY(ENCODEAPI_LIB,          T, F, T, F, F, T, F, F, F) },
+    { ENTRY(ENCODEAPI_LIB_SYMLINK,  T, F, F, F, T, F, F, F, F) },
+    { ENTRY(VGX_LIB,                F, F, T, F, F, T, F, F, F) },
+    { ENTRY(VGX_LIB_SYMLINK,        F, F, F, F, T, F, F, F, F) },
+    { ENTRY(NVIDIA_MODPROBE,        F, F, T, T, F, F, F, F, F) },
+    { ENTRY(NVIDIA_MODPROBE_MANPAGE,F, F, T, T, F, F, F, F, F) },
+    { ENTRY(MODULE_SIGNING_KEY,     F, F, T, F, F, F, F, T, F) },
+    { ENTRY(NVIFR_LIB,              T, F, T, F, F, T, F, F, F) },
+    { ENTRY(NVIFR_LIB_SYMLINK,      T, F, F, F, T, F, F, F, F) },
+    { ENTRY(UVM_MODULE_SRC,         F, F, T, F, F, F, F, F, F) },
+    { ENTRY(XORG_OUTPUTCLASS_CONFIG,F, F, T, F, F, F, F, F, F) },
 };
 
 /*
@@ -123,7 +128,7 @@ PackageEntryFileCapabilities get_file_type_capabilities(
 )
 {
     int i;
-    PackageEntryFileCapabilities nullCaps = { F, F, F, F, F, F, F, F };
+    PackageEntryFileCapabilities nullCaps = { F, F, F, F, F, F, F, F, F };
 
     for (i = 0; i < ARRAY_LEN(packageEntryFileTypeTable); i++) {
         if (type == packageEntryFileTypeTable[i].type) {
@@ -189,6 +194,11 @@ void get_installable_file_type_list(
         }
 
         if (!packageEntryFileTypeTable[i].caps.installable) {
+            continue;
+        }
+
+        if ((type == FILE_TYPE_XORG_OUTPUTCLASS_CONFIG) &&
+            !op->xorg_supports_output_class) {
             continue;
         }
 

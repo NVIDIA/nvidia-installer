@@ -81,7 +81,7 @@ static uint32 read_uint32(const char *buf, int *offset)
 
 char *read_proc_version(Options *op, const char *proc_mount_point)
 {
-    int fd, ret, len, version_len;
+    int fd, len, version_len;
     char *version, *c = NULL;
     char *proc_verson_filename;
     
@@ -105,6 +105,8 @@ char *read_proc_version(Options *op, const char *proc_mount_point)
     version = NULL;
 
     while (1) {
+        int ret;
+
         if (version_len == len) {
             version_len += NV_LINE_LEN;
             version = nvrealloc(version, version_len);
@@ -114,8 +116,9 @@ char *read_proc_version(Options *op, const char *proc_mount_point)
         if (ret == -1) {
             ui_warn(op, "Error reading %s (%s).",
                     proc_verson_filename, strerror(errno));
-            free(version);
-            return NULL;
+            nvfree(version);
+            version = NULL;
+            goto done;
         }
         if (ret == 0) {
             *c = '\0';
@@ -131,11 +134,12 @@ char *read_proc_version(Options *op, const char *proc_mount_point)
     while ((*c != '\0') && (*c != '\n')) c++;
     *c = '\0';
 
-    free(proc_verson_filename);
+ done:
+    nvfree(proc_verson_filename);
+    close(fd);
 
     return version;
-
-} /* read_proc_version() */
+}
 
 
 
@@ -160,7 +164,7 @@ PrecompiledInfo *get_precompiled_info(Options *op,
     PrecompiledFileInfo *fileInfos = NULL;
 
     fd = size = 0;
-    buf = description = proc_version_string = NULL;
+    buf = description = proc_version_string = version = NULL;
 
     /* open the file to be unpacked */
     
@@ -233,7 +237,7 @@ PrecompiledInfo *get_precompiled_info(Options *op,
     /* check if this precompiled kernel interface is the right driver
        version */
 
-    if (package_version && (strcmp(version, package_version) != 0)) {
+    if (!version || !package_version || strcmp(version, package_version) != 0) {
         goto done;
     }
 
@@ -332,11 +336,11 @@ PrecompiledInfo *get_precompiled_info(Options *op,
     info->files = fileInfos;
 
     /*
-     * XXX so that the proc version and description strings, and the
+     * XXX so that the proc version, description, and version strings, and the
      * PrecompiledFileInfo array aren't freed below
      */
 
-    proc_version_string = description = NULL;
+    proc_version_string = description = version = NULL;
     fileInfos = NULL;
 
 done:
@@ -344,10 +348,11 @@ done:
     /* cleanup whatever needs cleaning up */
 
     if (buf) munmap(buf, size);
-    if (fd > 0) close(fd);
-    if (description) free(description);
-    if (proc_version_string) free(proc_version_string);
-    if (fileInfos) free(fileInfos);
+    if (fd >= 0) close(fd);
+    nvfree(description);
+    nvfree(proc_version_string);
+    nvfree(fileInfos);
+    nvfree(version);
 
     return info;
 
@@ -942,11 +947,17 @@ const char **precompiled_file_attribute_names(uint32 attribute_mask)
                                                     "linked module crc",
                                                     "embedded signature",
                                                 };
+    static const char *unknown_attribute = "unknown attribute";
 
-    ret = nvalloc((ARRAY_LEN(file_attribute_names) + 1) * sizeof(char *));
+    const int max_file_attribute_names = sizeof(attribute_mask) * 8;
 
-    for (i = 0; i < 32; i++) {
-        if (attribute_mask & (1 << i)) {
+    /* leave room for a NULL terminator */
+    ret = nvalloc((max_file_attribute_names + 1) * sizeof(char *));
+
+    for (i = 0; i < max_file_attribute_names; i++) {
+        if (i >= ARRAY_LEN(file_attribute_names)) {
+            ret[attr++] = unknown_attribute;
+        } else if (attribute_mask & (1 << i)) {
             ret[attr++] = file_attribute_names[i];
         }
     }
@@ -997,6 +1008,8 @@ int byte_tail(const char *infile, int start, char **buf)
     }
 
 done:
-    fclose(in);
+    if (in) {
+        fclose(in);
+    }
     return size;
 }

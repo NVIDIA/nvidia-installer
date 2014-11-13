@@ -41,6 +41,7 @@ enum {
     KERNEL_INCLUDE_PATH_OPTION,
     KERNEL_INSTALL_PATH_OPTION,
     UNINSTALL_OPTION,
+    SKIP_MODULE_UNLOAD_OPTION,
     PROC_MOUNT_POINT_OPTION,
     USER_INTERFACE_OPTION,
     LOG_FILE_NAME_OPTION,
@@ -96,6 +97,8 @@ enum {
     NO_CHECK_FOR_ALTERNATE_INSTALLS_OPTION,
     MULTIPLE_KERNEL_MODULES_OPTION,
     NO_UVM_OPTION,
+    INSTALL_COMPAT32_LIBS_OPTION,
+    X_SYSCONFIG_PATH_OPTION,
 };
 
 static const NVGetoptOption __options[] = {
@@ -137,6 +140,11 @@ static const NVGetoptOption __options[] = {
 
     { "uninstall", UNINSTALL_OPTION, 0, NULL,
       "Uninstall the currently installed NVIDIA driver." },
+
+    { "skip-module-unload", SKIP_MODULE_UNLOAD_OPTION,
+      NVGETOPT_OPTION_APPLIES_TO_NVIDIA_UNINSTALL, NULL,
+      "When uninstalling the driver, skip unloading of the NVIDIA kernel "
+      "module. This option is ignored when the driver is being installed." },
 
     { "sanity", SANITY_OPTION, 0, NULL,
       "Perform basic sanity tests on an existing NVIDIA "
@@ -192,6 +200,13 @@ static const NVGetoptOption __options[] = {
       DEFAULT_64BIT_LIBDIR "' or '" DEFAULT_LIBDIR "' on 64bit systems, "
       "depending on the installed Linux distribution." },
 
+    { "x-sysconfig-path", X_SYSCONFIG_PATH_OPTION, NVGETOPT_STRING_ARGUMENT, NULL,
+      "The path under which X system configuration files will be installed.  "
+      "If this option is not specified, nvidia-installer uses the following "
+      "search order and selects the first valid directory it finds: 1) "
+      "`pkg-config --variable=sysconfigdir xorg-server`, or 2) "
+      DEFAULT_X_DATAROOT_PATH "/" DEFAULT_CONFDIR "." },
+
     { "opengl-prefix", OPENGL_PREFIX_OPTION, NVGETOPT_STRING_ARGUMENT, NULL,
       "The prefix under which the OpenGL components of the "
       "NVIDIA driver will be installed; the default is: '" DEFAULT_OPENGL_PREFIX
@@ -229,9 +244,16 @@ static const NVGetoptOption __options[] = {
       "The path relative to the 32bit compatibility prefix under which the "
       "32bit compatibility components of the NVIDIA driver will "
       "be installed.  The default is '" DEFAULT_LIBDIR "' or '"
-      UBUNTU_DEFAULT_COMPAT32_LIBDIR "', depending on the installed Linux "
+      DEFAULT_32BIT_LIBDIR "', depending on the installed Linux "
       "distribution.  Only under very rare circumstances should this "
       "option be used." },
+
+    { "install-compat32-libs", INSTALL_COMPAT32_LIBS_OPTION,
+      NVGETOPT_IS_BOOLEAN, NULL,
+      "32-bit compatibility libraries may be optionally installed. Setting "
+      "--install-compat32-libs will install these libraries. Setting "
+      "--no-install-compat32-libs will skip installation of these libraries. "
+      "Note: this option will have no effect on -no-compat32.run packages."  },
 #endif /* NV_X86_64 */
 
     { "installer-prefix", INSTALLER_PREFIX_OPTION, NVGETOPT_STRING_ARGUMENT,
@@ -366,6 +388,7 @@ static const NVGetoptOption __options[] = {
       "needed if other means of loading the NVIDIA kernel module and creating "
       "the NVIDIA device files are unavailable." },
 
+#if defined(NV_TLS_TEST)
     { "force-tls", FORCE_TLS_OPTION, NVGETOPT_STRING_ARGUMENT, NULL,
       "NVIDIA's OpenGL libraries are compiled with one of two "
       "different thread local storage (TLS) mechanisms: 'classic tls' "
@@ -383,6 +406,7 @@ static const NVGetoptOption __options[] = {
       "32bit compatibility OpenGL TLS library; further details "
       "can be found in the description of the '--force-tls' option." },
 #endif /* NV_X86_64 */
+#endif
 
     { "kernel-name", 'k', NVGETOPT_STRING_ARGUMENT, NULL,
       "Build and install the NVIDIA kernel module for the "
@@ -620,15 +644,21 @@ static const NVGetoptOption __options[] = {
        NVGETOPT_INTEGER_ARGUMENT, NULL,
       "Build and install multiple NVIDIA kernel modules. The maximum number "
       "of NVIDIA kernel modules that may be built is 8. '--multiple-kernel-"
-      "modules' implies '--no-unified-memory'."},
+      "modules' implies '--no-unified-memory'." },
 
     { "no-unified-memory", NO_UVM_OPTION, 0, NULL,
       "Do not install the NVIDIA Unified Memory kernel module. This kernel "
-      "module is required for CUDA, and if it is not installed, the CUDA "
-      "driver and CUDA applications will not be able to run. The "
-      "'--no-unified-memory' option should only be used to work around "
-      "failures to build or install the Unified Memory kernel module on "
+      "module is required for CUDA on 64-bit systems, and if it is not "
+      "installed, the CUDA driver and CUDA applications will not be able to "
+      "run. The '--no-unified-memory' option should only be used to work "
+      "around failures to build or install the Unified Memory kernel module on "
       "systems that do not need to run CUDA." },
+
+    { "concurrency-level", 'j', NVGETOPT_INTEGER_ARGUMENT, NULL,
+      "Set the concurrency level for operations such as building the kernel "
+      "module which may be parallelized on SMP systems. By default, this will "
+      "be set to the number of detected CPUs, or to '1', if nvidia-installer "
+      "fails to detect the number of CPUs." },
 
     /* Orphaned options: These options were in the long_options table in
      * nvidia-installer.c but not in the help. */

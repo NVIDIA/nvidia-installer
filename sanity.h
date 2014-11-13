@@ -24,6 +24,5 @@
 #define __NVIDIA_INSTALLER_SANITY_H__
 
 int sanity(Options *);
-int check_sysvipc(Options *op);
 
 #endif /* __NVIDIA_INSTALLER_SANITY_H__ */

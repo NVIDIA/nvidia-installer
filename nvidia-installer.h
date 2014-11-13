@@ -57,6 +57,7 @@ typedef enum {
     PKG_CONFIG,
     XSERVER,
     OPENSSL,
+    DKMS,
     MAX_SYSTEM_OPTIONAL_UTILS
 } SystemOptionalUtils;
 
@@ -92,22 +93,6 @@ typedef enum {
 
 #define MAX_UTILS MAX_DEVELOP_UTILS
 
-/*
- * Enumerated type of distributions; this isn't an exhaustive list of
- * supported distributions... just distributions that have asked for
- * special behavior.
- */
-
-typedef enum {
-    SUSE,
-    UNITED_LINUX,
-    DEBIAN,
-    UBUNTU,
-    GENTOO,
-    ARCH,
-    OTHER
-} Distribution;
-
 
 typedef uint32_t uint32;
 typedef uint16_t uint16;
@@ -128,6 +113,7 @@ typedef struct __options {
     int update;
     int expert;
     int uninstall;
+    int skip_module_unload;
     int driver_info;
     int debug;
     int logging;
@@ -139,8 +125,10 @@ typedef struct __options {
     int nvidia_modprobe;
     int no_questions;
     int silent;
+#if defined(NV_TLS_TEST)
     int which_tls;
     int which_tls_compat32;
+#endif /* NV_TLS_TEST */
     int sanity;
     int add_this_kernel;
     int no_backup;
@@ -167,8 +155,12 @@ typedef struct __options {
     int num_kernel_modules;
     int install_uvm;
     int uvm_files_packaged;
+    int compat32_files_packaged;
+    int x_files_packaged;
+    int concurrency_level;
 
     NVOptionalBool install_vdpau_wrapper;
+    NVOptionalBool install_compat32_libs;
 
     char *opengl_prefix;
     char *opengl_libdir;
@@ -179,6 +171,7 @@ typedef struct __options {
     char *x_moddir;
     char *x_module_path;
     char *x_library_path;
+    char *x_sysconfig_path;
 
     char *compat32_chroot;
     char *compat32_prefix;
@@ -198,6 +191,7 @@ typedef struct __options {
     char *application_profile_path;
 
     int modular_xorg;
+    int xorg_supports_output_class;
 
     char *kernel_source_path;
     char *kernel_output_path;
@@ -231,8 +225,6 @@ typedef struct __options {
 
     int kernel_module_signed;
 
-    Distribution distro;
-
     void *ui_priv; /* for use by the ui's */
 
     int ignore_cc_version_check;
@@ -249,11 +241,8 @@ typedef enum {
     FILE_TYPE_KERNEL_MODULE_CMD,
     FILE_TYPE_OPENGL_HEADER,
     FILE_TYPE_OPENGL_LIB,
-    FILE_TYPE_XLIB_STATIC_LIB,
-    FILE_TYPE_XLIB_SHARED_LIB,
     FILE_TYPE_DOCUMENTATION,
     FILE_TYPE_OPENGL_SYMLINK,
-    FILE_TYPE_XLIB_SYMLINK,
     FILE_TYPE_KERNEL_MODULE,
     FILE_TYPE_INSTALLER_BINARY,
     FILE_TYPE_UTILITY_BINARY,
@@ -269,7 +258,11 @@ typedef enum {
     FILE_TYPE_MANPAGE,
     FILE_TYPE_EXPLICIT_PATH,
     FILE_TYPE_CUDA_LIB,
+    FILE_TYPE_OPENCL_LIB,
+    FILE_TYPE_OPENCL_WRAPPER_LIB,
     FILE_TYPE_CUDA_SYMLINK,
+    FILE_TYPE_OPENCL_LIB_SYMLINK,
+    FILE_TYPE_OPENCL_WRAPPER_SYMLINK,
     FILE_TYPE_VDPAU_LIB,
     FILE_TYPE_VDPAU_WRAPPER_LIB,
     FILE_TYPE_VDPAU_SYMLINK,
@@ -291,6 +284,7 @@ typedef enum {
     FILE_TYPE_NVIFR_LIB,
     FILE_TYPE_NVIFR_LIB_SYMLINK,
     FILE_TYPE_UVM_MODULE_SRC,
+    FILE_TYPE_XORG_OUTPUTCLASS_CONFIG,
     FILE_TYPE_MAX
 } PackageEntryFileType;
 
@@ -315,6 +309,7 @@ typedef struct {
     unsigned int is_shared_lib : 1;
     unsigned int is_opengl     : 1;
     unsigned int is_temporary  : 1;
+    unsigned int is_wrapper    : 1;
 } PackageEntryFileCapabilities;
 
 /*
@@ -374,6 +369,25 @@ typedef struct __package_entry {
                      */
 } PackageEntry;
 
+/*
+ * Information about a conflicting file; nvidia-installer searches for existing
+ * files that conflict with files that are to be installed.
+ */
+
+typedef struct {
+    const char *name;
+    int len;
+
+    /*
+     * if requiredString is non-NULL, then a file must have this
+     * string in order to be considered a conflicting file; we use
+     * this to only consider "libglx.*" files conflicts if they have
+     * the string "glxModuleData".
+     */
+
+    const char *requiredString;
+} ConflictingFileInfo;
+
 
 typedef struct __package {
 
@@ -397,6 +411,7 @@ typedef struct __package {
     PackageEntry *entries; /* array of filename/checksum/bytesize entries */
     int num_entries;
 
+    ConflictingFileInfo *conflicting_files;
 } Package;
 
 
@@ -439,16 +454,25 @@ typedef struct __package {
 #define DEFAULT_APPLICATION_PROFILE_PATH "/usr/share/nvidia"
 
 #define DEFAULT_LIBDIR                  "lib"
+#define DEFAULT_32BIT_LIBDIR            "lib32"
 #define DEFAULT_64BIT_LIBDIR            "lib64"
+#define DEFAULT_IA32_TRIPLET_LIBDIR     "lib/i386-linux-gnu"
+#define DEFAULT_AMD64_TRIPLET_LIBDIR    "lib/x86_64-linux-gnu"
+#define DEFAULT_ARMV7_TRIPLET_LIBDIR    "lib/arm-linux-gnueabi"
+#define DEFAULT_ARMV7HF_TRIPLET_LIBDIR  "lib/arm-linux-gnueabihf"
+#define DEFAULT_AARCH64_TRIPLET_LIBDIR  "lib/aarch64-linux-gnu"
+#define DEFAULT_PPC64LE_TRIPLET_LIBDIR  "lib/powerpc64le-linux-gnu"
 #define DEFAULT_BINDIR                  "bin"
 #define DEFAULT_INCDIR                  "include"
 #define DEFAULT_X_MODULEDIR             "modules"
 #define DEFAULT_DOT_DESKTOPDIR          "share/applications"
 #define DEFAULT_DOCDIR                  "share/doc"
 #define DEFAULT_MANDIR                  "share/man"
+#define DEFAULT_CONFDIR                 "X11/xorg.conf.d"
 
 #define DEFAULT_MODULE_SIGNING_KEY_PATH "/usr/share/nvidia"
 #define DEFAULT_KERNEL_MODULE_SRC_PREFIX "/usr/src"
+#define DEFAULT_X_DATAROOT_PATH         "/usr/share"
 
 /*
  * As of Xorg 7.x, X components need not be installed relative
@@ -466,29 +490,6 @@ typedef struct __package {
  * directory; the prefix below is prepended to the full paths.
  */
 #define DEBIAN_DEFAULT_COMPAT32_CHROOT  "/emul/ia32-linux"
-
-/*
- * Debian GNU/Linux and Ubuntu do not follow the lib64 library
- * path naming convention used by other distributors. 64-bit
- * libraries are placed under ../lib.
- */
-#define DEBIAN_DEFAULT_64BIT_LIBDIR     "lib"
-
-/*
- * Ubuntu GNU/Linux and Gentoo Linux do not follow the "lib"
- * library path naming convention used for 32-bit compatibility
- * libraries by other distributors. These libraries are
- * placed under ../lib32.
- */
-#define UBUNTU_DEFAULT_COMPAT32_LIBDIR  "lib32"
-
-/*
- * Newer versions of Debian GNU/Linux may install 32-bit
- * compatibility libraries to ../lib/i386-linux-gnu instead
- * of ../lib32.
- */
-
-#define DEBIAN_DEFAULT_COMPAT32_LIBDIR "lib/i386-linux-gnu"
 
 #define DEFAULT_PROC_MOUNT_POINT "/proc"
 

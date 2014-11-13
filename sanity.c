@@ -21,17 +21,9 @@
  */
 
 #include "nvidia-installer.h"
-#include "command-list.h"
 #include "user-interface.h"
 #include "backup.h"
-#include "misc.h"
 #include "sanity.h"
-
-#include <sys/types.h>
-#include <sys/shm.h>
-#include <unistd.h>
-#include <errno.h>
-#include <string.h>
 
 
 /*
@@ -68,10 +60,6 @@ int sanity(Options *op)
         return FALSE;
     }
 
-    /* check that shared memory works */
-
-    if (!check_sysvipc(op)) return FALSE;
-
     /*
      * XXX There are lots of additional tests that could be added:
      *
@@ -95,39 +83,3 @@ int sanity(Options *op)
     return TRUE;
     
 } /* sanity() */
-
-
-/*
- * check_sysvipc() - test that shmat() and friends work
- */
-
-int check_sysvipc(Options *op)
-{
-    int shmid = -1;
-    int ret = FALSE;
-    int size = sysconf(_SC_PAGESIZE);
-    void *address = (void *) -1;
-
-    shmid = shmget(IPC_PRIVATE, size, IPC_CREAT | 0777);
-    if (shmid == -1) goto done;
-
-    address = shmat(shmid, 0, 0);
-    if (address == (void *) -1) goto done;
-
-    ret = TRUE;
-
- done:
-
-    if (shmid != -1) shmctl(shmid, IPC_RMID, 0);
-    if (address != (void *) -1) shmdt(address);
-
-    if (ret) {
-        ui_log(op, "Shared memory test passed.");
-    } else {
-        ui_message(op, "Shared memory test failed (%s): please check that "
-                   "your kernel has CONFIG_SYSVIPC enabled.", strerror(errno));
-    }
-    
-    return ret;
-
-} /* check_sysvipc() */

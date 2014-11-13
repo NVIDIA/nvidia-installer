@@ -76,12 +76,11 @@ int install_from_cwd(Options *op)
 {
     Package *p;
     CommandList *c;
-    const char *msg;
     int ret;
     int ran_pre_install_hook = FALSE;
     HookScriptStatus res;
 
-    static const char edit_your_xf86config[] =
+    static const char* edit_your_xf86config =
         "Please update your XF86Config or xorg.conf file as "
         "appropriate; see the file /usr/share/doc/"
         "NVIDIA_GLX-1.0/README.txt for details.";
@@ -92,6 +91,10 @@ int install_from_cwd(Options *op)
      */
     
     if ((p = parse_manifest(op)) == NULL) goto failed;
+
+    if (!op->x_files_packaged) {
+        edit_your_xf86config = "";
+    }
 
     ui_set_title(op, "%s (%s)", p->description, p->version);
     
@@ -248,6 +251,15 @@ int install_from_cwd(Options *op)
      */
     
     if (!set_destinations(op, p)) goto failed;
+
+    /*
+     * if we are installing OpenGL libraries, ensure that a symlink gets
+     * installed to /usr/lib/libGL.so.1. add_libgl_abi_symlink() sets its own
+     * destination, so it must be called after set_destinations().
+     */
+    if (!op->kernel_module_only && !op->no_opengl_files) {
+        add_libgl_abi_symlink(op, p);
+    }
     
     /*
      * uninstall the existing driver; this needs to be done before
@@ -296,6 +308,23 @@ int install_from_cwd(Options *op)
     if (op->dkms && !dkms_install_module(op, p->version, get_kernel_name(op)))
         goto failed;
 
+    /* Make sure the RM is loaded */
+
+    if (!op->no_kernel_module || op->dkms) {
+        /*
+         * If a kernel module was installed the normal way, it should have been
+         * left loaded by test_kernel_module().  However, older versions of
+         * nvidia-uninstall don't honor the --skip-module-unload option, so
+         * uninstalling a previous driver may have unloaded the module that
+         * test_kernel_module() loaded.  Just in case that happened, modprobe it
+         * again here.
+         *
+         * When installing the module via DKMS, the module is not loaded to
+         * begin with.
+         */
+        if (!load_kernel_module(op, p)) goto failed;
+    }
+
     /* run the distro postinstall script */
 
     run_distro_hook(op, "post-install");
@@ -307,7 +336,6 @@ int install_from_cwd(Options *op)
 
     check_installed_files_from_package(op, p);
 
-    if (!check_sysvipc(op)) goto failed;
     if (!check_runtime_configuration(op, p)) goto failed;
     
     /* done */
@@ -321,28 +349,22 @@ int install_from_cwd(Options *op)
         
         /* ask the user if they would like to run nvidia-xconfig */
         
-        ret = ui_yes_no(op, op->run_nvidia_xconfig,
-                        "Would you like to run the nvidia-xconfig utility "
-                        "to automatically update your X configuration file "
-                        "so that the NVIDIA X driver will be used when you "
-                        "restart X?  Any pre-existing X configuration "
-                        "file will be backed up.");
+        const char *msg = "Would you like to run the nvidia-xconfig utility "
+                          "to automatically update your X configuration file "
+                          "so that the NVIDIA X driver will be used when you "
+                          "restart X?  Any pre-existing X configuration "
+                          "file will be backed up.";
         
-        if (ret) {
-            ret = run_nvidia_xconfig(op, FALSE);
-        }
+        ret = run_nvidia_xconfig(op, FALSE, msg, op->run_nvidia_xconfig);
         
         if (ret) {
             ui_message(op, "Your X configuration file has been successfully "
                        "updated.  Installation of the %s (version: %s) is now "
                        "complete.", p->description, p->version);
         } else {
-            
-            msg = edit_your_xf86config;
-            
             ui_message(op, "Installation of the %s (version: %s) is now "
                        "complete.  %s", p->description,
-                       p->version, msg);
+                       p->version, edit_your_xf86config);
         }
     }
     
@@ -453,7 +475,7 @@ dkmscatfailed:
      * will be installed somewhere. Don't offer DKMS as an option if module
      * signing was requested. */
 
-    if (find_system_util("dkms") && !op->no_kernel_module_source &&
+    if (op->utils[DKMS] && !op->no_kernel_module_source &&
         !(op->module_signing_secret_key && op->module_signing_public_key)) {
         op->dkms = ui_yes_no(op, op->dkms,
                             "Would you like to register the kernel module "
@@ -492,14 +514,15 @@ dkmscatfailed:
     
     if ((precompiled_info = find_precompiled_kernel_interface(op, p))) {
 
-        int i;
+        int i, precompiled_success = TRUE;
 
         /*
          * make sure the required development tools are present on
          * this system before trying to link the kernel interface.
          */
         if (!check_precompiled_kernel_interface_tools(op)) {
-            return FALSE;
+            precompiled_success = FALSE;
+            goto precompiled_done;
         }
 
         /*
@@ -515,10 +538,15 @@ dkmscatfailed:
         for (i = 0; i < precompiled_info->num_files; i++) {
             if (!link_kernel_module(op, p, p->kernel_module_build_directory,
                                     &(precompiled_info->files[i]))) {
-                return FALSE;
+                precompiled_success = FALSE;
+                goto precompiled_done;
             }
         }
-
+precompiled_done:
+        free_precompiled(precompiled_info);
+        if (!precompiled_success) {
+            return FALSE;
+        }
     } else {
         /*
          * make sure the required development tools are present on
@@ -624,6 +652,49 @@ int add_this_kernel(Options *op)
 
 
 
+static void add_conflicting_file(Package *p, int *index, const char *file)
+{
+    char *c;
+
+    p->conflicting_files = nvrealloc(p->conflicting_files,
+                                     sizeof(ConflictingFileInfo) * (*index+1));
+
+    p->conflicting_files[*index].name = file;
+
+    if (file == NULL) {
+        /* Adding a terminator to the list. Pretend that the name is
+         * actually an empty string to avoid crashing later. */
+        file = "";
+    }
+
+    /*
+     * match the names of DSOs with "libfoo.so*" by stopping any comparisons
+     * after ".so".
+     */
+
+    c = strstr(file, ".so.");
+    if (c) {
+        p->conflicting_files[*index].len = (c - file) + 3;
+    } else {
+        p->conflicting_files[*index].len = strlen(file);
+    }
+
+    /*
+     * XXX avoid conflicting with libglx.so if it doesn't include the string
+     * "glxModuleData" to avoid removing the wrong libglx.so (bug 489316)
+     */
+
+    if (strncmp(file, "libglx.so", p->conflicting_files[*index].len) == 0) {
+        p->conflicting_files[*index].requiredString = "glxModuleData";
+    } else {
+        p->conflicting_files[*index].requiredString = NULL;
+    }
+
+    (*index)++;
+}
+
+
+
 /*
  * parse_manifest() - open and read the .manifest file in the current
  * directory.
@@ -656,13 +727,14 @@ int add_this_kernel(Options *op)
 
 static Package *parse_manifest (Options *op)
 {
-    char *buf, *c, *flag, *tmpstr, *module_suffix = "";
-    int done, n, line;
+    char *buf, *c, *tmpstr, *module_suffix = "", *interface_suffix = "";
+    int n, line;
     int fd, ret, len = 0;
     struct stat stat_buf;
     Package *p;
     char *manifest = MAP_FAILED, *ptr;
     int opengl_files_packaged = FALSE;
+    int num_conflicting_files = 0;
     
     p = (Package *) nvalloc(sizeof (Package));
     
@@ -707,21 +779,22 @@ static Package *parse_manifest (Options *op)
 
     if (op->multiple_kernel_modules) {
         module_suffix = "0";
+        interface_suffix = "-0";
     }
 
     p->kernel_module_name = nvstrcat(tmpstr, module_suffix, NULL);
     p->kernel_module_filename = nvstrcat(p->kernel_module_name, ".ko", NULL);
-    p->kernel_interface_filename = nvstrcat("nv-linux", module_suffix, ".o", NULL); 
+    p->kernel_interface_filename = nvstrcat("nv-linux", interface_suffix, ".o", NULL);
 
     p->kernel_frontend_module_name = nvstrcat(tmpstr, "-frontend", NULL);
     p->kernel_frontend_module_filename = nvstrcat(p->kernel_frontend_module_name,
                                                   ".ko", NULL);
-    p->kernel_frontend_interface_filename = "nv-linuxfrontend.o";
+    p->kernel_frontend_interface_filename = "nv-linux-frontend.o";
 
     p->uvm_kernel_module_name = nvstrcat(tmpstr, "-uvm", NULL);
     p->uvm_kernel_module_filename = nvstrcat(p->uvm_kernel_module_name, ".ko",
                                              NULL);
-    p->uvm_interface_filename = "nv-linuxuvm.o";
+    p->uvm_interface_filename = "nv-linux-uvm.o";
 
     nvfree(tmpstr);
 
@@ -790,165 +863,194 @@ static Package *parse_manifest (Options *op)
 
     /* the rest of the file is file entries */
 
-    done = FALSE;
     line++;
     
-    do {
-        buf = get_next_line(ptr, &ptr, manifest, len);
-        if (!buf) {
-            done = TRUE;
-        } else if (buf[0] == '\0') {
+    for (; (buf = get_next_line(ptr, &ptr, manifest, len)); line++) {
+        char *flag = NULL;
+        PackageEntry entry;
+        int entry_success = FALSE;
+
+        if (buf[0] == '\0') {
             free(buf);
-            done = TRUE;
-        } else {
-            PackageEntry entry;
-            
-            /* initialize the new entry */
-
-            memset(&entry, 0, sizeof(PackageEntry));
-
-            /* read the file name and permissions */
-
-            c = buf;
-
-            entry.file = read_next_word(buf, &c);
-
-            if (!entry.file) goto invalid_manifest_file;
-
-            tmpstr = read_next_word(c, &c);
-            
-            if (!tmpstr) goto invalid_manifest_file;
-            
-            /* translate the mode string into an octal mode */
-            
-            ret = mode_string_to_mode(op, tmpstr, &entry.mode);
-
-            free(tmpstr);
-
-            if (!ret) goto invalid_manifest_file;
-            
-            /* every file has a type field */
-
-            entry.type = FILE_TYPE_NONE;
-
-            flag = read_next_word(c, &c);
-            if (!flag) goto invalid_manifest_file;
-
-            entry.type = parse_manifest_file_type(flag, &entry.caps);
-
-            if (entry.type == FILE_TYPE_NONE) {
-                nvfree(flag);
-                goto invalid_manifest_file;
-            }
-
-            /* if any UVM files have been packaged, set uvm_files_packaged. */
-
-            if (entry.type == FILE_TYPE_UVM_MODULE_SRC) {
-                op->uvm_files_packaged = TRUE;
-            }
-
-            /* set opengl_files_packaged if any OpenGL files were packaged */
-
-            if (entry.caps.is_opengl) {
-                opengl_files_packaged = TRUE;
-            }
-
-            nvfree(flag);
-
-            /* some libs/symlinks have an arch field */
-
-            entry.compat_arch = FILE_COMPAT_ARCH_NONE;
-
-            if (entry.caps.has_arch) {
-                flag = read_next_word(c, &c);
-                if (!flag) goto invalid_manifest_file;
-
-                if (strcmp(flag, "COMPAT32") == 0)
-                    entry.compat_arch = FILE_COMPAT_ARCH_COMPAT32;
-                else if (strcmp(flag, "NATIVE") == 0)
-                    entry.compat_arch = FILE_COMPAT_ARCH_NATIVE;
-                else {
-                    nvfree(flag);
-                    goto invalid_manifest_file;
-                }
-
-                nvfree(flag);
-            }
-
-            /* some libs/symlinks have a class field */
-
-            entry.tls_class = FILE_TLS_CLASS_NONE;
-
-            if (entry.caps.has_tls_class) {
-                flag = read_next_word(c, &c);
-                if (!flag) goto invalid_manifest_file;
-
-                if (strcmp(flag, "CLASSIC") == 0)
-                    entry.tls_class = FILE_TLS_CLASS_CLASSIC;
-                else if (strcmp(flag, "NEW") == 0)
-                    entry.tls_class = FILE_TLS_CLASS_NEW;
-                else {
-                    nvfree(flag);
-                    goto invalid_manifest_file;
-                }
-
-                nvfree(flag);
-            }
-
-            /* libs and documentation have a path field */
-
-            if (entry.caps.has_path) {
-                entry.path = read_next_word(c, &c);
-                if (!entry.path) goto invalid_manifest_file;
-            } else {
-                entry.path = NULL;
-            }
-            
-            /* symlinks have a target */
-
-            if (entry.caps.is_symlink) {
-                entry.target = read_next_word(c, &c);
-                if (!entry.target) goto invalid_manifest_file;
-            } else {
-                entry.target = NULL;
-            }
-
-            /*
-             * as a convenience for later, set the 'name' pointer to
-             * the basename contained in 'file' (ie the portion of
-             * 'file' without any leading directory components
-             */
-
-            entry.name = strrchr(entry.file, '/');
-            if (entry.name) entry.name++;
-            
-            if (!entry.name) entry.name = entry.file;
-
-            add_package_entry(p,
-                              entry.file,
-                              entry.path,
-                              entry.name,
-                              entry.target,
-                              entry.dst,
-                              entry.type,
-                              entry.tls_class,
-                              entry.compat_arch,
-                              entry.mode);
-
-            /* free the line */
-            
-            free(buf);
+            break;
         }
-        
-        line++;
 
-    } while (!done);
+        /* initialize the new entry */
 
-    /* If the package does not contain any OpenGL files, do not install
-     * OpenGL files */
+        memset(&entry, 0, sizeof(PackageEntry));
+
+        /* read the file name and permissions */
+
+        c = buf;
+
+        entry.file = read_next_word(buf, &c);
+
+        if (!entry.file) goto entry_done;
+
+        tmpstr = read_next_word(c, &c);
+
+        if (!tmpstr) goto entry_done;
+
+        /* translate the mode string into an octal mode */
+
+        ret = mode_string_to_mode(op, tmpstr, &entry.mode);
+
+        free(tmpstr);
+
+        if (!ret) goto entry_done;
+
+        /* every file has a type field */
+
+        entry.type = FILE_TYPE_NONE;
+
+        flag = read_next_word(c, &c);
+        if (!flag) goto entry_done;
+
+        entry.type = parse_manifest_file_type(flag, &entry.caps);
+
+        if (entry.type == FILE_TYPE_NONE) {
+            goto entry_done;
+        }
+
+        /* Track whether certain file types were packaged */
+
+        switch (entry.type) {
+            case FILE_TYPE_UVM_MODULE_SRC:
+                op->uvm_files_packaged = TRUE;
+                break;
+            case FILE_TYPE_XMODULE_SHARED_LIB:
+                op->x_files_packaged = TRUE;
+                break;
+            default: break;
+        }
+
+        /* set opengl_files_packaged if any OpenGL files were packaged */
+
+        if (entry.caps.is_opengl) {
+            opengl_files_packaged = TRUE;
+        }
+
+        /* some libs/symlinks have an arch field */
+
+        entry.compat_arch = FILE_COMPAT_ARCH_NONE;
+
+        if (entry.caps.has_arch) {
+            nvfree(flag);
+            flag = read_next_word(c, &c);
+            if (!flag) goto entry_done;
+
+            if (strcmp(flag, "COMPAT32") == 0)
+                entry.compat_arch = FILE_COMPAT_ARCH_COMPAT32;
+            else if (strcmp(flag, "NATIVE") == 0)
+                entry.compat_arch = FILE_COMPAT_ARCH_NATIVE;
+            else {
+                goto entry_done;
+            }
+        }
+
+        /* if compat32 files are packaged, set compat32_files_packaged */
+
+        if (entry.compat_arch == FILE_COMPAT_ARCH_COMPAT32) {
+            op->compat32_files_packaged = TRUE;
+        }
+
+        /* some libs/symlinks have a class field */
+
+        entry.tls_class = FILE_TLS_CLASS_NONE;
+
+        if (entry.caps.has_tls_class) {
+            nvfree(flag);
+            flag = read_next_word(c, &c);
+            if (!flag) goto entry_done;
+
+            if (strcmp(flag, "CLASSIC") == 0)
+                entry.tls_class = FILE_TLS_CLASS_CLASSIC;
+            else if (strcmp(flag, "NEW") == 0)
+                entry.tls_class = FILE_TLS_CLASS_NEW;
+            else {
+                goto entry_done;
+            }
+        }
+
+        /* libs and documentation have a path field */
+
+        if (entry.caps.has_path) {
+            entry.path = read_next_word(c, &c);
+            if (!entry.path) goto invalid_manifest_file;
+        } else {
+            entry.path = NULL;
+        }
+
+        /* symlinks have a target */
+
+        if (entry.caps.is_symlink) {
+            entry.target = read_next_word(c, &c);
+            if (!entry.target) goto invalid_manifest_file;
+        } else {
+            entry.target = NULL;
+        }
+
+        /*
+         * as a convenience for later, set the 'name' pointer to
+         * the basename contained in 'file' (ie the portion of
+         * 'file' without any leading directory components
+         */
+
+        entry.name = strrchr(entry.file, '/');
+        if (entry.name) entry.name++;
+
+        if (!entry.name) entry.name = entry.file;
+
+        add_package_entry(p,
+                          entry.file,
+                          entry.path,
+                          entry.name,
+                          entry.target,
+                          entry.dst,
+                          entry.type,
+                          entry.tls_class,
+                          entry.compat_arch,
+                          entry.mode);
+
+
+        /* Conflict with any non-wrapper shared libs. Don't conflict with
+         * OpenGL files if we won't be installing any. */
+        if (entry.caps.is_shared_lib && !entry.caps.is_wrapper &&
+            (!entry.caps.is_opengl || !op->no_opengl_files)) {
+            add_conflicting_file(p, &num_conflicting_files, entry.name);
+        }
+
+        entry_success = TRUE;
+
+ entry_done:
+        /* clean up */
+
+        nvfree(buf);
+        nvfree(flag);
+        if (!entry_success) {
+            goto invalid_manifest_file;
+        }
+    }
+
+    /* If no OpenGL files were packaged, we can't install them. Set the
+     * no_opengl_files flag so that everything we skip when explicitly
+     * excluding OpenGL is also skipped when OpenGL is not packaged. */
+
     if (!opengl_files_packaged) {
         op->no_opengl_files = TRUE;
     }
+
+    /* XXX always conflict with these files if OpenGL files will be installed
+     * libglamoregl.so: prevent X from loading libGL and libglx simultaneously
+     *                  (bug 1299091)
+     * libGLwrapper.so: this library has an SONAME of libGL.so.1 (bug 74761) */
+    if (!op->no_opengl_files) {
+        add_conflicting_file(p, &num_conflicting_files, "libglamoregl.so");
+        add_conflicting_file(p, &num_conflicting_files, "libGLwrapper.so");
+    }
+
+    /* terminate the conflicting files list */
+    add_conflicting_file(p, &num_conflicting_files, NULL);
 
     munmap(manifest, len);
     if (fd != -1) close(fd);
@@ -1327,13 +1429,13 @@ generate_done:
 
     if (op->multiple_kernel_modules) {
         if (!sign_kernel_module(op, p->kernel_module_build_directory,
-                                "frontend", TRUE)) {
+                                "-frontend", TRUE)) {
             return FALSE;
         }
     }
 
     if (op->install_uvm) {
-        if (!sign_kernel_module(op, p->uvm_module_build_directory, "uvm",
+        if (!sign_kernel_module(op, p->uvm_module_build_directory, "-uvm",
                                 TRUE)) {
             return FALSE;
         }
@@ -1391,7 +1493,7 @@ generate_done:
         } else {
             /* Remove any ':' characters from fingerprint and truncate */
             char *tmp = nv_strreplace(fingerprint, ":", "");
-            strncpy(short_fingerprint, tmp, sizeof(fingerprint));
+            strncpy(short_fingerprint, tmp, sizeof(short_fingerprint));
             nvfree(tmp);
         }
         short_fingerprint[sizeof(short_fingerprint) - 1] = '\0';

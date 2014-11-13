@@ -79,11 +79,10 @@ int tls_test(Options *op, int compat_32_libs);
 int check_runtime_configuration(Options *op, Package *p);
 void collapse_multiple_slashes(char *s);
 int is_symbolic_link_to(const char *path, const char *dest);
-Distribution get_distribution(Options *op);
 int check_for_running_x(Options *op);
-int check_for_modular_xorg(Options *op);
+void query_xorg_version(Options *op);
 int check_for_nvidia_graphics_devices(Options *op, Package *p);
-int run_nvidia_xconfig(Options *op, int restore);
+int run_nvidia_xconfig(Options *op, int restore, const char *question, int answer);
 HookScriptStatus run_distro_hook(Options *op, const char *hook);
 int check_for_alternate_install(Options *op);
 int check_for_nouveau(Options *op);
@@ -94,5 +93,6 @@ int verify_crc(Options *op, const char *filename, unsigned int crc,
                unsigned int *actual_crc);
 int secure_boot_enabled(void);
 ElfFileType get_elf_architecture(const char *filename);
+void set_concurrency_level(Options *op);
 
 #endif /* __NVIDIA_INSTALLER_MISC_H__ */

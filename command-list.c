@@ -47,18 +47,6 @@
 
 static void free_file_list(FileList* l);
 
-static void find_conflicting_xfree86_libraries(Options *,
-                                               const char *,
-                                               FileList *);
-
-static void find_conflicting_xfree86_libraries_fullpath(Options *op,
-                                                        char *,
-                                                        FileList *l);
-
-static void find_conflicting_opengl_libraries(Options *,
-                                              const char *,
-                                              FileList *);
-
 static void find_conflicting_kernel_modules(Options *op,
                                             Package *p,
                                             FileList *l);
@@ -83,6 +71,110 @@ typedef struct {
     int level;   /* max search depth: set to negative for unrestricted depth */
     char *name;  /* name to find: NULL to end the list */
 } NoRecursionDirectory;
+
+static void find_conflicting_files(Options *op,
+                                   char *path,
+                                   ConflictingFileInfo *files,
+                                   FileList *l,
+                                   const NoRecursionDirectory *skipdirs);
+
+
+/*
+ * Check if a path already exists in the path list, or is a subdirectory of
+ * a path that exists in the path list, or is a symlink to or symlink target
+ * of a directory that exists in the path list.
+ */
+static int path_already_exists(char ***paths, int count, const char *path)
+{
+    int i;
+
+    for (i = 0; i < count; i++) {
+        int is_subdir = FALSE;
+
+        is_subdirectory((*paths)[i], path, &is_subdir);
+
+        if (is_subdir) {
+            return TRUE;
+        }
+    }
+
+    return FALSE;
+}
+
+/*
+ * Add a new path to the list of paths to search, provided that it exists
+ * and is not redundant.
+ * XXX we only check to see if the new directory is a subdirectory of any
+ * existing directory, and not the other way around.
+ */
+static void add_search_path(char ***paths, int *count, const char *path)
+{
+    if (directory_exists(path) && !path_already_exists(paths, *count, path)) {
+        *paths = nvrealloc(*paths, sizeof(char *) * (*count + 1));
+        (*paths)[*count] = nvstrdup(path);
+        (*count)++;
+    }
+}
+
+/*
+ * Given a path, add the subdirectories "/lib", "/lib32", and "/lib64" to the
+ * list of paths to search.
+ */
+static void add_search_paths(char ***paths, int *count, const char *pathbase)
+{
+    int i;
+    const char *subdirs[] = {
+        "/lib",
+        "/lib32",
+        "/lib64",
+    };
+
+    for (i = 0; i < ARRAY_LEN(subdirs); i++) {
+        char *path = nvstrcat(pathbase, subdirs[i], NULL);
+        add_search_path(paths, count, path);
+        nvfree(path);
+    }
+}
+
+/*
+ * Build the list of paths under which to search for conflicting files.
+ * Returns the number of paths added to the search list.
+ */
+static int get_conflicting_search_paths(const Options *op, char ***paths)
+{
+    int ret = 0;
+
+    *paths = NULL;
+
+    add_search_paths(paths, &ret, DEFAULT_X_PREFIX);
+    add_search_paths(paths, &ret, XORG7_DEFAULT_X_PREFIX);
+    add_search_paths(paths, &ret, op->x_prefix);
+    add_search_paths(paths, &ret, DEFAULT_OPENGL_PREFIX);
+    add_search_paths(paths, &ret, op->opengl_prefix);
+    add_search_path(paths, &ret, op->x_module_path);
+    add_search_path(paths, &ret, op->x_library_path);
+
+#if defined(NV_X86_64)
+    if (op->compat32_chroot != NULL) {
+        int i;
+        char *subdirs[] = {
+            DEFAULT_X_PREFIX,
+            op->x_prefix,
+            DEFAULT_OPENGL_PREFIX,
+            op->opengl_prefix,
+            op->compat32_prefix,
+        };
+
+        for (i = 0; i < ARRAY_LEN(subdirs); i++) {
+            char *path = nvstrcat(op->compat32_chroot, "/", subdirs[i], NULL);
+            add_search_paths(paths, &ret, path);
+            nvfree(path);
+        }
+    }
+#endif
+
+    return ret;
+}
 
 
 /*
@@ -149,70 +241,30 @@ CommandList *build_command_list(Options *op, Package *p)
     }
     
     if (!op->kernel_module_only) {
+        char **paths;
+        int numpaths, i;
+
         /*
-         * Note that searching the various paths may produce duplicate
-         * entries for conflicting files; this is OK because we will take
-         * care of these duplicates in condense_file_list().
+         * stop recursing into any "nvidia-cg-toolkit"
+         * directory to prevent libGL.so.1 from being deleted
+         * (see bug 843595).
          */
+        static const NoRecursionDirectory skipdirs[] = {
+            { -1, "nvidia-cg-toolkit" },
+            {  0, NULL }
+        };
 
-        ui_status_begin(op, "Searching for conflicting X files:", "Searching");
+        numpaths = get_conflicting_search_paths(op, &paths);
 
-        ui_status_update(op, 0.16f, DEFAULT_X_PREFIX);
-        find_conflicting_xfree86_libraries(op, DEFAULT_X_PREFIX, l);
-        ui_status_update(op, 0.32f, XORG7_DEFAULT_X_PREFIX);
-        find_conflicting_xfree86_libraries(op, XORG7_DEFAULT_X_PREFIX, l);
-        ui_status_update(op, 0.48f, "%s", op->x_prefix);
-        find_conflicting_xfree86_libraries(op, op->x_prefix, l);
+        ui_status_begin(op, "Searching for conflicting files:", "Searching");
 
-        ui_status_update(op, 0.64f, "%s", op->x_module_path);
-        find_conflicting_xfree86_libraries_fullpath(op, op->x_module_path, l);
-        ui_status_update(op, 0.80f, "%s", op->x_library_path);
-        find_conflicting_xfree86_libraries_fullpath(op, op->x_library_path, l);
-
-        ui_status_end(op, "done.");
-
-        ui_status_begin(op, "Searching for conflicting OpenGL files:", "Searching");
-
-        ui_status_update(op, 0.20f, DEFAULT_X_PREFIX);
-        find_conflicting_opengl_libraries(op, DEFAULT_X_PREFIX, l);
-        ui_status_update(op, 0.40f, "%s", op->x_prefix);
-        find_conflicting_opengl_libraries(op, op->x_prefix, l);
-        ui_status_update(op, 0.60f, DEFAULT_OPENGL_PREFIX);
-        find_conflicting_opengl_libraries(op, DEFAULT_OPENGL_PREFIX, l);
-        ui_status_update(op, 0.80f, "%s", op->opengl_prefix);
-        find_conflicting_opengl_libraries(op, op->opengl_prefix, l);
-
-        ui_status_end(op, "done.");
-
-#if defined(NV_X86_64)
-        if (op->compat32_chroot != NULL) {
-            char *prefix;
-
-            ui_status_begin(op, "Searching for conflicting compat32 files:", "Searching");
-
-            prefix = nvstrcat(op->compat32_chroot, DEFAULT_X_PREFIX, NULL);
-            ui_status_update(op, 0.20f, "%s", prefix);
-            find_conflicting_opengl_libraries(op, prefix, l);
-            nvfree(prefix);
-
-            prefix = nvstrcat(op->compat32_chroot, op->x_prefix, NULL);
-            ui_status_update(op, 0.40f, "%s", prefix);
-            find_conflicting_opengl_libraries(op, prefix, l);
-            nvfree(prefix);
-
-            prefix = nvstrcat(op->compat32_chroot, DEFAULT_OPENGL_PREFIX, NULL);
-            ui_status_update(op, 0.60f, "%s", prefix);
-            find_conflicting_opengl_libraries(op, prefix, l);
-            nvfree(prefix);
-
-            prefix = nvstrcat(op->compat32_chroot, op->compat32_prefix, NULL);
-            ui_status_update(op, 0.80f, "%s", prefix);
-            find_conflicting_opengl_libraries(op, prefix, l);
-            nvfree(prefix);
-
-            ui_status_end(op, "done.");
+        for (i = 0; i < numpaths; i++) {
+            ui_status_update(op, (i + 1.0f) / numpaths, "Searching: %s", paths[i]);
+            find_conflicting_files(op, paths[i], p->conflicting_files, l,
+                                   skipdirs);
         }
-#endif /* NV_X86_64 */
+
+        ui_status_end(op, "done.");
     }
     
     /*
@@ -369,16 +421,6 @@ CommandList *build_command_list(Options *op, Package *p)
         nvfree(tmp);
     }
     
-    /*
-     * if on SuSE or United Linux, also do `/usr/bin/chrc.config
-     * SCRIPT_3D no`
-     */
-
-    if (((op->distro == SUSE) || (op->distro == UNITED_LINUX)) &&
-        (access("/usr/bin/chrc.config", X_OK) == 0)) {
-        add_command(c, RUN_CMD, "/usr/bin/chrc.config SCRIPT_3D no");
-    }
-
     /* free the FileList */
     free_file_list(l);
 
@@ -569,197 +611,6 @@ int execute_command_list(Options *op, CommandList *c,
  */
 
 
-/*
- * CONFLICT_ARCH_ALL: file always conflicts, regardless of arch
- * CONFLICT_ARCH_32: file only conflicts if its arch is 32 bit
- * CONFLICT_ARCH_64: file only conflicts if its arch is 64 bit
- */
-
-typedef enum {
-    CONFLICT_ARCH_ALL,
-    CONFLICT_ARCH_32,
-    CONFLICT_ARCH_64,
-} ConflictArch;
-
-
-typedef struct {
-    const char *name;
-    int len;
-
-    /*
-     * if requiredString is non-NULL, then a file must have this
-     * string in order to be considered a conflicting file; we use
-     * this to only consider "libglx.*" files conflicts if they have
-     * the string "glxModuleData".
-     */
-
-    const char *requiredString;
-
-    ConflictArch conflictArch;
-} ConflictingFileInfo;
-
-static void find_conflicting_files(Options *op,
-                                   char *path,
-                                   ConflictingFileInfo *files,
-                                   FileList *l,
-                                   const NoRecursionDirectory *skipdirs);
-
-static void find_conflicting_libraries(Options *op,
-                                       const char *prefix,
-                                       ConflictingFileInfo *libs,
-                                       FileList *l);
-
-static ConflictingFileInfo __xfree86_opengl_libs[] = {
-
-    /* Conflicting OpenGL libraries */
-
-    { "libnvidia-glcore.",   17, /* strlen("libnvidia-glcore.") */
-                             NULL,            CONFLICT_ARCH_ALL        },
-    { "libGL.",              6,  /* strlen("libGL.") */
-                             NULL,            CONFLICT_ARCH_ALL        },
-    { "libGLwrapper.",       13, /* strlen("libGLwrapper.") */
-                             NULL,            CONFLICT_ARCH_ALL        },
-
-    /* Conflicting X extensions */
-
-    { "libglx.",             7,  /* strlen("libglx.") */
-                             "glxModuleData", CONFLICT_ARCH_ALL        },
-    { "libglamoregl.",       13, /* strlen("libglamoregl.") */
-                             NULL,            CONFLICT_ARCH_ALL        },
-
-    /* Conflicting EGL libraries: */
-
-    { "libEGL.",             7,  /* strlen("libEGL.") */
-                             NULL,            CONFLICT_ARCH_ALL        },
-    { "libGLESv1_CM.",       13, /* strlen("libGLESv1_CM." */
-                             NULL,            CONFLICT_ARCH_ALL        },
-    { "libGLESv2.",          10, /* strlen("libGLESv2." */
-                             NULL,            CONFLICT_ARCH_ALL        },
-    { NULL,                  0,     NULL,     CONFLICT_ARCH_ALL        }
-};
-
-static ConflictingFileInfo __xfree86_non_opengl_libs[] = {
-    { "nvidia_drv.",         11, /* strlen("nvidia_drv.") */
-                             NULL,            CONFLICT_ARCH_ALL        },
-    { "libvdpau_nvidia.",    16, /* strlen("libvdpau_nvidia.") */
-                             NULL,            CONFLICT_ARCH_ALL        },
-    { "libnvidia-cfg.",      14, /* strlen("libnvidia-cfg.") */
-                             NULL,            CONFLICT_ARCH_ALL        },
-    { "libcuda.",            8,  /* strlen("libcuda.") */
-                             NULL,            CONFLICT_ARCH_ALL        },
-    { "libnvidia-compiler.", 19, /* strlen("libnvidia-compiler.") */
-                             NULL,            CONFLICT_ARCH_ALL        },
-    { "libnvcuvid.",         11, /* strlen("libnvcuvid.") */
-                             NULL,            CONFLICT_ARCH_ALL        },
-    { "libnvidia-ml.",       13, /* strlen("libnvidia-ml.") */
-                             NULL,            CONFLICT_ARCH_ALL        },
-    { "libnvidia-encode.",   17, /* strlen("libnvidia-encode.") */
-                             NULL,            CONFLICT_ARCH_ALL        },
-    { "libnvidia-vgx.",      14, /* strlen("libnvidia-vgx.") */
-                             NULL,            CONFLICT_ARCH_ALL        },
-    { "libnvidia-ifr.",      14, /* strlen("libnvidia-ifr.") */
-                             NULL,            CONFLICT_ARCH_ALL        },
-    { "libnvidia-vgxcfg.",   17, /* strlen("libnvidia-vgxcfg.") */
-                             NULL,            CONFLICT_ARCH_ALL        },
-    { NULL,                  0,     NULL,     CONFLICT_ARCH_ALL        }
-};
-
-static ConflictingFileInfo __xfree86_vdpau_wrapper_libs[] = {
-    { "libvdpau.",           9,  /* strlen("libvdpau.") */
-                             NULL,            CONFLICT_ARCH_ALL        },
-    { "libvdpau_trace.",     15, /* strlen("libvdpau_trace.") */
-                             NULL,            CONFLICT_ARCH_ALL        },
-    { NULL,                  0,     NULL,     CONFLICT_ARCH_ALL        }
-};
-
-/*
- * find_conflicting_xfree86_libraries() - search for conflicting
- * libraries under the XFree86 installation prefix, for all possible
- * libdirs.
- */
-
-static void find_conflicting_xfree86_libraries(Options *op,
-                                               const char *xprefix,
-                                               FileList *l)
-{
-    if (!op->no_opengl_files) {
-        find_conflicting_libraries(op, xprefix, __xfree86_opengl_libs, l);
-    }
-    find_conflicting_libraries(op, xprefix, __xfree86_non_opengl_libs, l);
-    if (op->install_vdpau_wrapper == NV_OPTIONAL_BOOL_TRUE) {
-        find_conflicting_libraries(op, xprefix, __xfree86_vdpau_wrapper_libs, l);
-    }
-
-} /* find_conflicting_xfree86_libraries() */
-
-
-
-/*
- * find_conflicting_xfree86_libraries_fullpath() - same as
- * find_conflicting_xfree86_libraries, but bypasses the
- * find_conflicting_libraries step, which appends "lib", "lib64", and
- * "lib32" to the path name.  Use this when you have the fullpath that
- * you want searched.
- */
-
-static void find_conflicting_xfree86_libraries_fullpath(Options *op,
-                                                        char *path,
-                                                        FileList *l)
-{
-    if (!op->no_opengl_files) {
-        find_conflicting_files(op, path, __xfree86_opengl_libs, l, NULL);
-    }
-    find_conflicting_files(op, path, __xfree86_non_opengl_libs, l, NULL);
-    if (op->install_vdpau_wrapper == NV_OPTIONAL_BOOL_TRUE) {
-        find_conflicting_files(op, path, __xfree86_vdpau_wrapper_libs, l, NULL);
-    }
-
-} /* find_conflicting_xfree86_libraries_fullpath() */
-
-
-
-static ConflictingFileInfo __opengl_libs[] = {
-    { "libnvidia-glcore.",   17, /* strlen("libnvidia-glcore.") */
-                             NULL,            CONFLICT_ARCH_ALL        },
-    { "libGL.",              6,  /* strlen("libGL.") */
-                             NULL,            CONFLICT_ARCH_ALL        },
-    { "libnvidia-tls.",      14, /* strlen("libnvidia-tls.") */
-                             NULL,            CONFLICT_ARCH_ALL        },
-    { "libGLwrapper.",       13, /* strlen("libGLwrapper.") */
-                             NULL,            CONFLICT_ARCH_ALL        },
-    { NULL,                  0,     NULL,     CONFLICT_ARCH_ALL        }
-};
-
-static ConflictingFileInfo __non_opengl_libs[] = {
-    { "libnvidia-cfg.",      14, /* strlen("libnvidia-cfg.") */
-                             NULL,            CONFLICT_ARCH_ALL        },
-    { "libcuda.",            8,  /* strlen("libcuda.") */
-                             NULL,            CONFLICT_ARCH_ALL        },
-    { "libnvidia-compiler.", 19, /* strlen("libnvidia-compiler.") */
-                             NULL,            CONFLICT_ARCH_ALL        },
-    { "libnvidia-ml.",       13, /* strlen("libnvidia-ml.") */
-                             NULL,            CONFLICT_ARCH_ALL        },
-    { NULL,                  0,     NULL,     CONFLICT_ARCH_ALL        }
-};
-
-/*
- * find_conflicting_opengl_libraries() - search for conflicting
- * libraries under the OpenGL installation prefix, for all possible
- * libdirs.
- */
-
-static void find_conflicting_opengl_libraries(Options *op,
-                                              const char *glprefix,
-                                              FileList *l)
-{
-    if (!op->no_opengl_files) {
-        find_conflicting_libraries(op, glprefix, __opengl_libs, l);
-    }
-    find_conflicting_libraries(op, glprefix, __non_opengl_libs, l);
-
-} /* find_conflicting_opengl_libraries() */
-
-
 
 /*
  * find_conflicting_kernel_modules() - search for conflicting kernel
@@ -857,38 +708,7 @@ static int ignore_conflicting_file(Options *op,
     struct stat stat_buf;
     char *file = MAP_FAILED;
     int ret = FALSE;
-    int i, len;
-
-    /* check if the file only conflicts on certain architectures */
-
-    if (info.conflictArch != CONFLICT_ARCH_ALL) {
-        ElfFileType elftype = get_elf_architecture(filename);
-
-        switch (elftype) {
-            case ELF_ARCHITECTURE_32:
-                ret = info.conflictArch != CONFLICT_ARCH_32;
-                break;
-            case ELF_ARCHITECTURE_64:
-                ret = info.conflictArch != CONFLICT_ARCH_64;
-                break;
-            default:
-                /*
-                 * XXX ignore symlinks with indeterminate architectures: their
-                 * targets may have already been deleted, and they'll be reused
-                 * or replaced as part of the installation, anyway.
-                 */
-                if (lstat(filename, &stat_buf) == -1) {
-                    ui_warn(op, "Unable to stat '%s'.", filename);
-                } else if ((stat_buf.st_mode & S_IFLNK) == S_IFLNK) {
-                    ret = TRUE;
-                } else {
-                    ui_warn(op, "Unable to determine the architecture of the "
-                            "file '%s', which has an architecture-specific "
-                            "conflict.", filename);
-                }
-                break;
-        }
-    }
+    int i, len, size = 0;
 
     /* if no requiredString, do not check for the required string */
 
@@ -908,11 +728,13 @@ static int ignore_conflicting_file(Options *op,
         goto cleanup;
     }
 
-    if (!stat_buf.st_size) {
+    size = stat_buf.st_size;
+
+    if (!size) {
         goto cleanup;
     }
 
-    if ((file = mmap(0, stat_buf.st_size, PROT_READ,
+    if ((file = mmap(0, size, PROT_READ,
                      MAP_FILE | MAP_SHARED, fd, 0)) == MAP_FAILED) {
         ui_error(op, "Unable to map file '%s' for reading (%s)",
                  filename, strerror(errno));
@@ -930,9 +752,9 @@ static int ignore_conflicting_file(Options *op,
 
     len = strlen(info.requiredString);
 
-    for (i = 0; (i + len) <= stat_buf.st_size; i++) {
+    for (i = 0; (i + len) <= size; i++) {
         if ((strncmp(&file[i], info.requiredString, len) == 0) &&
-            (((i + len) == stat_buf.st_size) || (file[i+len] == '\0'))) {
+            (((i + len) == size) || (file[i+len] == '\0'))) {
             ret = FALSE;
             break;
         }
@@ -943,7 +765,7 @@ static int ignore_conflicting_file(Options *op,
  cleanup:
 
     if (file != MAP_FAILED) {
-        munmap(file, stat_buf.st_size);
+        munmap(file, size);
     }
 
     if (fd != -1) {
@@ -1025,65 +847,6 @@ static void find_conflicting_files(Options *op,
 
 } /* find_conflicting_files() */
 
-
-
-
-/*
- * find_conflicting_libraries() - search for any conflicting
- * libraries in all relevant libdirs within the hierarchy under
- * the given prefix.
- */
-
-static void find_conflicting_libraries(Options *op,
-                                       const char *prefix,
-                                       ConflictingFileInfo *files,
-                                       FileList *l)
-{
-    int i, j;
-    char *paths[4];
-
-    /*
-     * stop recursing into any "nvidia-cg-toolkit"
-     * directory to prevent libGL.so.1 from being deleted
-     * (see bug 843595).
-     */
-    static const NoRecursionDirectory skipdirs[] = {
-        { -1, "nvidia-cg-toolkit" },
-        { 0, NULL }
-    };
-
-    paths[0] = nvstrcat(prefix, "/", "lib", NULL);
-    paths[1] = nvstrcat(prefix, "/", "lib64", NULL);
-    paths[2] = nvstrcat(prefix, "/", "lib32", NULL);
-    paths[3] = NULL;
-
-    for (i = 0; paths[i]; i++) {
-        for (j = 0; (j < 3) && paths[i]; j++) {
-            /*
-             * XXX Check if any one of the 'paths' entries really
-             * is a symbolic link pointing to one of the other
-             * entries. The logic could be made smarter, since it's
-             * unlikely that ../lib32 would be a symbolic link to
-             * ../lib64 or vice versa.
-             */
-            if (!paths[j] || (i == j)) continue;
-
-            if (is_symbolic_link_to(paths[i], paths[j])) {
-                ui_expert(op, "The conflicting library search path "
-                          "'%s' is a symbolic link to the library "
-                          "search path '%s'; skipping '%s'.",
-                          paths[i], paths[j], paths[i]);
-                free(paths[i]); paths[i] = NULL;
-            }
-        }
-
-        if (paths[i]) find_conflicting_files(op, paths[i], files, l, skipdirs);
-    }
-
-    for (i = 0; i < 3; i++)
-        nvfree(paths[i]);
-
-} /* find_conflicting_libraries() */
 
 
 /*
