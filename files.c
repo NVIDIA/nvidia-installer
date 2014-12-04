@@ -850,8 +850,9 @@ int get_prefixes (Options *op)
      * after the default prefixes/paths are assigned.
      */
 
-    get_x_library_and_module_paths(op);
-    
+    if (op->x_files_packaged) {
+        get_x_library_and_module_paths(op);
+    }
 
     if (op->expert) {
         ret = ui_get_input(op, op->x_library_path,

@@ -83,7 +83,7 @@ Distribution get_distribution(Options *op);
 int check_for_running_x(Options *op);
 int check_for_modular_xorg(Options *op);
 int check_for_nvidia_graphics_devices(Options *op, Package *p);
-int run_nvidia_xconfig(Options *op, int restore);
+int run_nvidia_xconfig(Options *op, int restore, const char *question, int answer);
 HookScriptStatus run_distro_hook(Options *op, const char *hook);
 int check_for_alternate_install(Options *op);
 int check_for_nouveau(Options *op);
