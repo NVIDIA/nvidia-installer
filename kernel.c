@@ -681,16 +681,17 @@ void check_for_warning_messages(Options *op)
 
 
 /*
- * test_kernel_module() - attempt to insmod the kernel module and then
- * rmmod it.  Return TRUE if the insmod succeeded, or FALSE otherwise.
+ * test_kernel_module() - attempt to insmod the kernel module.  Return TRUE if
+ * the insmod succeeded, or FALSE otherwise.
  */
 
 int test_kernel_module(Options *op, Package *p)
 {
     char *cmd = NULL, *data;
     int old_loglevel = 0, new_loglevel = 0;
-    int fd, ret, name[] = { CTL_KERN, KERN_PRINTK };
+    int fd, ret, name[] = { CTL_KERN, KERN_PRINTK }, i;
     size_t len = sizeof(int);
+    const char *depmods[] = { "agpgart", "i2c-core", "drm" };
 
     /* 
      * If we're building/installing for a different kernel, then we
@@ -709,6 +710,7 @@ int test_kernel_module(Options *op, Package *p)
     if (fd >= 0) {
         if (read(fd, &old_loglevel, 1) == 1) {
             new_loglevel = '2'; /* KERN_CRIT */
+            lseek(fd, 0, SEEK_SET);
             write(fd, &new_loglevel, 1);
         }
     } else {
@@ -719,25 +721,16 @@ int test_kernel_module(Options *op, Package *p)
     }
 
     /*
-     * On Linux 2.6 we depend on the AGPGART frontend module unless
-     * the kernel was configured without support for the Linux AGP
-     * GART driver. Preload it here to satisfy the dependency, which
-     * isn't resolved by `insmod`.
+     * Attempt to load modules that nvidia.ko might depend on.  Silently ignore
+     * failures: if nvidia.ko doesn't depend on the module that failed, the test
+     * load below will succeed and it doesn't matter that the load here failed.
      */
     if (strncmp(get_kernel_name(op), "2.4", 3) != 0) {
-        cmd = nvstrcat(op->utils[MODPROBE], " -q agpgart", NULL);
-        run_command(op, cmd, NULL, FALSE, 0, TRUE);
-        nvfree(cmd);
-    }
-
-    /*
-     * Likewise, we need to preload the i2c-core.ko kernel module to
-     * satisfy another dependency not resolved by `insmod`.
-     */
-    if (strncmp(get_kernel_name(op), "2.4", 3) != 0) {
-        cmd = nvstrcat(op->utils[MODPROBE], " -q i2c-core", NULL);
-        run_command(op, cmd, NULL, FALSE, 0, TRUE);
-        nvfree(cmd);
+        for (i = 0; i < ARRAY_LEN(depmods); i++) {
+            cmd = nvstrcat(op->utils[MODPROBE], " -q ", depmods[i], NULL);
+            run_command(op, cmd, NULL, FALSE, 0, TRUE);
+            nvfree(cmd);
+        }
     }
 
     cmd = nvstrcat(op->utils[INSMOD], " ",
@@ -774,8 +767,6 @@ int test_kernel_module(Options *op, Package *p)
         ret = FALSE;
 
     } else {
-        nvfree(cmd);
-
         /*
          * check if the kernel module detected problems with this
          * system's kernel and display any warning messages it may
@@ -785,12 +776,9 @@ int test_kernel_module(Options *op, Package *p)
         check_for_warning_messages(op);
 
         /*
-         * attempt to unload the kernel module, but don't abort if
-         * this fails: the kernel may not have been configured with
-         * support for module unloading (Linux 2.6).
+         * The nvidia module is left loaded in case an X server with
+         * OutputClass-based driver matching is being used.
          */
-        cmd = nvstrcat(op->utils[RMMOD], " ", p->kernel_module_name, NULL);
-        run_command(op, cmd, NULL, FALSE, 0, TRUE);
         ret = TRUE;
     }
     
@@ -812,12 +800,26 @@ int test_kernel_module(Options *op, Package *p)
     nvfree(data);
 
     if (fd >= 0) {
-        if (new_loglevel != 0)
+        if (new_loglevel != 0) {
+            lseek(fd, 0, SEEK_SET);
             write(fd, &old_loglevel, 1);
+        }
         close(fd);
     } else {
-        if (new_loglevel != 0)
+        if (new_loglevel != 0) {
             sysctl(name, 2, NULL, 0, &old_loglevel, len);
+        }
+    }
+
+    /*
+     * Unload dependencies that might have been loaded earlier.
+     */
+    if (strncmp(get_kernel_name(op), "2.4", 3) != 0) {
+        for (i = 0; i < ARRAY_LEN(depmods); i++) {
+            cmd = nvstrcat(op->utils[MODPROBE], " -qr ", depmods[i], NULL);
+            run_command(op, cmd, NULL, FALSE, 0, TRUE);
+            nvfree(cmd);
+        }
     }
 
     return ret;

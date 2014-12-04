@@ -108,6 +108,7 @@ typedef struct __options {
     int update;
     int expert;
     int uninstall;
+    int skip_module_unload;
     int driver_info;
     int debug;
     int logging;
@@ -152,6 +153,7 @@ typedef struct __options {
     char *x_moddir;
     char *x_module_path;
     char *x_library_path;
+    char *x_sysconfig_path;
 
     char *compat32_chroot;
     char *compat32_prefix;
@@ -169,6 +171,7 @@ typedef struct __options {
     char *documentation_mandir;
 
     int modular_xorg;
+    int xorg_supports_output_class;
 
     char *kernel_source_path;
     char *kernel_output_path;
@@ -314,6 +317,7 @@ typedef struct __package {
 #define FILE_TYPE_NVCUVID_SYMLINK               0x0000000080000000ULL
 #define FILE_TYPE_GLX_MODULE_SHARED_LIB         0x0000000100000000ULL
 #define FILE_TYPE_GLX_MODULE_SYMLINK            0x0000000200000000ULL
+#define FILE_TYPE_XORG_OUTPUTCLASS_CONFIG       0x0000000400000000ULL
 
 
 /* file class: this is used to distinguish OpenGL libraries */
@@ -347,7 +351,8 @@ typedef struct __package {
                                     FILE_TYPE_DOT_DESKTOP        | \
                                     FILE_TYPE_VDPAU_LIB          | \
                                     FILE_TYPE_NVCUVID_LIB        | \
-                                    FILE_TYPE_KERNEL_MODULE_SRC)
+                                    FILE_TYPE_KERNEL_MODULE_SRC  | \
+                                    FILE_TYPE_XORG_OUTPUTCLASS_CONFIG)
 
 #define FILE_TYPE_HAVE_PATH        (FILE_TYPE_XMODULE_SHARED_LIB | \
                                     FILE_TYPE_XMODULE_SYMLINK    | \
@@ -456,8 +461,10 @@ typedef struct __package {
 #define DEFAULT_DOT_DESKTOPDIR          "share/applications"
 #define DEFAULT_DOCDIR                  "share/doc"
 #define DEFAULT_MANDIR                  "share/man"
+#define DEFAULT_CONFDIR                 "X11/xorg.conf.d"
 
 #define DEFAULT_KERNEL_MODULE_SRC_PREFIX "/usr/src"
+#define DEFAULT_X_DATAROOT_PATH         "/usr/share"
 
 /*
  * As of Xorg 7.x, X components need not be installed relative
@@ -506,6 +513,7 @@ typedef struct __package {
 #define LICENSE_FILE "LICENSE"
 
 #define DEFAULT_LOG_FILE_NAME "/var/log/nvidia-installer.log"
+#define DEFAULT_UNINSTALL_LOG_FILE_NAME "/var/log/nvidia-uninstall.log"
 
 #define NUM_TIMES_QUESTIONS_ASKED 3
 

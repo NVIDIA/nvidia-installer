@@ -1303,6 +1303,8 @@ uint64_t get_installable_file_mask(Options *op)
     if (!op->opengl_headers) installable_files &= ~FILE_TYPE_OPENGL_HEADER;
     if (op->no_kernel_module_source)
         installable_files &= ~FILE_TYPE_KERNEL_MODULE_SRC;
+    if (!op->xorg_supports_output_class)
+        installable_files &= ~FILE_TYPE_XORG_OUTPUTCLASS_CONFIG;
     return installable_files;
 
 } /* get_installable_file_mask() */
@@ -1864,15 +1866,11 @@ Distribution get_distribution(Options *op)
  * get_xserver_information() - parse the versionString (from `X
  * -version`) and assign relevant information that we infer from the X
  * server version.
- *
- * Note: this implementation should be shared with nvidia-xconfig
  */
 
 static int get_xserver_information(const char *versionString,
-                                   int *isXorg,
                                    int *isModular,
-                                   int *autoloadsGLX,
-                                   int *supportsExtensionSection)
+                                   int *supportsOutputClassSection)
 {
 #define XSERVER_VERSION_FORMAT_1 "X Window System Version"
 #define XSERVER_VERSION_FORMAT_2 "X.Org X Server"
@@ -1883,18 +1881,15 @@ static int get_xserver_information(const char *versionString,
     /* check if this is an XFree86 X server */
 
     if (strstr(versionString, "XFree86 Version")) {
-        *isXorg = FALSE;
         *isModular = FALSE;
-        *autoloadsGLX = FALSE;
-        *supportsExtensionSection = FALSE;
         return TRUE;
     }
 
-    /* this must be an X.Org X server */
 
-    *isXorg = TRUE;
-
-    /* attempt to parse the major.minor version out of the string */
+    /*
+     * This must be an X.Org X server.  Attempt to parse the major.minor version
+     * out of the string
+     */
 
     found = FALSE;
 
@@ -1925,30 +1920,13 @@ static int get_xserver_information(const char *versionString,
     }
 
     /*
-     * supportsExtensionSection: support for the "Extension" xorg.conf
-     * section was added between X.Org 6.7 and 6.8.  To account for
-     * the X server version wrap, it is easier to check for X servers
-     * that do not support the Extension section: 6.x (x < 8) X
-     * servers.
+     * support for using OutputClass sections to automatically match drivers to
+     * platform devices was added in X.Org xserver 1.16.
      */
-
-    if ((major == 6) && (minor < 8)) {
-        *supportsExtensionSection = FALSE;
+    if ((major == 6) || (major == 7) || ((major == 1) && (minor < 16))) {
+        *supportsOutputClassSection = FALSE;
     } else {
-        *supportsExtensionSection = TRUE;
-    }
-
-    /*
-     * support for autoloading GLX was added in X.Org 1.5.  To account
-     * for the X server version wrap, it is easier to check for X
-     * servers that do not support GLX autoloading: 6.x, 7.x, or < 1.5
-     * X servers.
-     */
-
-    if ((major == 6) || (major == 7) || ((major == 1) && (minor < 5))) {
-        *autoloadsGLX = FALSE;
-    } else {
-        *autoloadsGLX = TRUE;
+        *supportsOutputClassSection = TRUE;
     }
 
     return TRUE;
@@ -1958,23 +1936,23 @@ static int get_xserver_information(const char *versionString,
 
 
 /*
- * check_for_modular_xorg() - run the X binary with the '-version'
- * command line option and extract the version in an attempt to
- * determine if it's part of a modular Xorg release. If the version
- * can't be determined, we assume it's not.
+ * query_xorg_version() - run the X binary with the '-version'
+ * command line option and extract the version.
  *
- * This should eventually get collapsed with xconfigGetXServerInUse()
- * in nvidia-xconfig.
+ * Using the version, try to infer if it's part of a modular Xorg release. If
+ * the version can't be determined, we assume it's not.
+ *
+ * This function assigns the following fields:
+ *      op->modular_xorg
  */
 
 #define OLD_VERSION_FORMAT "(protocol Version %d, revision %d, vendor release %d)"
 #define NEW_VERSION_FORMAT "X Protocol Version %d, Revision %d, Release %d."
 
-int check_for_modular_xorg(Options *op)
+void query_xorg_version(Options *op)
 {
     char *cmd = NULL, *data = NULL;
-    int modular_xorg = FALSE;
-    int dummy, ret;
+    int ret;
 
     if (!op->utils[XSERVER])
         goto done;
@@ -1991,19 +1969,17 @@ int check_for_modular_xorg(Options *op)
      * modular
      */
 
-    ret = get_xserver_information(data,
-                                  &dummy,        /* isXorg */
-                                  &modular_xorg, /* isModular */
-                                  &dummy,        /* autoloadsGLX */
-                                  &dummy);       /* supportsExtensionSection */
+    ret = get_xserver_information(data, &op->modular_xorg,
+                                  &op->xorg_supports_output_class);
 
     /*
      * if get_xserver_information() failed, assume the X server is not
-     * modular
+     * modular and does not support OutputClass sections
      */
 
     if (!ret) {
-        modular_xorg = FALSE;
+        op->modular_xorg = FALSE;
+        op->xorg_supports_output_class = FALSE;
     }
 
     /* fall through */
@@ -2011,10 +1987,7 @@ int check_for_modular_xorg(Options *op)
 done:
     nvfree(data);
     nvfree(cmd);
-
-    return modular_xorg;
-
-} /* check_for_modular_xorg() */
+}
 
 
 /*

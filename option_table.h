@@ -41,6 +41,7 @@ enum {
     KERNEL_INCLUDE_PATH_OPTION,
     KERNEL_INSTALL_PATH_OPTION,
     UNINSTALL_OPTION,
+    SKIP_MODULE_UNLOAD_OPTION,
     PROC_MOUNT_POINT_OPTION,
     USER_INTERFACE_OPTION,
     LOG_FILE_NAME_OPTION,
@@ -84,6 +85,7 @@ enum {
     KERNEL_MODULE_SOURCE_DIR_OPTION,
     NO_KERNEL_MODULE_SOURCE_OPTION,
     DKMS_OPTION,
+    X_SYSCONFIG_PATH_OPTION,
 };
 
 static const NVGetoptOption __options[] = {
@@ -125,6 +127,11 @@ static const NVGetoptOption __options[] = {
 
     { "uninstall", UNINSTALL_OPTION, 0, NULL,
       "Uninstall the currently installed NVIDIA driver." },
+
+    { "skip-module-unload", SKIP_MODULE_UNLOAD_OPTION,
+      NVGETOPT_OPTION_APPLIES_TO_NVIDIA_UNINSTALL, NULL,
+      "When uninstalling the driver, skip unloading of the NVIDIA kernel "
+      "module. This option is ignored when the driver is being installed." },
 
     { "sanity", SANITY_OPTION, 0, NULL,
       "Perform basic sanity tests on an existing NVIDIA "
@@ -179,6 +186,13 @@ static const NVGetoptOption __options[] = {
       "plus '" DEFAULT_LIBDIR "' on 32bit systems, and either '"
       DEFAULT_64BIT_LIBDIR "' or '" DEFAULT_LIBDIR "' on 64bit systems, "
       "depending on the installed Linux distribution." },
+
+    { "x-sysconfig-path", X_SYSCONFIG_PATH_OPTION, NVGETOPT_STRING_ARGUMENT, NULL,
+      "The path under which X system configuration files will be installed.  "
+      "If this option is not specified, nvidia-installer uses the following "
+      "search order and selects the first valid directory it finds: 1) "
+      "`pkg-config --variable=sysconfigdir xorg-server`, or 2) "
+      DEFAULT_X_DATAROOT_PATH "/" DEFAULT_CONFDIR "." },
 
     { "opengl-prefix", OPENGL_PREFIX_OPTION, NVGETOPT_STRING_ARGUMENT, NULL,
       "The prefix under which the OpenGL components of the "

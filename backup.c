@@ -765,14 +765,16 @@ static int do_uninstall(Options *op, const char *version)
         /* XXX what to do if this fails?... nothing */
     }
 
-    /*
-     * attempt to unload the kernel module, but don't abort if this fails: the
-     * kernel may not have been configured with support for module unloading
-     * (Linux 2.6) or the user might have unloaded it themselves.
-     */
-    cmd = nvstrcat(op->utils[RMMOD], " ", RMMOD_MODULE_NAME, NULL);
-    run_command(op, cmd, NULL, FALSE, 0, TRUE);
-    nvfree(cmd);
+    if (!op->skip_module_unload) {
+        /*
+         * attempt to unload the kernel module, but don't abort if this fails:
+         * the kernel may not have been configured with support for module
+         * unloading (Linux 2.6) or the user might have unloaded it themselves.
+         */
+        cmd = nvstrcat(op->utils[RMMOD], " ", RMMOD_MODULE_NAME, NULL);
+        run_command(op, cmd, NULL, FALSE, 0, TRUE);
+        nvfree(cmd);
+    }
 
     run_distro_hook(op, "post-uninstall");
 
@@ -1340,6 +1342,78 @@ int uninstall_existing_driver(Options *op, const int interactive)
     return TRUE;
 
 } /* uninstall_existing_driver() */
+
+
+
+/*
+ * run_existing_uninstaller() - attempt to run `nvidia-uninstall` if it
+ * exists; if it does not exist or fails, fall back to normal uninstallation.
+ */
+int run_existing_uninstaller(Options *op)
+{
+    char *uninstaller = find_system_util("nvidia-uninstall");
+
+    if (uninstaller) {
+        /* Run the uninstaller non-interactively, and explicitly log to the
+         * uninstall log location: older installers may not do so implicitly. */
+        char *uninstall_cmd = nvstrcat(uninstaller, " -s --log-file-name="
+                                       DEFAULT_UNINSTALL_LOG_FILE_NAME, NULL);
+        char *data = NULL;
+        int ret;
+
+        ui_log(op, "Uninstalling the previous installation with %s.",
+               uninstaller);
+
+        if (!op->no_kernel_module && !op->kernel_name) {
+            /*
+             * Attempt to run the uninstaller with the --skip-module-unload
+             * option first.  If that fails, fall back to running it without
+             * that option.
+             *
+             * We don't want the uninstaller to unload the module because this
+             * instance of the installer already unloaded the old module and
+             * loaded the new one.
+             */
+            char *uninstall_skip_unload_cmd =
+                nvstrcat(uninstall_cmd, " --skip-module-unload", NULL);
+            ret = run_command(op, uninstall_skip_unload_cmd, NULL, FALSE, 0, TRUE);
+            nvfree(uninstall_skip_unload_cmd);
+        } else {
+            /*
+             * If installing the kernel module was skipped or we're
+             * building/installing for a different kernel, then the new kernel
+             * module wasn't automatically loaded and we should unload whichever
+             * one is loaded now.
+             */
+            ret = 1;
+        }
+
+        if (ret) {
+            /* Try again without --skip-module-unload */
+            ret = run_command(op, uninstall_cmd, &data, FALSE, 0, TRUE);
+        }
+
+        nvfree(uninstall_cmd);
+
+        /* if nvidia-uninstall succeeded, return early; otherwise, fall back to
+         * uninstalling via the backup log file. */
+        if (ret == 0) {
+            nvfree(data);
+            return TRUE;
+        } else {
+            ui_log(op, "%s failed; see %s for more details.", uninstaller,
+                   DEFAULT_UNINSTALL_LOG_FILE_NAME);
+            if (data && strlen(data)) {
+                ui_log(op, "The output from %s was:\n%s", uninstaller, data);
+            }
+            nvfree(data);
+        }
+
+        nvfree(uninstaller);
+    }
+
+    return uninstall_existing_driver(op, FALSE);
+}
 
 
 

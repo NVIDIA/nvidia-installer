@@ -665,6 +665,11 @@ int set_destinations(Options *op, Package *p)
             dir = path = "";
             break;
 
+        case FILE_TYPE_XORG_OUTPUTCLASS_CONFIG:
+            prefix = op->x_sysconfig_path;
+            dir = path = "";
+            break;
+
         default:
             
             /* 
@@ -2221,19 +2226,25 @@ static char *extract_x_path(char *str, char **next)
 } /* extract_x_path() */
 
 
+enum XPathType {
+    XPathLibrary,
+    XPathModule,
+    XPathSysConfig
+};
 
 /*
  * get_x_paths_helper() - helper function for determining the X
- * library and module paths; returns 'TRUE' if we had to guess at the
- * path
+ * library, module, and system xorg.conf.d paths; returns 'TRUE' if we had to
+ * guess at the path
  */
 
 static int get_x_paths_helper(Options *op,
-                              int library,
+                              enum XPathType pathType,
                               char *xserver_cmd,
                               char *pkg_config_cmd,
                               char *name,
-                              char **path)
+                              char **path,
+                              int require_existing_directory)
 {
     char *dirs, *cmd, *dir, *next;
     int ret, guessed = 0;
@@ -2262,7 +2273,7 @@ static int get_x_paths_helper(Options *op,
      * first, try the X server commandline option; this is the
      * recommended query mechanism as of X.Org 7.2
      */
-    if (op->utils[XSERVER]) {
+    if (op->utils[XSERVER] && xserver_cmd) {
 
         dirs = NULL;
         cmd = nvstrcat(op->utils[XSERVER], " ", xserver_cmd, NULL);
@@ -2277,7 +2288,7 @@ static int get_x_paths_helper(Options *op,
             
             while (dir) {
                 
-                if (directory_exists(op, dir)) {
+                if (!require_existing_directory || directory_exists(op, dir)) {
                     
                     ui_expert(op, "X %s path '%s' determined from `%s %s`",
                               name, dir, op->utils[XSERVER], xserver_cmd);
@@ -2324,7 +2335,7 @@ static int get_x_paths_helper(Options *op,
  
             while (dir) {
                 
-                if (directory_exists(op, dir)) {
+                if (!require_existing_directory || directory_exists(op, dir)) {
 
                     ui_expert(op, "X %s path '%s' determined from `%s %s`",
                               name, dir, op->utils[PKG_CONFIG],
@@ -2364,11 +2375,19 @@ static int get_x_paths_helper(Options *op,
 
 
     /* build the path */
-    
-    if (library) {
-        *path = nvstrcat(op->x_prefix, "/", op->x_libdir, NULL);
-    } else {
-        *path = nvstrcat(op->x_library_path, "/", op->x_moddir, NULL);
+
+    switch (pathType) {
+        case XPathLibrary:
+            *path = nvstrcat(op->x_prefix, "/", op->x_libdir, NULL);
+            break;
+
+        case XPathModule:
+            *path = nvstrcat(op->x_library_path, "/", op->x_moddir, NULL);
+            break;
+
+        case XPathSysConfig:
+            *path = nvstrcat(DEFAULT_X_DATAROOT_PATH, "/", DEFAULT_CONFDIR, NULL);
+            break;
     }
     
     remove_trailing_slashes(*path);
@@ -2393,19 +2412,35 @@ static void get_x_library_and_module_paths(Options *op)
      */
     
     guessed |= get_x_paths_helper(op,
-                                  TRUE,
+                                  XPathLibrary,
                                   "-showDefaultLibPath",
                                   "--variable=libdir xorg-server",
                                   "library",
-                                  &op->x_library_path);
+                                  &op->x_library_path,
+                                  TRUE);
     
     guessed |= get_x_paths_helper(op,
-                                  FALSE,
+                                  XPathModule,
                                   "-showDefaultModulePath",
                                   "--variable=moduledir xorg-server",
                                   "module",
-                                  &op->x_module_path);
-    
+                                  &op->x_module_path,
+                                  TRUE);
+
+    /*
+     * Get the sysconfig path (typically /usr/share/X11/xorg.conf.d).  This is
+     * only needed if the nvidia.conf OutputClass config snippet is going to be
+     * installed.  Don't complain if we had to guess the path; the server will
+     * still work without it if xorg.conf is set up.
+     */
+    get_x_paths_helper(op,
+                       XPathSysConfig,
+                       NULL,
+                       "--variable=sysconfigdir xorg-server",
+                       "sysconfig",
+                       &op->x_sysconfig_path,
+                       FALSE);
+
     /*
      * done assigning op->x_library_path and op->x_module_path; if we
      * had to guess at either of the paths, print a warning

@@ -247,7 +247,7 @@ int install_from_cwd(Options *op)
      */
 
     if (!op->kernel_module_only) {
-        if (!uninstall_existing_driver(op, FALSE)) goto failed;
+        if (!run_existing_uninstaller(op)) goto failed;
     }
 
     /* build a list of operations to execute to do the install */
@@ -274,6 +274,23 @@ int install_from_cwd(Options *op)
 
     if (op->dkms && !dkms_install_module(op, p->version, get_kernel_name(op)))
         goto failed;
+
+    /* Make sure the RM is loaded */
+
+    if (!op->no_kernel_module || op->dkms) {
+        /*
+         * If a kernel module was installed the normal way, it should have been
+         * left loaded by test_kernel_module().  However, older versions of
+         * nvidia-uninstall don't honor the --skip-module-unload option, so
+         * uninstalling a previous driver may have unloaded the module that
+         * test_kernel_module() loaded.  Just in case that happened, modprobe it
+         * again here.
+         *
+         * When installing the module via DKMS, the module is not loaded to
+         * begin with.
+         */
+        if (!load_kernel_module(op, p)) goto failed;
+    }
 
     /* run the distro postinstall script */
 
@@ -769,6 +786,8 @@ static Package *parse_manifest (Options *op)
                 p->entries[n].flags |= FILE_TYPE_NVCUVID_LIB;
             else if (strcmp(flag, "NVCUVID_LIB_SYMLINK") == 0)
                 p->entries[n].flags |= FILE_TYPE_NVCUVID_SYMLINK;
+            else if (strcmp(flag, "XORG_OUTPUTCLASS_CONFIG") == 0)
+                p->entries[n].flags |= FILE_TYPE_XORG_OUTPUTCLASS_CONFIG;
             else {
                 nvfree(flag);
                 goto invalid_manifest_file;

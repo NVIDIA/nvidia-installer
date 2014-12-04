@@ -130,7 +130,6 @@ static Options *load_default_options(void)
 
     /* statically initialized strings */
     op->proc_mount_point = DEFAULT_PROC_MOUNT_POINT;
-    op->log_file_name = DEFAULT_LOG_FILE_NAME;
     op->ftp_site = DEFAULT_FTP_SITE;
 
     op->tmpdir = get_tmpdir(op);
@@ -239,6 +238,8 @@ static void parse_commandline(int argc, char *argv[], Options *op)
             op->x_library_path = strval; break;
         case X_MODULE_PATH_OPTION:
             op->x_module_path = strval; break;
+        case X_SYSCONFIG_PATH_OPTION:
+            op->x_sysconfig_path = strval; break;
         case OPENGL_PREFIX_OPTION:
             op->opengl_prefix = strval; break;
         case OPENGL_LIBDIR_OPTION:
@@ -269,6 +270,8 @@ static void parse_commandline(int argc, char *argv[], Options *op)
             op->kernel_module_installation_path = strval; break;
         case UNINSTALL_OPTION:
             op->uninstall = TRUE; break;
+        case SKIP_MODULE_UNLOAD_OPTION:
+            op->skip_module_unload = TRUE; break;
         case PROC_MOUNT_POINT_OPTION:
             op->proc_mount_point = strval; break;
         case USER_INTERFACE_OPTION:
@@ -430,7 +433,18 @@ static void parse_commandline(int argc, char *argv[], Options *op)
     if (!op->installer_prefix) {
         op->installer_prefix = op->utility_prefix;
     }
-    
+
+    /*
+     * Set the default log file path. This is deferred until after the
+     * command line has been parsed so that the installer has a chance
+     * to determine whether it should be run in uninstall mode.
+     */
+
+    if (!op->log_file_name) {
+        op->log_file_name = op->uninstall ? DEFAULT_UNINSTALL_LOG_FILE_NAME :
+                                            DEFAULT_LOG_FILE_NAME;
+    }
+
     return;
     
  fail:
@@ -497,11 +511,10 @@ int main(int argc, char *argv[])
     if (!find_module_utils(op)) goto done;
     if (!check_selinux(op)) goto done;
 
-    /* check if we need to worry about modular Xorg */
+    /* check for X server properties based on the version of the server */
 
-    op->modular_xorg =
-        check_for_modular_xorg(op);
-    
+    query_xorg_version(op);
+
     /* get the default installation prefixes/paths */
 
     get_default_prefixes_and_paths(op);
