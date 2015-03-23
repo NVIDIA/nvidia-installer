@@ -35,14 +35,10 @@
 #include <sys/mman.h>
 #include <dirent.h>
 #include <libgen.h>
-#include <pci/pci.h>
+#include <pciaccess.h>
 #include <dlfcn.h>
 #include <elf.h>
 #include <link.h>
-
-#ifndef PCI_CLASS_DISPLAY_3D
-#define PCI_CLASS_DISPLAY_3D 0x302
-#endif
 
 #include "nvidia-installer.h"
 #include "user-interface.h"
@@ -2203,79 +2199,112 @@ int check_for_running_x(Options *op)
  * in the system, a warning message is printed for each one.
  */
 
-static void ignore_libpci_output(char *fmt, ...)
-{
-}
-
 int check_for_nvidia_graphics_devices(Options *op, Package *p)
 {
-    struct pci_access *pacc;
-    struct pci_dev *dev;
+    struct pci_device_iterator *iter;
+    struct pci_device *dev;
     int i, found_supported_device = FALSE;
     int found_vga_device = FALSE;
-    uint16 class;
 
-    pacc = pci_alloc();
-    if (!pacc) return TRUE;
+    /*
+     * libpciaccess stores the device class in bits 16-23, subclass in 8-15, and
+     * interface in bits 0-7 of dev->device_class.  We care only about the class
+     * and subclass.
+     */
+    const uint32_t PCI_CLASS_DISPLAY_VGA = 0x30000;
+    const uint32_t PCI_CLASS_SUBCLASS_MASK = 0xffff00;
+    const struct pci_id_match match = {
+        .vendor_id = 0x10de,
+        .device_id = PCI_MATCH_ANY,
+        .subvendor_id = PCI_MATCH_ANY,
+        .subdevice_id = PCI_MATCH_ANY,
+        .device_class = PCI_CLASS_DISPLAY_VGA,
+        /*
+         * Ignore bit 1 of the subclass, to allow both 0x30000 (VGA controller)
+         * and 0x30200 (3D controller).
+         */
+        .device_class_mask = PCI_CLASS_SUBCLASS_MASK & ~0x200,
+    };
 
-    pacc->error = ignore_libpci_output;
-    pacc->warning = ignore_libpci_output;
-    pci_init(pacc);
-    if (!pacc->methods) return TRUE;
+    if (pci_system_init()) {
+        return TRUE;
+    }
 
-    pci_scan_bus(pacc);
+    iter = pci_id_match_iterator_create(&match);
 
-    for (dev = pacc->devices; dev != NULL; dev = dev->next) {
-        if ((pci_fill_info(dev, PCI_FILL_IDENT) & PCI_FILL_IDENT) == 0)
-            continue;
-
-        class = pci_read_word(dev, PCI_CLASS_DEVICE);
-
-        if ((class == PCI_CLASS_DISPLAY_VGA || class == PCI_CLASS_DISPLAY_3D) &&
-              (dev->vendor_id == 0x10de) /* NVIDIA */ &&
-              (dev->device_id >= 0x0020) /* TNT or later */) {
+    for (dev = pci_device_next(iter); dev; dev = pci_device_next(iter)) {
+        if (dev->device_id >= 0x0020 /* TNT or later */) {
             /*
              * First check if this GPU is a "legacy" GPU; if it is, print a
              * warning message and point the user to the NVIDIA Linux
              * driver download page for.
+             *
+             * LegacyList only contains a row with a full 4-part ID (including
+             * subdevice and subvendor IDs) if its name differs from other
+             * devices with the same devid. For all other devices with the same
+             * devid and name, there is only one row, with subdevice and
+             * subvendor IDs set to 0.
+             *
+             * This loop finds the name for the matching devid, but continues
+             * searching for a matching 4-part ID with a different name, and
+             * breaks if it finds one.
              */
             int found_legacy_device = FALSE;
+            unsigned int branch = 0;
+            const char *dev_name = NULL;
+
             for (i = 0; i < sizeof(LegacyList) / sizeof(LEGACY_INFO); i++) {
                 if (dev->device_id == LegacyList[i].uiDevId) {
-                    int j, nstrings;
-                    const char *branch_string = "";
-                    nstrings = sizeof(LegacyStrings) / sizeof(LEGACY_STRINGS);
-                    for (j = 0; j < nstrings; j++) {
-                        if (LegacyStrings[j].branch == LegacyList[i].branch) {
-                            branch_string = LegacyStrings[j].description;
-                            break;
-                        }
+                    int found_specific =
+                        (dev->subvendor_id == LegacyList[i].uiSubVendorId &&
+                         dev->subdevice_id == LegacyList[i].uiSubDevId);
+
+                    if (found_specific || LegacyList[i].uiSubDevId == 0) {
+                        branch = LegacyList[i].branch;
+                        dev_name = LegacyList[i].AdapterString;
+                        found_legacy_device = TRUE;
                     }
 
-                    ui_warn(op, "The NVIDIA %s GPU installed in this system is supported "
-                            "through the NVIDIA %s legacy Linux graphics drivers.  Please "
-                            "visit http://www.nvidia.com/object/unix.html for more "
-                            "information.  The %s NVIDIA Linux graphics driver will "
-                            "ignore this GPU.",
-                            LegacyList[i].AdapterString,
-                            branch_string,
-                            p->version);
-                    found_legacy_device = TRUE;
+                    if (found_specific) {
+                        break;
+                    }
                 }
             }
 
-            if (!found_legacy_device) {
+            if (found_legacy_device) {
+                int j, nstrings;
+                const char *branch_string = "";
+                nstrings = sizeof(LegacyStrings) / sizeof(LEGACY_STRINGS);
+                for (j = 0; j < nstrings; j++) {
+                    if (LegacyStrings[j].branch == branch) {
+                        branch_string = LegacyStrings[j].description;
+                        break;
+                    }
+                }
+
+                ui_warn(op, "The NVIDIA %s GPU installed in this system is supported "
+                        "through the NVIDIA %s legacy Linux graphics drivers.  Please "
+                        "visit http://www.nvidia.com/object/unix.html for more "
+                        "information.  The %s NVIDIA Linux graphics driver will "
+                        "ignore this GPU.",
+                        dev_name,
+                        branch_string,
+                        p->version);
+            } else {
                 found_supported_device = TRUE;
 
-                if (class == PCI_CLASS_DISPLAY_VGA)
+                /*
+                 * libpciaccess packs the device class into bits 16 through 23
+                 * and the subclass into bits 8 through 15 of dev->device_class.
+                 */
+                if ((dev->device_class & PCI_CLASS_SUBCLASS_MASK) ==
+                    PCI_CLASS_DISPLAY_VGA)
                     found_vga_device = TRUE;
             }
         }
     }
 
-    dev = pacc->devices;
-    pci_cleanup(pacc);
-    if (!dev) return TRUE;
+    pci_system_cleanup();
 
     if (!found_supported_device) {
         ui_warn(op, "You do not appear to have an NVIDIA GPU supported by the "

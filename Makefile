@@ -36,8 +36,8 @@ include utils.mk
 
 NCURSES_CFLAGS        ?=
 NCURSES_LDFLAGS       ?=
-PCI_CFLAGS            ?=
-PCI_LDFLAGS           ?=
+PCIACCESS_CFLAGS      ?=
+PCIACCESS_LDFLAGS     ?=
 
 
 ##############################################################################
@@ -210,9 +210,9 @@ $(MAKESELF_HELP_SCRIPT): $(MAKESELF_HELP_SCRIPT_OBJS)
 	  $(HOST_BIN_LDFLAGS) $(MAKESELF_HELP_SCRIPT_OBJS) -o $@
 
 $(NVIDIA_INSTALLER): $(INSTALLER_OBJS)
-	$(call quiet_cmd,LINK) $(CFLAGS) $(LDFLAGS) $(PCI_LDFLAGS) \
+	$(call quiet_cmd,LINK) $(CFLAGS) $(LDFLAGS) $(PCIACCESS_LDFLAGS) \
 	  $(BIN_LDFLAGS) $(INSTALLER_OBJS) -o $@ \
-	  $(LIBS) -Bstatic -lpci -Bdynamic
+	  $(LIBS) -Bstatic -lpciaccess -Bdynamic
 	$(call quiet_cmd,STRIP_CMD) $@
 
 $(GEN_UI_ARRAY): gen-ui-array.c $(CONFIG_H)
@@ -248,8 +248,8 @@ $(RTLD_TEST_C): $(GEN_UI_ARRAY) $(RTLD_TEST)
 $(RTLD_TEST_32_C): $(GEN_UI_ARRAY) $(RTLD_TEST_32)
 	$(call quiet_cmd,GEN_UI_ARRAY) $(RTLD_TEST_32) rtld_test_array_32 > $@
 
-# misc.c includes pci.h
-$(call BUILD_OBJECT_LIST,misc.c): CFLAGS += $(PCI_CFLAGS)
+# misc.c includes pciaccess.h
+$(call BUILD_OBJECT_LIST,misc.c): CFLAGS += $(PCIACCESS_CFLAGS)
 
 # ncurses-ui.c includes ncurses.h
 $(call BUILD_OBJECT_LIST,ncurses-ui.c): CFLAGS += $(NCURSES_CFLAGS) -fPIC
