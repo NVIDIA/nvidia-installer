@@ -51,7 +51,7 @@
 
 
 static Package *parse_manifest(Options *op);
-static int install_kernel_module(Options *op,  Package *p);
+static int install_kernel_modules(Options *op,  Package *p);
 static void free_package(Package *p);
 static int assisted_module_signing(Options *op, Package *p);
 
@@ -171,10 +171,10 @@ int install_from_cwd(Options *op)
 
     should_install_uvm(op, p);
 
-    /* attempt to build a kernel module for the target kernel */
+    /* attempt to build the kernel modules for the target kernel */
 
     if (!op->no_kernel_module) {
-        if (!install_kernel_module(op, p)) {
+        if (!install_kernel_modules(op, p)) {
             goto failed;
         }
     } else {
@@ -413,17 +413,17 @@ int install_from_cwd(Options *op)
 
 
 /*
- * install_kernel_module() - attempt to build and install a kernel
- * module for the running kernel; we first check if a prebuilt kernel
- * interface file exists. If yes, we try to link it into the final
- * kernel module, else we try to build one from source.
+ * Attempt to build and install the appropriate kernel modules for the
+ * running kernel; we first check if prebuilt kernel interfaces exist.
+ * If yes, we try to link those into the final kernel module, else we
+ * try to build from source.
  *
- * If we succeed in building a kernel module, we attempt to load it
- * into the host kernel and add it to the list of files to install if
- * the load attempt succeeds.
+ * If we succeed in building the kernel modules, we attempt to load
+ * them into the host kernel and add them to the list of files to
+ * install if the load attempt succeeds.
  */
 
-static int install_kernel_module(Options *op,  Package *p)
+static int install_kernel_modules(Options *op,  Package *p)
 {
     PrecompiledInfo *precompiled_info;
 
@@ -572,7 +572,7 @@ precompiled_done:
     
         /* and now, build the kernel interface */
         
-        if (!build_kernel_module(op, p)) return FALSE;
+        if (!build_kernel_modules(op, p)) return FALSE;
     }
 
     /* Optionally sign the kernel module */
@@ -583,7 +583,7 @@ precompiled_done:
      * to be sure it's OK
      */
     
-    if (!test_kernel_module(op, p)) return FALSE;
+    if (!test_kernel_modules(op, p)) return FALSE;
     
     /* add the kernel modules to the list of things to install */
     

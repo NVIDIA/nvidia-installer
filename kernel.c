@@ -635,12 +635,12 @@ static int check_file(Options *op, const char *dir, const char *filename,
 
 
 /*
- * build_kernel_module() - determine the kernel include directory,
+ * Determine the kernel include directory,
  * copy the kernel module source files into a temporary directory, and
  * compile nvidia.o.
  */
 
-int build_kernel_module(Options *op, Package *p)
+int build_kernel_modules(Options *op, Package *p)
 {
     char *result, *cmd;
     int ret;
@@ -651,19 +651,6 @@ int build_kernel_module(Options *op, Package *p)
      */
     
     touch_directory(op, p->kernel_module_build_directory);
-    
-    /*
-     * Check if conftest.sh can determine the Makefile, there's
-     * no hope for the make rules if this fails.
-     */
-    ret = run_conftest(op, p, "select_makefile just_msg", &result);
-
-    if (!ret) {
-        if (result)
-            ui_error(op, "%s", result); /* display conftest.sh's error message */
-        nvfree(result);
-        return FALSE;
-    }
 
     if (!fbdev_check(op, p)) return FALSE;
     if (!xen_check(op, p)) return FALSE;
@@ -725,8 +712,7 @@ int build_kernel_module(Options *op, Package *p)
     ui_log(op, "Kernel module compilation complete.");
 
     return TRUE;
-    
-} /* build_kernel_module() */
+}
 
 
 
@@ -1453,11 +1439,11 @@ static int ignore_load_error(Options *op, Package *p,
 
 
 /*
- * test_kernel_module() - attempt to insmod the kernel modules and then rmmod
- * nvidia-uvm.  Return TRUE if the insmod succeeded, or FALSE otherwise.
+ * Attempt to insmod the kernel modules and then rmmod nvidia-uvm.
+ * Return TRUE if the insmod succeeded, or FALSE otherwise.
  */
 
-int test_kernel_module(Options *op, Package *p)
+int test_kernel_modules(Options *op, Package *p)
 {
     char *cmd = NULL, *data = NULL, *module_path;
     int old_loglevel = 0, new_loglevel = 0;
@@ -1620,8 +1606,7 @@ test_exit:
     }
 
     return ret;
-    
-} /* test_kernel_module() */
+}
 
 
 

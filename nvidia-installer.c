@@ -69,8 +69,6 @@ static void print_version(void)
                 "The NVIDIA Accelerated Graphics Driver Set for %s-%s.",
                 INSTALLER_OS, INSTALLER_ARCH);
     nv_info_msg(NULL, "");
-    nv_info_msg(TAB, "Copyright (C) 2003 - 2010 NVIDIA Corporation.");
-    nv_info_msg(NULL, "");
 }
 
 
