@@ -248,8 +248,16 @@ CommandList *build_command_list(Options *op, Package *p)
          * stop recursing into any "nvidia-cg-toolkit"
          * directory to prevent libGL.so.1 from being deleted
          * (see bug 843595).
+         *
+         * Also, do not recurse into "source" or "build" directories, pretty
+         * much ever. This is because distros (for example, Fedora Core 21)
+         * have started putting links to kernel source and build trees in
+         * other locations, including /usr/lib/modules/`uname -r`/kernel.
+         * (See bug 1646361).
          */
         static const NoRecursionDirectory skipdirs[] = {
+            { -1, "source" },
+            { -1, "build" },
             { -1, "nvidia-cg-toolkit" },
             {  0, NULL }
         };
