@@ -234,10 +234,11 @@ PrecompiledInfo *get_precompiled_info(Options *op,
     }
     offset += val;
 
-    /* check if this precompiled kernel interface is the right driver
-       version */
+    /* fail if the version could not be read, or if a package version was
+       specified and the read version does not match it */
 
-    if (!version || !package_version || strcmp(version, package_version) != 0) {
+    if (!version ||
+        (package_version && strcmp(version, package_version) != 0)) {
         goto done;
     }
 
@@ -955,10 +956,12 @@ const char **precompiled_file_attribute_names(uint32 attribute_mask)
     ret = nvalloc((max_file_attribute_names + 1) * sizeof(char *));
 
     for (i = 0; i < max_file_attribute_names; i++) {
-        if (i >= ARRAY_LEN(file_attribute_names)) {
-            ret[attr++] = unknown_attribute;
-        } else if (attribute_mask & (1 << i)) {
-            ret[attr++] = file_attribute_names[i];
+        if (attribute_mask & (1 << i)) {
+            if (i >= ARRAY_LEN(file_attribute_names)) {
+                ret[attr++] = unknown_attribute;
+            } else {
+                ret[attr++] = file_attribute_names[i];
+            }
         }
     }
     ret[attr] = NULL;
