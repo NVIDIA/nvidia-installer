@@ -51,7 +51,6 @@ static char *default_kernel_source_path(Options *op);
 static char *find_module_substring(char *string, const char *substring);
 static int check_for_loaded_kernel_module(Options *op, const char *);
 static void check_for_warning_messages(Options *op);
-static int rmmod_kernel_module(Options *op, const char *);
 static PrecompiledInfo *download_updated_kernel_interface(Options*, Package*,
                                                           const char*, 
                                                           char* const*);
@@ -72,6 +71,8 @@ static void close_libkmod(void);
 static int run_conftest(Options *op, Package *p, const char *args,
                         char **result);
 static void replace_zero(char* filename, int i);
+static void load_kernel_module_quiet(Options *op, const char *module_name);
+static void modprobe_remove_kernel_module_quiet(Options *op, const char *name);
 
 /* libkmod handle and function pointers */
 static void *libkmod = NULL;
@@ -1248,16 +1249,75 @@ static void close_libkmod(void)
 
 
 
+#define PRINTK_LOGLEVEL_KERN_ALERT 1
+
+/*
+ * Attempt to set the printk loglevel, first using the /proc/sys interface,
+ * and falling back to the deprecated sysctl if that fails. Pass the previous
+ * loglevel back to the caller and return TRUE on success, or FALSE on failure.
+ */
+static int set_loglevel(int level, int *old_level)
+{
+    FILE *fp;
+    int loglevel_set = FALSE;
+
+    fp = fopen("/proc/sys/kernel/printk", "r+");
+    if (fp) {
+        if (!old_level || fscanf(fp, "%d ", old_level) == 1) {
+            char *strlevel = nvasprintf("%d", level);
+
+            fseek(fp, 0, SEEK_SET);
+            if (fwrite(strlevel, strlen(strlevel), 1, fp) == 1) {
+                loglevel_set = TRUE;
+            }
+
+            nvfree(strlevel);
+        }
+        fclose(fp);
+    }
+
+    if (!loglevel_set) {
+        /*
+         * Explicitly initialize the value of len, even though it looks like the
+         * syscall should do that, since in practice it doesn't always actually
+         * set the value of the pointed-to length parameter.
+         */
+        size_t len = sizeof(int);
+        int name[] = { CTL_KERN, KERN_PRINTK };
+
+        if (!old_level ||
+            sysctl(name, ARRAY_LEN(name), old_level, &len, NULL, 0) == 0) {
+            if (sysctl(name, ARRAY_LEN(name), NULL, 0, &level, len) == 0) {
+                loglevel_set = TRUE;
+            }
+        }
+    }
+
+    return loglevel_set;
+}
+
+
 /*
  * do_insmod() - load the kernel module using libkmod if available; fall back
  * to insmod otherwise. Returns the result of kmod_module_insert_module() if
  * available, or of insmod otherwise. Pass the result of module loading up
  * through the data argument, regardless of whether we used libkmod or insmod.
  */
-static int do_insmod(Options *op, const char *module, char **data)
+static int do_insmod(Options *op, const char *module, char **data,
+                     const char *module_opts)
 {
-    int ret = 0, libkmod_failed = FALSE;
+    int ret = 0, libkmod_failed = FALSE, old_loglevel, loglevel_set;
+
     *data = NULL;
+
+    /*
+     * Temporarily disable most console messages to keep the curses
+     * interface from being clobbered when the module is loaded.
+     * Save the original console loglevel to allow restoring it once
+     * we're done.
+     */
+
+    loglevel_set = set_loglevel(PRINTK_LOGLEVEL_KERN_ALERT, &old_loglevel);
 
     if (init_libkmod()) {
         struct kmod_ctx *ctx = NULL;
@@ -1276,7 +1336,7 @@ static int do_insmod(Options *op, const char *module, char **data)
             goto kmod_done;
         }
 
-        ret = lkmod_module_insert_module(mod, 0, "");
+        ret = lkmod_module_insert_module(mod, 0, module_opts);
         if (ret < 0) {
             /* insmod ignores > 0 return codes of kmod_module_insert_module(),
              * so we should do it too. On failure, strdup() the error string to
@@ -1304,7 +1364,7 @@ kmod_done:
 
         /* Fall back to insmod */
 
-        cmd = nvstrcat(op->utils[INSMOD], " ", module, NULL);
+        cmd = nvstrcat(op->utils[INSMOD], " ", module, " ", module_opts, NULL);
 
         /* only output the result of the test if in expert mode */
 
@@ -1313,6 +1373,10 @@ kmod_done:
     }
 
     close_libkmod();
+
+    if (loglevel_set) {
+        set_loglevel(old_loglevel, NULL);
+    }
 
     return ret;
 } /* do_insmod() */
@@ -1439,17 +1503,16 @@ static int ignore_load_error(Options *op, Package *p,
 
 
 /*
- * Attempt to insmod the kernel modules and then rmmod nvidia-uvm.
- * Return TRUE if the insmod succeeded, or FALSE otherwise.
+ * test_kernel_module() - attempt to insmod the kernel modules and then rmmod
+ * them.  Return TRUE if the insmod succeeded, or FALSE otherwise.
  */
 
 int test_kernel_modules(Options *op, Package *p)
 {
     char *cmd = NULL, *data = NULL, *module_path;
-    int old_loglevel = 0, new_loglevel = 0;
-    int fd, ret, name[] = { CTL_KERN, KERN_PRINTK }, i;
-    size_t len = sizeof(int);
+    int ret, i;
     const char *depmods[] = { "i2c-core", "drm" };
+
 
     /* 
      * If we're building/installing for a different kernel, then we
@@ -1459,34 +1522,12 @@ int test_kernel_modules(Options *op, Package *p)
     if (op->kernel_name) return TRUE;
 
     /*
-     * Temporarily disable most console messages to keep the curses
-     * interface from being clobbered when the module is loaded.
-     * Save the original console loglevel to allow restoring it once
-     * we're done.
-     */
-    fd = open("/proc/sys/kernel/printk", O_RDWR);
-    if (fd >= 0) {
-        if (read(fd, &old_loglevel, 1) == 1) {
-            new_loglevel = '2'; /* KERN_CRIT */
-            lseek(fd, 0, SEEK_SET);
-            write(fd, &new_loglevel, 1);
-        }
-    } else {
-        if (!sysctl(name, 2, &old_loglevel, &len, NULL, 0)) {
-            new_loglevel = 2; /* KERN_CRIT */
-            sysctl(name, 2, NULL, 0, &new_loglevel, len);
-        }
-    }
-
-    /*
      * Attempt to load modules that nvidia.ko might depend on.  Silently ignore
      * failures: if nvidia.ko doesn't depend on the module that failed, the test
      * load below will succeed and it doesn't matter that the load here failed.
      */
     for (i = 0; i < ARRAY_LEN(depmods); i++) {
-        cmd = nvstrcat(op->utils[MODPROBE], " -q ", depmods[i], NULL);
-        run_command(op, cmd, NULL, FALSE, 0, TRUE);
-        nvfree(cmd);
+        load_kernel_module_quiet(op, depmods[i]);
     }
 
     if (op->multiple_kernel_modules) {
@@ -1494,7 +1535,7 @@ int test_kernel_modules(Options *op, Package *p)
         
         module_path = nvstrcat(p->kernel_module_build_directory, "/",
                                p->kernel_frontend_module_filename, NULL);
-        ret = do_insmod(op, module_path, &data);
+        ret = do_insmod(op, module_path, &data, "");
         nvfree(module_path);
 
         if (ret != 0) {
@@ -1513,7 +1554,10 @@ int test_kernel_modules(Options *op, Package *p)
 
     module_path = nvstrcat(p->kernel_module_build_directory, "/",
                            p->kernel_module_filename, NULL);
-    ret = do_insmod(op, module_path, &data);
+    ret = do_insmod(op, module_path, &data,
+                    "NVreg_DeviceFileUID=0 NVreg_DeviceFileGID=0 "
+                    "NVreg_DeviceFileMode=0 NVreg_ModifyDeviceFiles=0");
+
     nvfree(module_path);
 
     if (ret != 0) {
@@ -1523,7 +1567,7 @@ int test_kernel_modules(Options *op, Package *p)
     if (op->install_uvm) {
         module_path = nvstrcat(p->uvm_module_build_directory, "/",
                                p->uvm_kernel_module_filename, NULL);
-        ret = do_insmod(op, module_path, &data);
+        ret = do_insmod(op, module_path, &data, "");
         nvfree(module_path);
 
         if (ret != 0) {
@@ -1549,20 +1593,19 @@ int test_kernel_modules(Options *op, Package *p)
     check_for_warning_messages(op);
 
     /*
-     * attempt to unload the UVM kernel module, but don't abort if this fails:
+     * attempt to unload the kernel modules, but don't abort if this fails:
      * the kernel may not have been configured with support for module unloading
      * (Linux 2.6).
-     *
-     * The nvidia module is left loaded in case an X server with
-     * OutputClass-based driver matching is being used.  UVM is unloaded to make
-     * it easier to roll back to older versions of the driver whose installers
-     * didn't know how to unload the nvidia-uvm module.
      */
 
     if (op->install_uvm) {
-        cmd = nvstrcat(op->utils[RMMOD], " ", p->uvm_kernel_module_name, NULL);
-        run_command(op, cmd, NULL, FALSE, 0, TRUE);
-        nvfree(cmd);
+        rmmod_kernel_module(op, p->uvm_kernel_module_name);
+    }
+
+    rmmod_kernel_module(op, p->kernel_module_name);
+
+    if (op->multiple_kernel_modules) {
+        rmmod_kernel_module(op, p->kernel_frontend_module_name);
     }
 
     ret = TRUE;
@@ -1584,25 +1627,12 @@ test_exit:
     nvfree(cmd);
     nvfree(data);
 
-    if (fd >= 0) {
-        if (new_loglevel != 0) {
-            lseek(fd, 0, SEEK_SET);
-            write(fd, &old_loglevel, 1);
-        }
-        close(fd);
-    } else {
-        if (new_loglevel != 0) {
-            sysctl(name, 2, NULL, 0, &old_loglevel, len);
-        }
-    }
-
     /*
      * Unload dependencies that might have been loaded earlier.
      */
+
     for (i = 0; i < ARRAY_LEN(depmods); i++) {
-        cmd = nvstrcat(op->utils[MODPROBE], " -qr ", depmods[i], NULL);
-        run_command(op, cmd, NULL, FALSE, 0, TRUE);
-        nvfree(cmd);
+        modprobe_remove_kernel_module_quiet(op, depmods[i]);
     }
 
     return ret;
@@ -1611,27 +1641,42 @@ test_exit:
 
 
 /*
- * load_kernel_module() - modprobe the kernel module
+ * modprobe_helper() - run modprobe; used internally by other functions.
+ *
+ * module_name: the name of the kernel module to modprobe
+ * quiet:       load/unload the kernel module silently if TRUE
+ * unload:      remove a kernel module instead of loading it if TRUE
+ *              (Note: unlike `rmmod`, `modprobe -r` handles dependencies.
  */
 
-int load_kernel_module(Options *op, Package *p)
+static int modprobe_helper(Options *op, const char *module_name,
+                           int quiet, int unload)
 {
     char *cmd, *data;
-    int len, ret;
+    int ret, old_loglevel, loglevel_set;
 
-    len = strlen(op->utils[MODPROBE]) + strlen(p->kernel_module_name) + 2;
+    cmd = nvstrcat(op->utils[MODPROBE],
+                   quiet ? " -q" : "",
+                   unload ? " -r" : "",
+                   " ", module_name,
+                   NULL);
 
-    cmd = (char *) nvalloc(len);
-    
-    snprintf(cmd, len, "%s %s", op->utils[MODPROBE], p->kernel_module_name);
+    loglevel_set = set_loglevel(PRINTK_LOGLEVEL_KERN_ALERT, &old_loglevel);
     
     ret = run_command(op, cmd, &data, FALSE, 0, TRUE);
 
-    if (ret != 0) {
+    if (loglevel_set) {
+        set_loglevel(old_loglevel, NULL);
+    }
+
+    if (!quiet && ret != 0) {
         if (op->expert) {
-            ui_error(op, "Unable to load the kernel module: '%s'", data);
+            ui_error(op, "Unable to %s the kernel module: '%s'",
+                     unload ? "unload" : "load",
+                     data);
         } else {
-            ui_error(op, "Unable to load the kernel module.");
+            ui_error(op, "Unable to %s the kernel module.",
+                     unload ? "unload" : "load");
         }
         ret = FALSE;
     } else {
@@ -1645,6 +1690,20 @@ int load_kernel_module(Options *op, Package *p)
 
 } /* load_kernel_module() */
 
+int load_kernel_module(Options *op, Package *p)
+{
+    return modprobe_helper(op, p->kernel_module_name, FALSE, FALSE);
+}
+
+static void load_kernel_module_quiet(Options *op, const char *module_name)
+{
+    modprobe_helper(op, module_name, TRUE, FALSE);
+}
+
+static void modprobe_remove_kernel_module_quiet(Options *op, const char *name)
+{
+    modprobe_helper(op, name, TRUE, TRUE);
+}
 
 
 /*
@@ -1658,12 +1717,12 @@ int check_for_unloaded_kernel_module(Options *op, Package *p)
     int n = 0;
     int loaded = FALSE;
     unsigned int bits = 0;
-    
+
     /*
      * We can skip this check if we are installing for a non-running
      * kernel and only installing a kernel module.
      */
-    
+
     if (op->kernel_module_only && op->kernel_name) {
         ui_log(op, "Only installing a kernel module for a non-running "
                "kernel; skipping the \"is an NVIDIA kernel module loaded?\" "
@@ -1691,7 +1750,7 @@ int check_for_unloaded_kernel_module(Options *op, Package *p)
     }
 
     if (!loaded) return TRUE;
-    
+
     /* one or more kernel modules is loaded... try to unload them */
 
     n = 0;
@@ -1700,25 +1759,27 @@ int check_for_unloaded_kernel_module(Options *op, Package *p)
             n++;
             continue;
         }
-        
+
         rmmod_kernel_module(op, p->bad_modules[n]);
 
         /* check again */
-        
+
         if (check_for_loaded_kernel_module(op, p->bad_modules[n])) {
             ui_error(op,  "An NVIDIA kernel module '%s' appears to already "
                      "be loaded in your kernel.  This may be because it is "
-                     "in use (for example, by the X server), but may also "
+                     "in use (for example, by an X server, a CUDA program, "
+                     "or the NVIDIA Persistence Daemon), but this may also "
                      "happen if your kernel was configured without support "
-                     "for module unloading.  Please be sure you have exited "
-                     "X before attempting to upgrade your driver.  If you "
-                     "have exited X, know that your kernel supports module "
-                     "unloading, and still receive this message, then an "
-                     "error may have occured that has corrupted the NVIDIA "
-                     "kernel module's usage count; the simplest remedy is "
-                     "to reboot your computer.",
+                     "for module unloading.  Please be sure to exit any "
+                     "programs that may be using the GPU(s) before attempting "
+                     "to upgrade your driver.  If no GPU-based programs are "
+                     "running, you know that your kernel supports module "
+                     "unloading, and you still receive this message, then an "
+                     "error may have occured that has corrupted an NVIDIA "
+                     "kernel module's usage count, for which the simplest "
+                     "remedy is to reboot your computer.",
                      p->bad_modules[n]);
-    
+
             return FALSE;
         }
         n++;
@@ -1726,7 +1787,7 @@ int check_for_unloaded_kernel_module(Options *op, Package *p)
 
     return TRUE;
 
-} /* check_for_unloaded_kernel_module() */
+}
 
 
 /*
@@ -2239,22 +2300,24 @@ static int check_for_loaded_kernel_module(Options *op, const char *module_name)
 
 
 /*
- * rmmod_kernel_module() - run `rmmod nvidia`
+ * rmmod_kernel_module() - run `rmmod $module_name`
  */
 
-static int rmmod_kernel_module(Options *op, const char *module_name)
+int rmmod_kernel_module(Options *op, const char *module_name)
 {
-    int len, ret;
+    int ret, old_loglevel, loglevel_set;
     char *cmd;
     
-    len = strlen(op->utils[RMMOD]) + strlen(module_name) + 2;
-    
-    cmd = (char *) nvalloc(len);
-    
-    snprintf(cmd, len, "%s %s", op->utils[RMMOD], module_name);
+    cmd = nvstrcat(op->utils[RMMOD], " ", module_name, NULL);
+
+    loglevel_set = set_loglevel(PRINTK_LOGLEVEL_KERN_ALERT, &old_loglevel);
     
     ret = run_command(op, cmd, NULL, FALSE, 0, TRUE);
-    
+
+    if (loglevel_set) {
+        set_loglevel(old_loglevel, NULL);
+    }
+
     free(cmd);
     
     return ret ? FALSE : TRUE;

@@ -308,20 +308,12 @@ int install_from_cwd(Options *op)
     if (op->dkms && !dkms_install_module(op, p->version, get_kernel_name(op)))
         goto failed;
 
-    /* Make sure the RM is loaded */
+    /*
+     * Leave the RM loaded in case an X server with OutputClass-based driver
+     * matching is being used.
+     */
 
     if (!op->no_kernel_module || op->dkms) {
-        /*
-         * If a kernel module was installed the normal way, it should have been
-         * left loaded by test_kernel_module().  However, older versions of
-         * nvidia-uninstall don't honor the --skip-module-unload option, so
-         * uninstalling a previous driver may have unloaded the module that
-         * test_kernel_module() loaded.  Just in case that happened, modprobe it
-         * again here.
-         *
-         * When installing the module via DKMS, the module is not loaded to
-         * begin with.
-         */
         if (!load_kernel_module(op, p)) goto failed;
     }
 

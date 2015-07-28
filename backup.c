@@ -40,6 +40,7 @@
 #include "files.h"
 #include "crc.h"
 #include "misc.h"
+#include "kernel.h"
 
 #define BACKUP_DIRECTORY "/var/lib/nvidia"
 #define BACKUP_LOG       (BACKUP_DIRECTORY "/log")
@@ -626,11 +627,10 @@ static int rmdir_recursive(Options *op)
 
 static void unload_nvidia_module(Options *op, const char *suffix)
 {
-    char *cmd;
-
-    cmd = nvstrcat(op->utils[RMMOD], " ", RMMOD_MODULE_NAME, suffix, NULL);
-    run_command(op, cmd, NULL, FALSE, 0, TRUE);
-    nvfree(cmd);
+    char *name;
+    name = nvstrcat(RMMOD_MODULE_NAME, suffix, NULL);
+    rmmod_kernel_module(op, name);
+    nvfree(name);
 }
 
 
@@ -1434,34 +1434,7 @@ int run_existing_uninstaller(Options *op)
         ui_log(op, "Uninstalling the previous installation with %s.",
                uninstaller);
 
-        if (!op->no_kernel_module && !op->kernel_name) {
-            /*
-             * Attempt to run the uninstaller with the --skip-module-unload
-             * option first.  If that fails, fall back to running it without
-             * that option.
-             *
-             * We don't want the uninstaller to unload the module because this
-             * instance of the installer already unloaded the old module and
-             * loaded the new one.
-             */
-            char *uninstall_skip_unload_cmd =
-                nvstrcat(uninstall_cmd, " --skip-module-unload", NULL);
-            ret = run_command(op, uninstall_skip_unload_cmd, NULL, FALSE, 0, TRUE);
-            nvfree(uninstall_skip_unload_cmd);
-        } else {
-            /*
-             * If installing the kernel module was skipped or we're
-             * building/installing for a different kernel, then the new kernel
-             * module wasn't automatically loaded and we should unload whichever
-             * one is loaded now.
-             */
-            ret = 1;
-        }
-
-        if (ret) {
-            /* Try again without --skip-module-unload */
-            ret = run_command(op, uninstall_cmd, &data, FALSE, 0, TRUE);
-        }
+        ret = run_command(op, uninstall_cmd, &data, FALSE, 0, TRUE);
 
         nvfree(uninstall_cmd);
 
