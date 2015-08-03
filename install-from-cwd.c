@@ -111,7 +111,7 @@ int install_from_cwd(Options *op)
 
     /* make sure the kernel module is unloaded */
     
-    if (!check_for_unloaded_kernel_module(op, p)) goto failed;
+    if (!check_for_unloaded_kernel_module(op)) goto failed;
     
     /* ask the user to accept the license */
     
@@ -314,7 +314,9 @@ int install_from_cwd(Options *op)
      */
 
     if (!op->no_kernel_module || op->dkms) {
-        if (!load_kernel_module(op, p)) goto failed;
+        if (!load_kernel_module(op, p->kernel_modules[0].module_name)) {
+            goto failed;
+        }
     }
 
     /* run the distro postinstall script */
@@ -419,49 +421,7 @@ static int install_kernel_modules(Options *op,  Package *p)
 {
     PrecompiledInfo *precompiled_info;
 
-    /* Append the UVM dkms.conf fragment to RM's dkms.conf when installing UVM */
-
-    if (op->install_uvm) {
-        FILE *dkmsconf, *uvmdkmsconf;
-        char *tmppath;
-
-        tmppath = nvstrcat(p->kernel_module_build_directory, "/dkms.conf", NULL);
-        dkmsconf = fopen(tmppath, "a");
-        nvfree(tmppath);
-
-        tmppath = nvstrcat(p->uvm_module_build_directory,
-                           "/dkms.conf.fragment", NULL);
-        uvmdkmsconf = fopen(tmppath, "r");
-        nvfree (tmppath);
-
-        if (dkmsconf && uvmdkmsconf) {
-            char byte;
-
-            while (fread(&byte, 1, 1, uvmdkmsconf)) {
-                if (!fwrite(&byte, 1, 1, dkmsconf)) {
-                    goto dkmscatfailed;
-                }
-            }
-
-            if (ferror(uvmdkmsconf)) {
-                goto dkmscatfailed;
-            }
-
-        } else {
-dkmscatfailed:
-            ui_warn(op, "Failed to add build commands for the NVIDIA Unified "
-                    "Memory kernel module to the dkms.conf file: DKMS will "
-                    "not be able to build the NVIDIA Unified Memory kernel "
-                    "module.");
-        }
-
-        if (dkmsconf) {
-            fclose(dkmsconf);
-        }
-        if (uvmdkmsconf) {
-            fclose(uvmdkmsconf);
-        }
-    }
+    process_dkms_conf(op,p);
 
     /* Offer the DKMS option if DKMS exists and the kernel module sources 
      * will be installed somewhere. Don't offer DKMS as an option if module
@@ -528,8 +488,8 @@ dkmscatfailed:
          */
 
         for (i = 0; i < precompiled_info->num_files; i++) {
-            if (!link_kernel_module(op, p, p->kernel_module_build_directory,
-                                    &(precompiled_info->files[i]))) {
+            if (!unpack_kernel_modules(op, p, p->kernel_module_build_directory,
+                                       &(precompiled_info->files[i]))) {
                 precompiled_success = FALSE;
                 goto precompiled_done;
             }
@@ -579,7 +539,7 @@ precompiled_done:
     
     /* add the kernel modules to the list of things to install */
     
-    if (!add_kernel_modules_to_package(op, p)) return FALSE;
+    add_kernel_modules_to_package(op, p);
     
     return TRUE;
 }
@@ -595,7 +555,6 @@ int add_this_kernel(Options *op)
 {
     Package *p;
     PrecompiledFileInfo *fileInfos;
-    int num_expected_files = 1;
     
     /* parse the manifest */
 
@@ -609,22 +568,14 @@ int add_this_kernel(Options *op)
 
     if (!determine_kernel_source_path(op, p)) goto failed;
 
-    if (op->multiple_kernel_modules) {
-        num_expected_files += op->num_kernel_modules;
-    }
-
-    if (op->install_uvm) {
-        num_expected_files += 1;
-    }
-
     /* build the precompiled files */
 
-    if (num_expected_files != build_kernel_interface(op, p, &fileInfos)) 
+    if (p->num_kernel_modules != build_kernel_interfaces(op, p, &fileInfos))
         goto failed;
     
     /* pack the precompiled files */
 
-    if (!pack_precompiled_files(op, p, num_expected_files, fileInfos))
+    if (!pack_precompiled_files(op, p, p->num_kernel_modules, fileInfos))
         goto failed;
     
     free_package(p);
@@ -650,6 +601,7 @@ static void add_conflicting_file(Package *p, int *index, const char *file)
 
     p->conflicting_files = nvrealloc(p->conflicting_files,
                                      sizeof(ConflictingFileInfo) * (*index+1));
+    memset(&p->conflicting_files[*index], 0, sizeof(ConflictingFileInfo));
 
     p->conflicting_files[*index].name = file;
 
@@ -686,6 +638,100 @@ static void add_conflicting_file(Package *p, int *index, const char *file)
 }
 
 
+/*
+ * Returns TRUE if the given module has a separate interface, FALSE otherwise.
+ */
+static int has_separate_interface_file(char *name) {
+    int i;
+
+    static const char* no_interface_modules[] = {
+        "nvidia-uvm",
+    };
+
+    for (i = 0; i < ARRAY_LEN(no_interface_modules); i++) {
+        if (strcmp(no_interface_modules[i],name) == 0) {
+            return FALSE;
+        }
+    }
+
+    return TRUE;
+};
+
+
+/*
+ * Populate the module info records for optional records with information
+ * that can be used in e.g. error messages.
+ */
+static void populate_optional_module_info(KernelModuleInfo *module)
+{
+    int i;
+
+    static struct {
+        const char *name;
+        char * const dependee;
+        char * const disable_option;
+    } optional_modules[] = {
+        { "nvidia-uvm", "CUDA", "no-unified-memory" },
+    };
+
+    for (i = 0; i < ARRAY_LEN(optional_modules); i++) {
+        if (strcmp(optional_modules[i].name, module->module_name) == 0) {
+            module->is_optional = TRUE;
+            module->optional_module_dependee = optional_modules[i].dependee;
+            module->disable_option = optional_modules[i].disable_option;
+            return;
+        }
+    }
+}
+
+
+/*
+ * Return a string with 'suffix' appended to the original source string, after
+ * replacing "nvidia" with "nv" at the beginning of the original source string.
+ */
+static char *nvidia_to_nv(const char *name, const char *suffix) {
+    if (strncmp("nvidia", name, strlen("nvidia")) != 0) {
+        return NULL;
+    }
+
+    return nvstrcat("nv", name + strlen("nvidia"), suffix, NULL);
+}
+
+
+/*
+ * Iterate over the list of kernel modules from the manifest file; generate
+ * and store module information records for each module in the Package.
+ */
+static int parse_kernel_modules_list(Package *p, char *list) {
+    char *name;
+
+    p->num_kernel_modules = 0; /* in case this gets called more than once */
+
+    for (name = strtok(list, " "); name; name = strtok(NULL, " ")) {
+        KernelModuleInfo *module;
+        p->kernel_modules = nvrealloc(p->kernel_modules,
+                                      (p->num_kernel_modules + 1) *
+                                      sizeof(p->kernel_modules[0]));
+        module = p->kernel_modules + p->num_kernel_modules;
+        memset(module, 0, sizeof(*module));
+
+        module->module_name = nvstrdup(name);
+        module->module_filename = nvstrcat(name, ".ko", NULL);
+        module->has_separate_interface_file = has_separate_interface_file(name);
+        if (module->has_separate_interface_file) {
+            char *core_binary = nvidia_to_nv(name, "-kernel.o_binary");
+            module->interface_filename = nvidia_to_nv(name, "-linux.o");
+            module->core_object_name = nvstrcat(name, "/", core_binary, NULL);
+            nvfree(core_binary);
+        }
+        populate_optional_module_info(module);
+
+        p->num_kernel_modules++;
+    }
+
+    return p->num_kernel_modules;
+}
+
 
 /*
  * parse_manifest() - open and read the .manifest file in the current
@@ -714,13 +760,14 @@ static void add_conflicting_file(Package *p, int *index, const char *file)
  *   - certain file types have an architecture
  *   - certain file types have a second flag
  *   - certain file types will have a path
+ *   - file types which inherit their paths will have a path depth
  *   - symbolic links will name the target of the link
  */
 
 static Package *parse_manifest (Options *op)
 {
-    char *buf, *c, *tmpstr, *module_suffix = "", *interface_suffix = "";
-    int n, line;
+    char *buf, *c, *tmpstr;
+    int line;
     int fd, ret, len = 0;
     struct stat stat_buf;
     Package *p;
@@ -763,83 +810,38 @@ static Package *parse_manifest (Options *op)
     line++;
     nvfree(get_next_line(ptr, &ptr, manifest, len));
 
-    /* the fourth line is the kernel module name */
+    /* the fourth line is the list of kernel modules. */
 
     line++;
     tmpstr = get_next_line(ptr, &ptr, manifest, len);
-    if (!tmpstr) goto invalid_manifest_file;
-
-    if (op->multiple_kernel_modules) {
-        module_suffix = "0";
-        interface_suffix = "-0";
+    if (parse_kernel_modules_list(p, tmpstr) == 0) {
+        goto invalid_manifest_file;
     }
-
-    p->kernel_module_name = nvstrcat(tmpstr, module_suffix, NULL);
-    p->kernel_module_filename = nvstrcat(p->kernel_module_name, ".ko", NULL);
-    p->kernel_interface_filename = nvstrcat("nv-linux", interface_suffix, ".o", NULL);
-
-    p->kernel_frontend_module_name = nvstrcat(tmpstr, "-frontend", NULL);
-    p->kernel_frontend_module_filename = nvstrcat(p->kernel_frontend_module_name,
-                                                  ".ko", NULL);
-    p->kernel_frontend_interface_filename = "nv-linux-frontend.o";
-
-    p->uvm_kernel_module_name = nvstrcat(tmpstr, "-uvm", NULL);
-    p->uvm_kernel_module_filename = nvstrcat(p->uvm_kernel_module_name, ".ko",
-                                             NULL);
-    p->uvm_interface_filename = "nv-linux-uvm.o";
-
     nvfree(tmpstr);
 
     /*
-     * the fifth line is a whitespace-separated list of kernel modules
-     * to be unloaded before installing the new kernel module
+     * set the default value of excluded_kernel_modules to an empty, heap
+     * allocated string so that it can be freed and won't prematurely end
+     * an nvstrcat()ed string when unset.
      */
 
-    line++;
-    tmpstr = get_next_line(ptr, &ptr, manifest, len);
-    if (!tmpstr) goto invalid_manifest_file;
+    p->excluded_kernel_modules = nvstrdup("");
 
-    p->bad_modules = NULL;
-    c = tmpstr;
-    n = 0;
-    
-    do {
-        n++;
-        p->bad_modules = (char **)
-            nvrealloc(p->bad_modules, n * sizeof(char *));
-        p->bad_modules[n-1] = read_next_word(c, &c);
-    } while (p->bad_modules[n-1]);
-    
     /*
-     * the sixth line is a whitespace-separated list of kernel module
-     * filenames to be uninstalled before installing the new kernel
-     * module
+     * ignore the fifth and sixth lines
      */
 
     line++;
-    tmpstr = get_next_line(ptr, &ptr, manifest, len);
-    if (!tmpstr) goto invalid_manifest_file;
+    nvfree(get_next_line(ptr, &ptr, manifest, len));
+    line++;
+    nvfree(get_next_line(ptr, &ptr, manifest, len));
 
-    p->bad_module_filenames = NULL;
-    c = tmpstr;
-    n = 0;
-    
-    do {
-        n++;
-        p->bad_module_filenames = (char **)
-            nvrealloc(p->bad_module_filenames, n * sizeof(char *));
-        p->bad_module_filenames[n-1] = read_next_word(c, &c);
-    } while (p->bad_module_filenames[n-1]);
-    
     /* the seventh line is the kernel module build directory */
 
     line++;
     p->kernel_module_build_directory = get_next_line(ptr, &ptr, manifest, len);
     if (!p->kernel_module_build_directory) goto invalid_manifest_file;
     remove_trailing_slashes(p->kernel_module_build_directory);
-
-    p->uvm_module_build_directory = nvstrcat(p->kernel_module_build_directory,
-                                             "/" UVM_SUBDIR, NULL);
 
     /*
      * the eigth line is the directory containing precompiled kernel
@@ -907,9 +909,6 @@ static Package *parse_manifest (Options *op)
         /* Track whether certain file types were packaged */
 
         switch (entry.type) {
-            case FILE_TYPE_UVM_MODULE_SRC:
-                op->uvm_files_packaged = TRUE;
-                break;
             case FILE_TYPE_XMODULE_SHARED_LIB:
                 op->x_files_packaged = TRUE;
                 break;
@@ -964,11 +963,45 @@ static Package *parse_manifest (Options *op)
             }
         }
 
-        /* libs and documentation have a path field */
+        /* some file types have a path field, or inherit their paths */
 
         if (entry.caps.has_path) {
             entry.path = read_next_word(c, &c);
             if (!entry.path) goto invalid_manifest_file;
+        } else if (entry.caps.inherit_path) {
+            int i;
+            char *path, *depth, *slash;
+            const char * const depth_marker = "INHERIT_PATH_DEPTH:";
+
+            depth = read_next_word(c, &c);
+            if (!depth ||
+                strncmp(depth, depth_marker, strlen(depth_marker)) != 0) {
+                goto invalid_manifest_file;
+            }
+            entry.inherit_path_depth = atoi(depth + strlen(depth_marker));
+            nvfree(depth);
+
+            /* Remove the file component from the packaged filename */
+            path = entry.path = nvstrdup(entry.file);
+            slash = strrchr(path, '/');
+            if (slash == NULL) {
+                goto invalid_manifest_file;
+            }
+            slash[1] = '\0';
+
+            /* Strip leading directory components from the path */
+            for (i = 0; i < entry.inherit_path_depth; i++) {
+                slash = strchr(entry.path, '/');
+
+                if (slash == NULL) {
+                    goto invalid_manifest_file;
+                }
+
+                entry.path = slash + 1;
+            }
+
+            entry.path = nvstrdup(entry.path);
+            nvfree(path);
         } else {
             entry.path = NULL;
         }
@@ -1132,29 +1165,18 @@ static void free_package(Package *p)
     
     nvfree(p->description);
     nvfree(p->version);
-    nvfree(p->kernel_module_filename);
-    nvfree(p->kernel_interface_filename);
-    nvfree(p->kernel_module_name);
-    
-    if (p->bad_modules) {
-        for (i = 0; p->bad_modules[i]; i++) {
-            nvfree(p->bad_modules[i]);
-        }
-        nvfree((char *) p->bad_modules);
-    }
-
-    if (p->bad_module_filenames) {
-        for (i = 0; p->bad_module_filenames[i]; i++) {
-            nvfree(p->bad_module_filenames[i]);
-        }
-        nvfree((char *) p->bad_module_filenames);
-    }
     
     nvfree(p->kernel_module_build_directory);
-    nvfree(p->uvm_module_build_directory);
-    
+
     nvfree(p->precompiled_kernel_interface_directory);
-    
+
+    for (i = 0; i < p->num_kernel_modules; i++) {
+        free_kernel_module_info(p->kernel_modules[i]);
+    }
+    nvfree(p->kernel_modules);
+
+    nvfree(p->excluded_kernel_modules);
+
     for (i = 0; i < p->num_entries; i++) {
         nvfree(p->entries[i].file);
         nvfree(p->entries[i].path);
@@ -1168,11 +1190,6 @@ static void free_package(Package *p)
     }
 
     nvfree((char *) p->entries);
-
-    nvfree(p->kernel_frontend_module_filename);
-    nvfree(p->kernel_frontend_module_name);
-    nvfree(p->uvm_kernel_module_name);
-    nvfree(p->uvm_kernel_module_filename);
 
     nvfree((char *) p);
     
@@ -1307,7 +1324,8 @@ static int assisted_module_signing(Options *op, Package *p)
                                     "plan to generate a new key pair with "
                                     "nvidia-installer.";
 
-                guess = guess_module_signing_hash(op, p);
+                guess = guess_module_signing_hash(op,
+                                                  p->kernel_module_build_directory);
 
                 if (guess == NULL) {
                     warn = no_guess;
@@ -1405,30 +1423,9 @@ generate_done:
     /* Now that we have keys (user-supplied or installer-generated),
      * sign the kernel module/s which we built earlier. */
 
-    for (i = 0; i < op->num_kernel_modules; i++) {
-        char module_instance_str[5];
-        memset(module_instance_str, 0, sizeof(module_instance_str));
-
-        if (op->multiple_kernel_modules) {
-            snprintf(module_instance_str, sizeof(module_instance_str), "%d", i);
-        }
-
+    for (i = 0; i < p->num_kernel_modules; i++) {
         if (!sign_kernel_module(op, p->kernel_module_build_directory,
-                                module_instance_str, TRUE)) {
-            return FALSE;
-        }
-    }
-
-    if (op->multiple_kernel_modules) {
-        if (!sign_kernel_module(op, p->kernel_module_build_directory,
-                                "-frontend", TRUE)) {
-            return FALSE;
-        }
-    }
-
-    if (op->install_uvm) {
-        if (!sign_kernel_module(op, p->uvm_module_build_directory, "-uvm",
-                                TRUE)) {
+                                p->kernel_modules[i].module_filename, TRUE)) {
             return FALSE;
         }
     }

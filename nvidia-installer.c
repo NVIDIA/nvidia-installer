@@ -145,9 +145,9 @@ static Options *load_default_options(void)
     op->dkms = FALSE;
     op->install_vdpau_wrapper = NV_OPTIONAL_BOOL_DEFAULT;
     op->check_for_alternate_installs = TRUE;
-    op->num_kernel_modules = 1;
     op->install_uvm = TRUE;
     op->install_compat32_libs = NV_OPTIONAL_BOOL_DEFAULT;
+    op->install_libglx_indirect = NV_OPTIONAL_BOOL_DEFAULT;
 
     return op;
 
@@ -361,7 +361,7 @@ static void parse_commandline(int argc, char *argv[], Options *op)
         case NO_RPMS_OPTION:
             op->no_rpms = TRUE;
             break;
-        case NO_RECURSION_OPTION:
+        case 'r':
             op->no_recursion = TRUE;
             break;
         case FORCE_SELINUX_OPTION:
@@ -430,28 +430,18 @@ static void parse_commandline(int argc, char *argv[], Options *op)
             op->install_vdpau_wrapper = boolval ? NV_OPTIONAL_BOOL_TRUE :
                                                   NV_OPTIONAL_BOOL_FALSE;
             break;
-        case MULTIPLE_KERNEL_MODULES_OPTION:
-            if (intval < 0) {
-                nv_error_msg("Invalid parameter for '--multiple-kernel-modules'");
-                goto fail;
-            }
-            op->multiple_kernel_modules = TRUE;
-            /* Unified Memory is incompatible with multiple kernel modules */
-            op->install_uvm = FALSE;
-
-            if (intval > NV_MAX_MODULE_INSTANCES) {
-                op->num_kernel_modules = NV_MAX_MODULE_INSTANCES;
-            }
-            else {
-                op->num_kernel_modules = intval;
-            }
-            break;
         case NO_UVM_OPTION:
             op->install_uvm = FALSE;
         break;
         case NO_CHECK_FOR_ALTERNATE_INSTALLS_OPTION:
             op->check_for_alternate_installs = FALSE;
         break;
+        case FORCE_LIBGLX_INDIRECT:
+            op->install_libglx_indirect = NV_OPTIONAL_BOOL_TRUE;
+            break;
+        case NO_LIBGLX_INDIRECT:
+            op->install_libglx_indirect = NV_OPTIONAL_BOOL_FALSE;
+            break;
         default:
             goto fail;
         }
@@ -644,7 +634,7 @@ int main(int argc, char *argv[])
  done:
     
     ui_close(op);
-    
+
     nvfree((void*)op);
     
     return (ret ? 0 : 1);

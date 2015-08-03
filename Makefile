@@ -308,7 +308,7 @@ tls_test: tls_test.c
 # nvidia-installer to simplify x86-64 builds.
 
 rebuild_rtld_test: rtld_test.c $(CONFIG_H)
-	$(call quiet_cmd,LINK) $(CFLAGS) $(LDFLAGS) $(BIN_LDFLAGS) -o $(RTLD_TEST) -lGL $<
+	$(call quiet_cmd,LINK) $(CFLAGS) $(LDFLAGS) $(BIN_LDFLAGS) -o $(RTLD_TEST) -lGL -lEGL $<
 	$(call quiet_cmd,STRIP_CMD) $(RTLD_TEST)
 
 # dummy rule to override implicit rule that builds dls_test from

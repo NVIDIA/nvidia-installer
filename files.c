@@ -480,6 +480,116 @@ void select_tls_class(Options *op, Package *p)
 #endif /* NV_TLS_TEST */
 } /* select_tls_class() */
 
+/*
+ * check_libGLX_indirect_target() - Helper function for
+ * check_libGLX_indirect_links.
+ *
+ * Checks to see if the installer should install (or overwrite) a
+ * libGLX_indirect.so.0 symlink.
+ *
+ * (path) should be the path to where the symlink would be installed.
+ */
+static int check_libGLX_indirect_target(Options *op, const char *path)
+{
+    char *target = NULL;
+    char *base = NULL;
+    char *ext = NULL;
+    struct stat stat_buf;
+    int ret;
+
+    if (lstat(path, &stat_buf) != 0) {
+        // If the file doesn't exist, then we should create it.
+        return TRUE;
+    }
+
+    if (!S_ISLNK(stat_buf.st_mode)) {
+        // The file is not a symlink. Leave it alone.
+        return FALSE;
+    }
+
+    if (stat(path, &stat_buf) != 0) {
+        // If we can't resolve the link, then overwrite it.
+        return TRUE;
+    }
+
+    // Resolve the symlink.
+    target = get_resolved_symlink_target(op, path);
+    while (target != NULL) {
+        // Follow any more symlinks. The fact that the stat call above
+        // succeeded means that the link is valid.
+        char *nextTarget = NULL;
+        if (lstat(target, &stat_buf) != 0) {
+            free(target);
+            target = NULL;
+            break;
+        }
+
+        if (!S_ISLNK(stat_buf.st_mode)) {
+            break;
+        }
+
+        nextTarget = get_resolved_symlink_target(op, target);
+        free(target);
+        target = nextTarget;
+    }
+    if (target == NULL) {
+        // This should never happen.
+        ui_error(op, "Unable to resolve symbolic link \"%s\"\n", path);
+        return FALSE;
+    }
+
+    // Find the basename of the link target.
+    base = basename(target);
+    // Strip off the extension.
+    ext = strchr(base, '.');
+    if (ext != NULL) {
+        *ext = '\0';
+    }
+
+    // Finally, see if the resulting name is "libGLX_indirect". If it is, then
+    // we'll assume that the existing file is a dedicated indirect rendering
+    // library. Otherwise, we'll assume that it's a link to another vendor
+    // library.
+    if (strcmp(base, "libGLX_indirect") == 0) {
+        ret = FALSE;
+    } else {
+        ret = TRUE;
+    }
+    free(target);
+    return ret;
+}
+
+/*
+ * check_libGLX_indirect_links() - Finds the entries for the
+ * "libGLX_indirect.so.0" symlinks, and figures out whether to install them.
+ */
+static void check_libGLX_indirect_links(Options *op, Package *p)
+{
+    int i;
+
+    if (op->install_libglx_indirect == NV_OPTIONAL_BOOL_TRUE) {
+        // The user specified that we should install the symlink.
+        return;
+    }
+
+    // Find the entries for libGLX_indirect.so.0, and decide whether or not to
+    // keep them.
+    for (i = 0; i < p->num_entries; i++) {
+        if (p->entries[i].dst != NULL && p->entries[i].type == FILE_TYPE_OPENGL_SYMLINK) {
+            if (strcmp(p->entries[i].name, "libGLX_indirect.so.0") == 0) {
+                int overwrite = FALSE;
+                if (op->install_libglx_indirect == NV_OPTIONAL_BOOL_DEFAULT) {
+                    if (check_libGLX_indirect_target(op, p->entries[i].dst)) {
+                        overwrite = TRUE;
+                    }
+                }
+                if (!overwrite) {
+                    invalidate_package_entry(&(p->entries[i]));
+                }
+            }
+        }
+    }
+}
 
 /*
  * set_destinations() - given the Options and Package structures,
@@ -499,32 +609,20 @@ int set_destinations(Options *op, Package *p)
         op->kernel_module_src_dir = nvstrcat("nvidia-", p->version, NULL);
     }
 
-    op->uvm_module_src_dir = nvstrcat(op->kernel_module_src_dir, "/" UVM_SUBDIR,
-                                      NULL);
-
     for (i = 0; i < p->num_entries; i++) {
 
         switch (p->entries[i].type) {
 
-        case FILE_TYPE_KERNEL_MODULE_CMD:
-            /* we don't install kernel module commands */
-            p->entries[i].dst = NULL;
-            continue;
-
         case FILE_TYPE_KERNEL_MODULE_SRC:
-        case FILE_TYPE_UVM_MODULE_SRC:
+        case FILE_TYPE_DKMS_CONF:
             if (op->no_kernel_module_source) {
                 /* Don't install kernel module source files if requested. */
                 p->entries[i].dst = NULL;
                 continue;
             }
             prefix = op->kernel_module_src_prefix;
-            if (p->entries[i].type == FILE_TYPE_UVM_MODULE_SRC) {
-                dir = op->uvm_module_src_dir;
-            } else {
-                dir = op->kernel_module_src_dir;
-            }
-            path = "";
+            dir = op->kernel_module_src_dir;
+            path = p->entries[i].path;
             break;
 
         case FILE_TYPE_OPENGL_LIB:
@@ -775,6 +873,8 @@ int set_destinations(Options *op, Package *p)
         }
 #endif /* NV_X86_64 */
     }
+
+    check_libGLX_indirect_links(op, p);
     
     return TRUE;
 
@@ -1031,11 +1131,11 @@ int get_prefixes (Options *op)
  */
 
 static void add_kernel_module_helper(Options *op, Package *p,
-                                     const char *filename, const char *dir)
+                                     const char *filename)
 {
     char *file, *name, *dst;
 
-    file = nvstrcat(dir, "/", filename, NULL);
+    file = nvstrcat(p->kernel_module_build_directory, "/", filename, NULL);
 
     name = strrchr(file, '/');
 
@@ -1066,43 +1166,20 @@ static void add_kernel_module_helper(Options *op, Package *p,
  * to the package list for installation.
  */
 
-int add_kernel_modules_to_package(Options *op, Package *p)
+void add_kernel_modules_to_package(Options *op, Package *p)
 {
     int i;
 
-    if (op->multiple_kernel_modules) {
-        add_kernel_module_helper(op, p, p->kernel_frontend_module_filename,
-                                 p->kernel_module_build_directory);
+    for (i = 0; i < p->num_kernel_modules; i++) {
+        add_kernel_module_helper(op, p, p->kernel_modules[i].module_filename);
     }
-
-    for (i = 0; i < op->num_kernel_modules; i++) {
-
-        char *tmp, *name;
-
-        name = nvstrdup(p->kernel_module_filename);
-
-        tmp = strrchr(name, '0');
-        if (tmp) *tmp = *tmp + i;
-
-        add_kernel_module_helper(op, p, name, p->kernel_module_build_directory);
-
-        nvfree(name);
-    }
-
-    if (op->install_uvm) {
-        add_kernel_module_helper(op, p, p->uvm_kernel_module_filename,
-                                 p->uvm_module_build_directory);
-    }
-
-    return TRUE;
-
-} /* add_kernel_module_to_package() */
+}
 
 
 
 /*
  * Invalidate each package entry that is not type
- * FILE_TYPE_KERNEL_MODULE{,_CMD,_SRC}.
+ * FILE_TYPE_KERNEL_MODULE{,_SRC} or FILE_TYPE_DKMS_CONF.
  */
 
 void remove_non_kernel_module_files_from_package(Options *op, Package *p)
@@ -1111,8 +1188,8 @@ void remove_non_kernel_module_files_from_package(Options *op, Package *p)
 
     for (i = 0; i < p->num_entries; i++) {
         if ((p->entries[i].type != FILE_TYPE_KERNEL_MODULE) &&
-            (p->entries[i].type != FILE_TYPE_KERNEL_MODULE_CMD) &&
-            (p->entries[i].type != FILE_TYPE_KERNEL_MODULE_SRC)) {
+            (p->entries[i].type != FILE_TYPE_KERNEL_MODULE_SRC) &&
+            (p->entries[i].type != FILE_TYPE_DKMS_CONF)) {
             invalidate_package_entry(&(p->entries[i]));
         }
     }
@@ -1592,8 +1669,8 @@ int check_for_existing_rpms(Options *op)
 
 
 /*
- * copy_directory_contents() - copy the contents of directory src to
- * directory dst.  This only copies files; subdirectories are ignored.
+ * copy_directory_contents() - recursively copy the contents of directory src to
+ * directory dst.  Special files are ignored.
  */
 
 int copy_directory_contents(Options *op, const char *src, const char *dst)
@@ -1612,22 +1689,24 @@ int copy_directory_contents(Options *op, const char *src, const char *dst)
         struct stat stat_buf;
         char *srcfile, *dstfile;
         int ret;
-        
+
         if (((strcmp(ent->d_name, ".")) == 0) ||
             ((strcmp(ent->d_name, "..")) == 0)) continue;
-        
+
         srcfile = nvstrcat(src, "/", ent->d_name, NULL);
-
-        /* only copy regular files */
-
-        if ((stat(srcfile, &stat_buf) == -1) || !(S_ISREG(stat_buf.st_mode))) {
-            nvfree(srcfile);
-            continue;
-        }
-        
         dstfile = nvstrcat(dst, "/", ent->d_name, NULL);
-        
-        ret = copy_file(op, srcfile, dstfile, stat_buf.st_mode);
+
+        ret = (stat(srcfile, &stat_buf) != -1);
+
+        if (ret) {
+            /* recurse into subdirectories */
+            if (S_ISDIR(stat_buf.st_mode)) {
+                ret = mkdir_recursive(op, dstfile, stat_buf.st_mode, FALSE) &&
+                      copy_directory_contents(op, srcfile, dstfile);
+            } else if (S_ISREG(stat_buf.st_mode)) {
+                ret = copy_file(op, srcfile, dstfile, stat_buf.st_mode);
+            }
+        }
 
         nvfree(srcfile);
         nvfree(dstfile);
@@ -1644,13 +1723,13 @@ int copy_directory_contents(Options *op, const char *src, const char *dst)
     if (closedir(dir) != 0) {
         ui_error(op, "Failure while closing directory '%s' (%s).",
                  src, strerror(errno));
-        
+
         return FALSE;
     }
-    
+
     return status;
-    
-} /* copy_directory_contents() */
+
+}
 
 
 
@@ -2096,6 +2175,84 @@ void process_dot_desktop_files(Options *op, Package *p)
     nvfree(replacements[1]);
 
 } /* process_dot_desktop_files() */
+
+
+
+/*
+ * process_dkms_conf() - copy dkms.conf to a temporary file and perform
+ * some substitutions. Then, add the new file to the package list.
+ */
+
+void process_dkms_conf(Options *op, Package *p)
+{
+    int i;
+    char *tmpfile;
+
+    char *tokens[6] = { "__VERSION_STRING", "__DKMS_MODULES", "__JOBS",
+                        "__EXCLUDE_MODULES", "will be generated", NULL };
+    char *replacements[6] = { p->version, NULL, NULL,
+                              p->excluded_kernel_modules,
+                              "was generated", NULL };
+
+    int package_num_entries = p->num_entries;
+
+    replacements[1] = nvstrdup("");
+    replacements[2] = nvasprintf("%d", op->concurrency_level);
+
+    /* Build the list of kernel modules to be installed */
+    for (i = 0; i < p->num_kernel_modules; i++) {
+        char *old_modules = replacements[1];
+        char *index = nvasprintf("%d", i);
+
+        replacements[1] = nvstrcat(old_modules,
+                                   "BUILT_MODULE_NAME[", index, "]=\"",
+                                   p->kernel_modules[i].module_name, "\"\n",
+                                   "DEST_MODULE_LOCATION[", index, "]=",
+                                   "\"/kernel/drivers/video\"\n", NULL);
+
+        nvfree(index);
+        nvfree(old_modules);
+    }
+
+    for (i = 0; i < package_num_entries; i++) {
+        if ((p->entries[i].type == FILE_TYPE_DKMS_CONF)) {
+
+            /* invalidate the template file */
+
+            invalidate_package_entry(&(p->entries[i]));
+
+            tmpfile = process_template_file(op, &p->entries[i], tokens,
+                                            replacements);
+            if (tmpfile != NULL) {
+                /* add this new file to the package */
+
+                /*
+                 * XXX 'name' is the basename (non-directory part) of
+                 * the file to be installed; normally, 'name' just
+                 * points into 'file', but in this case 'file' is
+                 * mkstemp(3)-generated, so doesn't have the same
+                 * basename; instead, we just strdup the name from the
+                 * template package entry; yes, 'name' will get leaked
+                 */
+
+                add_package_entry(p,
+                                  tmpfile,
+                                  nvstrdup(p->entries[i].path),
+                                  nvstrdup(p->entries[i].name),
+                                  NULL, /* target */
+                                  NULL, /* dst */
+                                  FILE_TYPE_DKMS_CONF,
+                                  p->entries[i].tls_class,
+                                  p->entries[i].compat_arch,
+                                  p->entries[i].mode);
+            }
+        }
+    }
+
+    nvfree(replacements[2]);
+    nvfree(replacements[1]);
+
+}
 
 
 /*

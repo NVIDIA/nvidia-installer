@@ -151,13 +151,12 @@ typedef struct __options {
     int no_kernel_module_source;
     int dkms;
     int check_for_alternate_installs;
-    int multiple_kernel_modules;
-    int num_kernel_modules;
     int install_uvm;
-    int uvm_files_packaged;
     int compat32_files_packaged;
     int x_files_packaged;
     int concurrency_level;
+    int load_error_ignored;
+    int install_libglx_indirect;
 
     NVOptionalBool install_vdpau_wrapper;
     NVOptionalBool install_compat32_libs;
@@ -200,8 +199,7 @@ typedef struct __options {
     char *kernel_module_src_prefix;
     char *kernel_module_src_dir;
     char *utils[MAX_UTILS];
-    char *uvm_module_src_dir;
-    
+
     char *proc_mount_point;
     char *ui_str;
     char *log_file_name;
@@ -238,7 +236,6 @@ typedef struct __options {
 typedef enum {
     FILE_TYPE_NONE,
     FILE_TYPE_KERNEL_MODULE_SRC,
-    FILE_TYPE_KERNEL_MODULE_CMD,
     FILE_TYPE_OPENGL_HEADER,
     FILE_TYPE_OPENGL_LIB,
     FILE_TYPE_DOCUMENTATION,
@@ -283,8 +280,8 @@ typedef enum {
     FILE_TYPE_MODULE_SIGNING_KEY,
     FILE_TYPE_NVIFR_LIB,
     FILE_TYPE_NVIFR_LIB_SYMLINK,
-    FILE_TYPE_UVM_MODULE_SRC,
     FILE_TYPE_XORG_OUTPUTCLASS_CONFIG,
+    FILE_TYPE_DKMS_CONF,
     FILE_TYPE_MAX
 } PackageEntryFileType;
 
@@ -310,6 +307,7 @@ typedef struct {
     unsigned int is_opengl     : 1;
     unsigned int is_temporary  : 1;
     unsigned int is_wrapper    : 1;
+    unsigned int inherit_path  : 1;
 } PackageEntryFileCapabilities;
 
 /*
@@ -319,6 +317,7 @@ typedef struct {
 typedef struct {
     uint8_t types[FILE_TYPE_MAX];
 } PackageEntryFileTypeList;
+
 
 typedef struct __package_entry {
     
@@ -356,6 +355,7 @@ typedef struct __package_entry {
     PackageEntryFileType type;
     PackageEntryFileTlsClass tls_class;
     PackageEntryFileCompatArch compat_arch;
+    int inherit_path_depth;
 
     mode_t mode;
 
@@ -389,29 +389,38 @@ typedef struct {
 } ConflictingFileInfo;
 
 
+/*
+ * KernelModuleInfo: store information about a kernel module that is useful
+ * for building the module or identifying it or its component objects.
+ */
+typedef struct {
+    char *module_name;               /* e.g. "nvidia" */
+    char *module_filename;           /* e.g. "nvidia.ko" */
+    int has_separate_interface_file; /* e.g. FALSE for "nvidia-uvm" */
+    char *interface_filename;        /* e.g. "nv-linux.o" */
+    char *core_object_name;          /* e.g. "nv-kernel.o" */
+    int is_optional;                 /* e.g. TRUE for "nvidia-uvm" */
+    char *optional_module_dependee;  /* e.g. "CUDA" for "nvidia-uvm" */
+    char *disable_option;            /* e.g. "--no-unified-memory" */
+} KernelModuleInfo;
+
+
 typedef struct __package {
 
     char *description;
     char *version;
-    char *kernel_module_filename;
-    char *kernel_interface_filename;
-    char *kernel_module_name;
-    char **bad_modules;
-    char **bad_module_filenames;
     char *kernel_module_build_directory;
-    char *uvm_module_build_directory;
     char *precompiled_kernel_interface_directory;
-    char *kernel_frontend_module_filename;
-    char *kernel_frontend_module_name;
-    char *kernel_frontend_interface_filename;
-    char *uvm_kernel_module_name;
-    char *uvm_kernel_module_filename;
-    char *uvm_interface_filename;
-    
+
     PackageEntry *entries; /* array of filename/checksum/bytesize entries */
     int num_entries;
 
     ConflictingFileInfo *conflicting_files;
+
+    KernelModuleInfo *kernel_modules;
+    int num_kernel_modules;
+    char *excluded_kernel_modules;
+
 } Package;
 
 
@@ -501,8 +510,6 @@ typedef struct __package {
 #define DEFAULT_UNINSTALL_LOG_FILE_NAME "/var/log/nvidia-uninstall.log"
 
 #define NUM_TIMES_QUESTIONS_ASKED 3
-
-#define NV_MAX_MODULE_INSTANCES   8
 
 #define LD_OPTIONS "-d -r"
 #define NVIDIA_VERSION_PROC_FILE "/proc/driver/nvidia/version"

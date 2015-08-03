@@ -65,7 +65,6 @@ enum {
     NO_RPMS_OPTION,
     X_PREFIX_OPTION,
     KERNEL_OUTPUT_PATH_OPTION,
-    NO_RECURSION_OPTION,
     FORCE_TLS_COMPAT32_OPTION,
     COMPAT32_CHROOT_OPTION,
     COMPAT32_PREFIX_OPTION,
@@ -95,10 +94,11 @@ enum {
     MODULE_SIGNING_X509_HASH_OPTION,
     INSTALL_VDPAU_WRAPPER_OPTION,
     NO_CHECK_FOR_ALTERNATE_INSTALLS_OPTION,
-    MULTIPLE_KERNEL_MODULES_OPTION,
     NO_UVM_OPTION,
     INSTALL_COMPAT32_LIBS_OPTION,
     X_SYSCONFIG_PATH_OPTION,
+    FORCE_LIBGLX_INDIRECT,
+    NO_LIBGLX_INDIRECT,
 };
 
 static const NVGetoptOption __options[] = {
@@ -444,7 +444,7 @@ static const NVGetoptOption __options[] = {
       "This option instructs the installer to not attempt to access the "
       "network." },
 
-    { "no-recursion", NO_RECURSION_OPTION, 0, NULL,
+    { "no-recursion", 'r', 0, NULL,
       "Normally, nvidia-installer will recursively search for "
       "potentially conflicting libraries under the default OpenGL "
       "and X server installation locations.  With this option set, "
@@ -640,12 +640,6 @@ static const NVGetoptOption __options[] = {
       "nvidia-installer. Setting this option skips the check for alternate "
       "driver installations." },
 
-    { "multiple-kernel-modules", MULTIPLE_KERNEL_MODULES_OPTION,
-       NVGETOPT_INTEGER_ARGUMENT, NULL,
-      "Build and install multiple NVIDIA kernel modules. The maximum number "
-      "of NVIDIA kernel modules that may be built is 8. '--multiple-kernel-"
-      "modules' implies '--no-unified-memory'." },
-
     { "no-unified-memory", NO_UVM_OPTION, 0, NULL,
       "Do not install the NVIDIA Unified Memory kernel module. This kernel "
       "module is required for CUDA on 64-bit systems, and if it is not "
@@ -659,6 +653,12 @@ static const NVGetoptOption __options[] = {
       "module which may be parallelized on SMP systems. By default, this will "
       "be set to the number of detected CPUs, or to '1', if nvidia-installer "
       "fails to detect the number of CPUs." },
+
+    { "force-libglx-indirect", FORCE_LIBGLX_INDIRECT, 0, NULL,
+      "If the package includes a libglvnd-based OpenGL library, then always "
+      "install a libGLX_indirect.so.0 symlink, overwriting one if it exists." },
+    { "no-libglx-indirect", NO_LIBGLX_INDIRECT, 0, NULL,
+      "Do not install a libGLX_indirect.so.0 symlink." },
 
     /* Orphaned options: These options were in the long_options table in
      * nvidia-installer.c but not in the help. */

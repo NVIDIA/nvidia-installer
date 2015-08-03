@@ -23,8 +23,6 @@
 #include "nvidia-installer.h"
 #include "precompiled.h"
 
-#define UVM_SUBDIR "uvm"
-
 int remove_directory(Options *op, const char *victim);
 int touch_directory(Options *op, const char *victim);
 int copy_file(Options *op, const char *srcfile,
@@ -35,7 +33,7 @@ void select_tls_class(Options *op, Package *p); /* XXX move? */
 int set_destinations(Options *op, Package *p); /* XXX move? */
 int get_license_acceptance(Options *op); /* XXX move? */
 int get_prefixes(Options *op); /* XXX move? */
-int add_kernel_modules_to_package(Options *op, Package *p);
+void add_kernel_modules_to_package(Options *op, Package *p);
 void remove_non_kernel_module_files_from_package(Options *op, Package *p);
 void remove_opengl_files_from_package(Options *op, Package *p);
 int mode_string_to_mode(Options *op, char *s, mode_t *mode);
@@ -62,6 +60,7 @@ char *process_template_file(Options *op, PackageEntry *pe,
                             char **tokens, char **replacements);
 void process_libGL_la_files(Options *op, Package *p);
 void process_dot_desktop_files(Options *op, Package *p);
+void process_dkms_conf(Options *op, Package *p);
 int set_security_context(Options *op, const char *filename);
 void get_default_prefixes_and_paths(Options *op);
 void get_compat32_path(Options *op);

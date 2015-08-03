@@ -32,26 +32,29 @@ typedef enum {
 int determine_kernel_module_installation_path      (Options*);
 int determine_kernel_source_path                   (Options*, Package*);
 int determine_kernel_output_path                   (Options*);
-int link_kernel_module                             (Options*, Package*,
+int unpack_kernel_modules                          (Options*, Package*,
                                                     const char *,
                                                     const PrecompiledFileInfo *);
 int check_cc_version                               (Options*, Package*);
 int build_kernel_modules                           (Options*, Package*);
-int build_kernel_interface                         (Options*, Package*,
+int build_kernel_interfaces                        (Options*, Package*,
                                                     PrecompiledFileInfo **);
 int test_kernel_modules                            (Options*, Package*);
-int load_kernel_module                             (Options*, Package*);
-int check_for_unloaded_kernel_module               (Options*, Package*);
+int load_kernel_module                             (Options*, const char*);
+int load_kernel_modules                            (Options*, Package*);
+int check_for_unloaded_kernel_module               (Options*);
 PrecompiledInfo *find_precompiled_kernel_interface (Options*, Package*);
 char *get_kernel_name                              (Options*);
 KernelConfigOptionStatus test_kernel_config_option (Options*, Package*,
                                                     const char*);
 int sign_kernel_module                             (Options*, const char*, 
                                                     const char*, int);
-char *guess_module_signing_hash                    (Options*, Package*);
-int rmmod_kernel_module                            (Options*, const char*);
-
-#define SEARCH_FILELIST_MAX_ENTRIES       32
+char *guess_module_signing_hash                    (Options*, const char*);
+int remove_kernel_module_from_package              (Package*, const char*);
+void free_kernel_module_info                       (KernelModuleInfo);
+int package_includes_kernel_module                 (const Package*,
+                                                    const char *);
+int rmmod_kernel_module                            (Options*, const char *);
 
 #ifndef ENOKEY
 #define	ENOKEY		126	/* Required key not available */

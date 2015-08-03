@@ -1248,7 +1248,7 @@ void should_install_uvm(Options *op, Package *p)
 {
     /* if the package does not include UVM, it can't be installed. */
 
-    if (!op->uvm_files_packaged) {
+    if (!package_includes_kernel_module(p, "nvidia-uvm")) {
         op->install_uvm = FALSE;
         return;
     }
@@ -1266,6 +1266,8 @@ void should_install_uvm(Options *op, Package *p)
         ui_warn(op, "The NVIDIA Unified Memory kernel module will not be "
                 "installed. As a result, CUDA applications will not be able to "
                 "run with this installation of the NVIDIA driver.");
+
+        remove_kernel_module_from_package(p, "nvidia-uvm");
     }
 }
 
