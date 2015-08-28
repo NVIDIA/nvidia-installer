@@ -577,10 +577,9 @@ static const NVGetoptOption __options[] = {
       "infrastructure to automatically build a new kernel module when "
       "changing kernels.  During installation, if DKMS is detected, "
       "nvidia-installer will ask the user if they wish to register the "
-      "module with DKMS; the default response is 'no'.  Use this option to "
-      "make the default response 'yes'.  This is useful with the "
-      "'--no-questions' or '--silent' options, which assume the default "
-      "values for all questions." },
+      "module with DKMS; the default response is 'no'.  This option will "
+      "bypass the detection of DKMS, and cause the installer to attempt a "
+      "DKMS-based installation regardless of whether DKMS is present."},
 
     { "module-signing-secret-key", MODULE_SIGNING_SECRET_KEY_OPTION, 
       NVGETOPT_STRING_ARGUMENT, NULL,
