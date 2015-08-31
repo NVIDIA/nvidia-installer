@@ -40,6 +40,7 @@
 #include "files.h"
 #include "crc.h"
 #include "misc.h"
+#include "kernel.h"
 
 #define BACKUP_DIRECTORY "/var/lib/nvidia"
 #define BACKUP_LOG       (BACKUP_DIRECTORY "/log")
@@ -593,7 +594,7 @@ static int do_uninstall(Options *op, const char *version)
     BackupLogEntry *e;
     BackupInfo *b;
     int i, len, ok;
-    char *tmpstr, *cmd;
+    char *tmpstr;
     float percent;
 
     static const char existing_installation_is_borked[] = 
@@ -771,9 +772,7 @@ static int do_uninstall(Options *op, const char *version)
          * the kernel may not have been configured with support for module
          * unloading (Linux 2.6) or the user might have unloaded it themselves.
          */
-        cmd = nvstrcat(op->utils[RMMOD], " ", RMMOD_MODULE_NAME, NULL);
-        run_command(op, cmd, NULL, FALSE, 0, TRUE);
-        nvfree(cmd);
+        rmmod_kernel_module(op, RMMOD_MODULE_NAME);
     }
 
     run_distro_hook(op, "post-uninstall");
@@ -1364,34 +1363,7 @@ int run_existing_uninstaller(Options *op)
         ui_log(op, "Uninstalling the previous installation with %s.",
                uninstaller);
 
-        if (!op->no_kernel_module && !op->kernel_name) {
-            /*
-             * Attempt to run the uninstaller with the --skip-module-unload
-             * option first.  If that fails, fall back to running it without
-             * that option.
-             *
-             * We don't want the uninstaller to unload the module because this
-             * instance of the installer already unloaded the old module and
-             * loaded the new one.
-             */
-            char *uninstall_skip_unload_cmd =
-                nvstrcat(uninstall_cmd, " --skip-module-unload", NULL);
-            ret = run_command(op, uninstall_skip_unload_cmd, NULL, FALSE, 0, TRUE);
-            nvfree(uninstall_skip_unload_cmd);
-        } else {
-            /*
-             * If installing the kernel module was skipped or we're
-             * building/installing for a different kernel, then the new kernel
-             * module wasn't automatically loaded and we should unload whichever
-             * one is loaded now.
-             */
-            ret = 1;
-        }
-
-        if (ret) {
-            /* Try again without --skip-module-unload */
-            ret = run_command(op, uninstall_cmd, &data, FALSE, 0, TRUE);
-        }
+        ret = run_command(op, uninstall_cmd, &data, FALSE, 0, TRUE);
 
         nvfree(uninstall_cmd);
 

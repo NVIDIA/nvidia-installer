@@ -34,5 +34,6 @@ int load_kernel_module                        (Options*, Package*);
 int check_for_unloaded_kernel_module          (Options*, Package*);
 int find_precompiled_kernel_interface         (Options*, Package*);
 char *get_kernel_name                         (Options*);
+int rmmod_kernel_module                       (Options*, const char*);
 
 #endif /* __NVIDIA_INSTALLER_KERNEL_H__ */

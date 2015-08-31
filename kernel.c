@@ -48,7 +48,6 @@ static char *default_kernel_module_installation_path(Options *op);
 static char *default_kernel_source_path(Options *op);
 static int check_for_loaded_kernel_module(Options *op, const char *);
 static void check_for_warning_messages(Options *op);
-static int rmmod_kernel_module(Options *op, const char *);
 static PrecompiledInfo *download_updated_kernel_interface(Options*, Package*,
                                                           const char*);
 static int fbdev_check(Options *op, Package *p);
@@ -63,6 +62,8 @@ static char *build_distro_precompiled_kernel_interface_dir(Options *op);
 static char *convert_include_path_to_source_path(const char *inc);
 static char *guess_kernel_module_filename(Options *op);
 static char *get_machine_arch(Options *op);
+static void load_kernel_module_quiet(Options *op, const char *module_name);
+static void modprobe_remove_kernel_module_quiet(Options *op, const char *name);
 
 /*
  * Message text that is used by several error messages.
@@ -680,17 +681,59 @@ void check_for_warning_messages(Options *op)
 
 
 
+#define PRINTK_LOGLEVEL_KERN_ALERT 1
+
 /*
- * test_kernel_module() - attempt to insmod the kernel module.  Return TRUE if
- * the insmod succeeded, or FALSE otherwise.
+ * Attempt to set the printk loglevel, first using the /proc/sys interface,
+ * and falling back to the deprecated sysctl if that fails. Pass the previous
+ * loglevel back to the caller and return TRUE on success, or FALSE on failure.
  */
+static int set_loglevel(int level, int *old_level)
+{
+    FILE *fp;
+    int loglevel_set = FALSE;
+
+    fp = fopen("/proc/sys/kernel/printk", "r+");
+    if (fp) {
+        if (!old_level || fscanf(fp, "%d ", old_level) == 1) {
+            char *strlevel = nvasprintf("%d", level);
+
+            fseek(fp, 0, SEEK_SET);
+            if (fwrite(strlevel, strlen(strlevel), 1, fp) == 1) {
+                loglevel_set = TRUE;
+            }
+
+            nvfree(strlevel);
+        }
+        fclose(fp);
+    }
+
+    if (!loglevel_set) {
+        /*
+         * Explicitly initialize the value of len, even though it looks like the
+         * syscall should do that, since in practice it doesn't always actually
+         * set the value of the pointed-to length parameter.
+         */
+        size_t len = sizeof(int);
+        int name[] = { CTL_KERN, KERN_PRINTK };
+
+        if (!old_level ||
+            sysctl(name, ARRAY_LEN(name), old_level, &len, NULL, 0) == 0) {
+            if (sysctl(name, ARRAY_LEN(name), NULL, 0, &level, len) == 0) {
+                loglevel_set = TRUE;
+            }
+        }
+    }
+
+    return loglevel_set;
+}
+
+
 
 int test_kernel_module(Options *op, Package *p)
 {
     char *cmd = NULL, *data;
-    int old_loglevel = 0, new_loglevel = 0;
-    int fd, ret, name[] = { CTL_KERN, KERN_PRINTK }, i;
-    size_t len = sizeof(int);
+    int ret, i, old_loglevel, loglevel_set;
     const char *depmods[] = { "agpgart", "i2c-core", "drm" };
 
     /* 
@@ -701,45 +744,32 @@ int test_kernel_module(Options *op, Package *p)
     if (op->kernel_name) return TRUE;
 
     /*
-     * Temporarily disable most console messages to keep the curses
-     * interface from being clobbered when the module is loaded.
-     * Save the original console loglevel to allow restoring it once
-     * we're done.
-     */
-    fd = open("/proc/sys/kernel/printk", O_RDWR);
-    if (fd >= 0) {
-        if (read(fd, &old_loglevel, 1) == 1) {
-            new_loglevel = '2'; /* KERN_CRIT */
-            lseek(fd, 0, SEEK_SET);
-            write(fd, &new_loglevel, 1);
-        }
-    } else {
-        if (!sysctl(name, 2, &old_loglevel, &len, NULL, 0)) {
-            new_loglevel = 2; /* KERN_CRIT */
-            sysctl(name, 2, NULL, 0, &new_loglevel, len);
-        }
-    }
-
-    /*
      * Attempt to load modules that nvidia.ko might depend on.  Silently ignore
      * failures: if nvidia.ko doesn't depend on the module that failed, the test
      * load below will succeed and it doesn't matter that the load here failed.
      */
     if (strncmp(get_kernel_name(op), "2.4", 3) != 0) {
         for (i = 0; i < ARRAY_LEN(depmods); i++) {
-            cmd = nvstrcat(op->utils[MODPROBE], " -q ", depmods[i], NULL);
-            run_command(op, cmd, NULL, FALSE, 0, TRUE);
-            nvfree(cmd);
+            load_kernel_module_quiet(op, depmods[i]);
         }
     }
 
     cmd = nvstrcat(op->utils[INSMOD], " ",
                    p->kernel_module_build_directory, "/",
-                   p->kernel_module_filename, NULL);
-    
+                   p->kernel_module_filename,
+                   " NVreg_DeviceFileUID=0 NVreg_DeviceFileGID=0"
+                   " NVreg_DeviceFileMode=0 NVreg_ModifyDeviceFiles=0",
+                   NULL);
+
+    loglevel_set = set_loglevel(PRINTK_LOGLEVEL_KERN_ALERT, &old_loglevel);
+
     /* only output the result of the test if in expert mode */
 
     ret = run_command(op, cmd, &data, op->expert, 0, TRUE);
+
+    if (loglevel_set) {
+        set_loglevel(old_loglevel, NULL);
+    }
 
     if (ret != 0) {
         ui_error(op, "Unable to load the kernel module '%s'.  This "
@@ -775,16 +805,14 @@ int test_kernel_module(Options *op, Package *p)
 
         check_for_warning_messages(op);
 
-        /*
-         * The nvidia module is left loaded in case an X server with
-         * OutputClass-based driver matching is being used.
-         */
         ret = TRUE;
     }
-    
-    nvfree(cmd);
+   
+    nvfree(cmd); 
     nvfree(data);
-    
+
+    rmmod_kernel_module(op, p->kernel_module_name);
+
     /*
      * display/log the last few lines of the kernel ring buffer
      * to provide further details in case of a load failure or
@@ -799,26 +827,12 @@ int test_kernel_module(Options *op, Package *p)
     nvfree(cmd);
     nvfree(data);
 
-    if (fd >= 0) {
-        if (new_loglevel != 0) {
-            lseek(fd, 0, SEEK_SET);
-            write(fd, &old_loglevel, 1);
-        }
-        close(fd);
-    } else {
-        if (new_loglevel != 0) {
-            sysctl(name, 2, NULL, 0, &old_loglevel, len);
-        }
-    }
-
     /*
      * Unload dependencies that might have been loaded earlier.
      */
     if (strncmp(get_kernel_name(op), "2.4", 3) != 0) {
         for (i = 0; i < ARRAY_LEN(depmods); i++) {
-            cmd = nvstrcat(op->utils[MODPROBE], " -qr ", depmods[i], NULL);
-            run_command(op, cmd, NULL, FALSE, 0, TRUE);
-            nvfree(cmd);
+           modprobe_remove_kernel_module_quiet(op, depmods[i]);
         }
     }
 
@@ -829,27 +843,42 @@ int test_kernel_module(Options *op, Package *p)
 
 
 /*
- * load_kernel_module() - modprobe the kernel module
+ * modprobe_helper() - run modprobe; used internally by other functions.
+ *
+ * module_name: the name of the kernel module to modprobe
+ * quiet:       load/unload the kernel module silently if TRUE
+ * unload:      remove a kernel module instead of loading it if TRUE
+ *              (Note: unlike `rmmod`, `modprobe -r` handles dependencies.
  */
 
-int load_kernel_module(Options *op, Package *p)
+static int modprobe_helper(Options *op, const char *module_name,
+                           int quiet, int unload)
 {
     char *cmd, *data;
-    int len, ret;
+    int ret, old_loglevel, loglevel_set;
 
-    len = strlen(op->utils[MODPROBE]) + strlen(p->kernel_module_name) + 2;
+    cmd = nvstrcat(op->utils[MODPROBE],
+                   quiet ? " -q" : "",
+                   unload ? " -r" : "",
+                   " ", module_name,
+                   NULL);
 
-    cmd = (char *) nvalloc(len);
-    
-    snprintf(cmd, len, "%s %s", op->utils[MODPROBE], p->kernel_module_name);
+    loglevel_set = set_loglevel(PRINTK_LOGLEVEL_KERN_ALERT, &old_loglevel);
     
     ret = run_command(op, cmd, &data, FALSE, 0, TRUE);
 
-    if (ret != 0) {
+    if (loglevel_set) {
+        set_loglevel(old_loglevel, NULL);
+    }
+
+    if (!quiet && ret != 0) {
         if (op->expert) {
-            ui_error(op, "Unable to load the kernel module: '%s'", data);
+            ui_error(op, "Unable to %s the kernel module: '%s'",
+                     unload ? "unload" : "load",
+                     data);
         } else {
-            ui_error(op, "Unable to load the kernel module.");
+            ui_error(op, "Unable to %s the kernel module.",
+                     unload ? "unload" : "load");
         }
         ret = FALSE;
     } else {
@@ -863,6 +892,20 @@ int load_kernel_module(Options *op, Package *p)
 
 } /* load_kernel_module() */
 
+int load_kernel_module(Options *op, Package *p)
+{
+    return modprobe_helper(op, p->kernel_module_name, FALSE, FALSE);
+}
+
+static void load_kernel_module_quiet(Options *op, const char *module_name)
+{
+    modprobe_helper(op, module_name, TRUE, FALSE);
+}
+
+static void modprobe_remove_kernel_module_quiet(Options *op, const char *name)
+{
+    modprobe_helper(op, name, TRUE, TRUE);
+}
 
 
 /*
@@ -1292,22 +1335,24 @@ static int check_for_loaded_kernel_module(Options *op, const char *module_name)
 
 
 /*
- * rmmod_kernel_module() - run `rmmod nvidia`
+ * rmmod_kernel_module() - run `rmmod $module_name`
  */
 
-static int rmmod_kernel_module(Options *op, const char *module_name)
+int rmmod_kernel_module(Options *op, const char *module_name)
 {
-    int len, ret;
+    int ret, old_loglevel, loglevel_set;
     char *cmd;
     
-    len = strlen(op->utils[RMMOD]) + strlen(module_name) + 2;
-    
-    cmd = (char *) nvalloc(len);
-    
-    snprintf(cmd, len, "%s %s", op->utils[RMMOD], module_name);
+    cmd = nvstrcat(op->utils[RMMOD], " ", module_name, NULL);
+
+    loglevel_set = set_loglevel(PRINTK_LOGLEVEL_KERN_ALERT, &old_loglevel);
     
     ret = run_command(op, cmd, NULL, FALSE, 0, TRUE);
-    
+
+    if (loglevel_set) {
+        set_loglevel(old_loglevel, NULL);
+    }
+
     free(cmd);
     
     return ret ? FALSE : TRUE;
