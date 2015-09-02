@@ -49,6 +49,7 @@ KernelConfigOptionStatus test_kernel_config_option (Options*, Package*,
 int sign_kernel_module                             (Options*, const char*, 
                                                     const char*, int);
 char *guess_module_signing_hash                    (Options*, Package*);
+int rmmod_kernel_module                            (Options*, const char*);
 
 #define SEARCH_FILELIST_MAX_ENTRIES       32
 

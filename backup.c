@@ -40,6 +40,7 @@
 #include "files.h"
 #include "crc.h"
 #include "misc.h"
+#include "kernel.h"
 
 #define BACKUP_DIRECTORY "/var/lib/nvidia"
 #define BACKUP_LOG       (BACKUP_DIRECTORY "/log")
@@ -626,11 +627,10 @@ static int rmdir_recursive(Options *op)
 
 static void unload_nvidia_module(Options *op, const char *suffix)
 {
-    char *cmd;
-
-    cmd = nvstrcat(op->utils[RMMOD], " ", RMMOD_MODULE_NAME, suffix, NULL);
-    run_command(op, cmd, NULL, FALSE, 0, TRUE);
-    nvfree(cmd);
+    char *name;
+    name = nvstrcat(RMMOD_MODULE_NAME, suffix, NULL);
+    rmmod_kernel_module(op, name);
+    nvfree(name);
 }
 
 

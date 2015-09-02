@@ -1052,6 +1052,8 @@ static void find_conflicting_libraries(Options *op,
      * (see bug 843595).
      */
     static const NoRecursionDirectory skipdirs[] = {
+        { -1, "build" },
+        { -1, "source" },
         { -1, "nvidia-cg-toolkit" },
         { 0, NULL }
     };

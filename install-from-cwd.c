@@ -299,6 +299,15 @@ int install_from_cwd(Options *op)
     if (op->dkms && !dkms_install_module(op, p->version, get_kernel_name(op)))
         goto failed;
 
+    /*
+     * Leave the RM loaded in case an X server with OutputClass-based driver
+     * matching is being used.
+     */
+
+    if (!op->no_kernel_module || op->dkms) {
+        if (!load_kernel_module(op, p)) goto failed;
+    }
+
     /* run the distro postinstall script */
 
     run_distro_hook(op, "post-install");
