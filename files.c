@@ -2295,16 +2295,18 @@ static char * const native_libdirs[] = {
     DEFAULT_AARCH64_TRIPLET_LIBDIR,
 #elif defined(NV_PPC64LE)
     DEFAULT_PPC64LE_TRIPLET_LIBDIR,
-#endif
-#if NV_ARCH_BITS == 32
-    DEFAULT_32BIT_LIBDIR,
-#elif NV_ARCH_BITS == 64
-    DEFAULT_64BIT_LIBDIR,
 #else
 #error Unknown architecture! Please update utils.mk to add support for this \
 TARGET_ARCH, and make sure that an architecture-specific NV_$ARCH macro gets \
 defined, and that NV_ARCH_BITS gets defined to the correct word size in bits.
 #endif
+
+#if NV_ARCH_BITS == 32
+    DEFAULT_32BIT_LIBDIR,
+#elif NV_ARCH_BITS == 64
+    DEFAULT_64BIT_LIBDIR,
+#endif
+
     DEFAULT_LIBDIR,
     NULL
 };
