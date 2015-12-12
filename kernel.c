@@ -1672,7 +1672,7 @@ PrecompiledInfo *find_precompiled_kernel_interface(Options *op, Package *p)
     if (!mkdir_recursive(op, p->kernel_module_build_directory, 0755, FALSE))
         goto done;
 
-    search_filelist = nvalloc(p->num_kernel_modules * sizeof(char*));
+    search_filelist = nvalloc((p->num_kernel_modules + 1) * sizeof(char*));
 
     for (i = 0; i < p->num_kernel_modules; i++) {
         if (p->kernel_modules[i].has_separate_interface_file) {
