@@ -143,11 +143,11 @@ static Options *load_default_options(void)
     op->run_distro_scripts = TRUE;
     op->no_kernel_module_source = FALSE;
     op->dkms = FALSE;
-    op->install_vdpau_wrapper = NV_OPTIONAL_BOOL_DEFAULT;
     op->check_for_alternate_installs = TRUE;
     op->install_uvm = TRUE;
     op->install_compat32_libs = NV_OPTIONAL_BOOL_DEFAULT;
     op->install_libglx_indirect = NV_OPTIONAL_BOOL_DEFAULT;
+    op->install_libglvnd_libraries = NV_OPTIONAL_BOOL_DEFAULT;
 
     return op;
 
@@ -427,8 +427,13 @@ static void parse_commandline(int argc, char *argv[], Options *op)
             op->module_signing_x509_hash = strval;
             break;
         case INSTALL_VDPAU_WRAPPER_OPTION:
-            op->install_vdpau_wrapper = boolval ? NV_OPTIONAL_BOOL_TRUE :
-                                                  NV_OPTIONAL_BOOL_FALSE;
+            if (boolval) {
+                nv_error_msg("This driver package does not contain a "
+                             "pre-compiled copy of libvdpau.  Please see the "
+                             "README for instructions on how to install "
+                             "libvdpau.");
+                goto fail;
+            }
             break;
         case NO_UVM_OPTION:
             op->install_uvm = FALSE;
@@ -441,6 +446,10 @@ static void parse_commandline(int argc, char *argv[], Options *op)
             break;
         case NO_LIBGLX_INDIRECT:
             op->install_libglx_indirect = NV_OPTIONAL_BOOL_FALSE;
+            break;
+        case INSTALL_LIBGLVND_OPTION:
+            op->install_libglvnd_libraries = boolval ? NV_OPTIONAL_BOOL_TRUE :
+                                                       NV_OPTIONAL_BOOL_FALSE;
             break;
         default:
             goto fail;

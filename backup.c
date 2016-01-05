@@ -832,6 +832,31 @@ static int do_uninstall(Options *op, const char *version)
         }
     }
 
+    if (op->uninstall) {
+        /* Update modules.dep and the ldconfig(8) cache to remove entries for
+         * any DSOs and kernel modules that we just uninstalled. */
+
+        char *cmd;
+        int status;
+
+        ui_log(op, "Running depmod and ldconfig:");
+
+        cmd = nvstrcat(op->utils[DEPMOD], " -a ", op->kernel_name, NULL);
+        status = run_command(op, cmd, NULL, FALSE, 0, FALSE);
+        nvfree(cmd);
+
+        status |= run_command(op, op->utils[LDCONFIG], NULL, FALSE, 0, FALSE);
+
+        if (status == 0) {
+            ui_log(op, "done.");
+        } else {
+            ui_log(op, "error!");
+            ui_warn(op, "An error occurred while running depmod or ldconfig "
+                    "after uninstallation: your system may have stale state "
+                    "involving recently uninstalled files.");
+        }
+    }
+
     run_distro_hook(op, "post-uninstall");
 
     free_backup_info(b);

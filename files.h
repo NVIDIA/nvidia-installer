@@ -71,4 +71,6 @@ void invalidate_package_entry(PackageEntry *entry);
 int is_subdirectory(const char *dir, const char *subdir, int *is_subdir);
 void add_libgl_abi_symlink(Options *op, Package *p);
 
+int check_libglvnd_files(Options *op, Package *p);
+
 #endif /* __NVIDIA_INSTALLER_FILES_H__ */

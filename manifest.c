@@ -103,9 +103,7 @@ static const struct {
     { ENTRY(GLX_MODULE_SYMLINK,     F, F, F, T, T, F, T, F, F, F) },
     { ENTRY(XMODULE_NEWSYM,         F, F, F, T, T, F, F, F, F, F) },
     { ENTRY(VDPAU_LIB,              T, F, T, T, F, T, F, F, F, F) },
-    { ENTRY(VDPAU_WRAPPER_LIB,      T, F, T, T, F, T, F, F, T, F) },
     { ENTRY(VDPAU_SYMLINK,          T, F, F, T, T, F, F, F, F, F) },
-    { ENTRY(VDPAU_WRAPPER_SYMLINK,  T, F, F, T, T, F, F, F, T, F) },
     { ENTRY(NVCUVID_LIB,            T, F, T, F, F, T, F, F, F, F) },
     { ENTRY(NVCUVID_LIB_SYMLINK,    T, F, F, F, T, F, F, F, F, F) },
     { ENTRY(ENCODEAPI_LIB,          T, F, T, F, F, T, F, F, F, F) },
@@ -119,6 +117,8 @@ static const struct {
     { ENTRY(NVIFR_LIB_SYMLINK,      T, F, F, F, T, F, F, F, F, F) },
     { ENTRY(XORG_OUTPUTCLASS_CONFIG,F, F, T, F, F, F, F, F, F, F) },
     { ENTRY(DKMS_CONF              ,F, F, T, F, F, F, F, T, F, T) },
+    { ENTRY(GLVND_LIB,              T, F, T, F, F, T, T, F, F, F) },
+    { ENTRY(GLVND_SYMLINK,          T, F, F, F, T, F, T, F, F, F) },
 };
 
 /*

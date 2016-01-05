@@ -35,6 +35,7 @@
 #include <libgen.h>
 #include <utime.h>
 #include <time.h>
+#include <sys/wait.h>
 
 #include "nvidia-installer.h"
 #include "user-interface.h"
@@ -627,6 +628,8 @@ int set_destinations(Options *op, Package *p)
 
         case FILE_TYPE_OPENGL_LIB:
         case FILE_TYPE_OPENGL_SYMLINK:
+        case FILE_TYPE_GLVND_LIB:
+        case FILE_TYPE_GLVND_SYMLINK:
             if (p->entries[i].compat_arch == FILE_COMPAT_ARCH_COMPAT32) {
                 prefix = op->compat32_prefix;
                 dir = op->compat32_libdir;
@@ -639,8 +642,6 @@ int set_destinations(Options *op, Package *p)
 
         case FILE_TYPE_VDPAU_LIB:
         case FILE_TYPE_VDPAU_SYMLINK:
-        case FILE_TYPE_VDPAU_WRAPPER_LIB:
-        case FILE_TYPE_VDPAU_WRAPPER_SYMLINK:
             if (p->entries[i].compat_arch == FILE_COMPAT_ARCH_COMPAT32) {
                 prefix = op->compat32_prefix;
                 dir = op->compat32_libdir;
@@ -874,8 +875,6 @@ int set_destinations(Options *op, Package *p)
 #endif /* NV_X86_64 */
     }
 
-    check_libGLX_indirect_links(op, p);
-    
     return TRUE;
 
 } /* set_destinations() */
@@ -3144,3 +3143,145 @@ void add_libgl_abi_symlink(Options *op, Package *p)
     nvfree(opengl_path);
     nvfree(opengl32_path);
 }
+
+typedef enum {
+    LIBGLVND_CHECK_RESULT_INSTALLED = 0,
+    LIBGLVND_CHECK_RESULT_NOT_INSTALLED = 1,
+    LIBGLVND_CHECK_RESULT_PARTIAL = 2,
+    LIBGLVND_CHECK_RESULT_ERROR = 3,
+} LibglvndInstallCheckResult;
+
+/*
+ * run_libglvnd_script() - Finds and runs the libglvnd install checker script.
+ *
+ * This runs a helper script which determines whether the libglvnd libraries
+ * are installed, missing, or partially installed.
+ *
+ * If the helper script is not included in the package, then it will just
+ * return LIBGLVND_CHECK_RESULT_NOT_INSTALLED.
+ */
+static LibglvndInstallCheckResult run_libglvnd_script(Options *op, Package *p)
+{
+    const char *scriptPath = "./libglvnd_install_checker/check-libglvnd-install.sh";
+    char *cmdline = NULL;
+    int status;
+    LibglvndInstallCheckResult result = LIBGLVND_CHECK_RESULT_ERROR;
+
+    log_printf(op, NULL, "Looking for install checker script at %s", scriptPath);
+    if (access(scriptPath, R_OK) != 0) {
+        // We don't have the install check script, so assume that it's not
+        // installed.
+        log_printf(op, NULL, "No libglvnd install checker script, assuming not installed.");
+        result = LIBGLVND_CHECK_RESULT_NOT_INSTALLED;
+        goto done;
+    }
+
+    cmdline = nvasprintf("/bin/sh %s", scriptPath);
+    status = run_command(op, cmdline, NULL, TRUE, 0, FALSE);
+    if (WIFEXITED(status)) {
+        result = WEXITSTATUS(status);
+    } else {
+        result = LIBGLVND_CHECK_RESULT_ERROR;
+    }
+
+done:
+    nvfree(cmdline);
+    return result;
+}
+
+/*
+ * check_libglvnd_files() - Checks whether or not the installer should install
+ * the libglvnd libraries.
+ *
+ * If the libglvnd libraries are already installed, then we'll leave them
+ * alone. If they're not already installed, then we'll install our own copies.
+ *
+ * Note that we only check for the native libraries, and use that result for
+ * both the native and 32-bit compatibility libraries. The reason for that is
+ * that the conflicting file list can't distinguish between 32-bit and 64-bit
+ * files that have the same filename, so it won't correctly handle installing
+ * one but not the other.
+ */
+int check_libglvnd_files(Options *op, Package *p)
+{
+    int shouldInstall = op->install_libglvnd_libraries;
+    int foundAnyFiles = FALSE;
+    int i;
+
+    // Start by checking for any libGLX_indirect.so.0 links.
+    check_libGLX_indirect_links(op, p);
+
+    // Then, check to see if there are any libglvnd files in the package.
+    for (i = 0; i < p->num_entries; i++) {
+        if (p->entries[i].type == FILE_TYPE_GLVND_LIB ||
+            p->entries[i].type == FILE_TYPE_GLVND_SYMLINK) {
+            foundAnyFiles = TRUE;
+            break;
+        }
+    }
+    if (!foundAnyFiles) {
+        return TRUE;
+    }
+
+    if (shouldInstall == NV_OPTIONAL_BOOL_DEFAULT) {
+        // Try to figure out whether libglvnd is already installed. We'll defer
+        // to a separate program to do that.
+
+        LibglvndInstallCheckResult result = run_libglvnd_script(op, p);
+        if (result == LIBGLVND_CHECK_RESULT_INSTALLED) {
+            // The libraries are already installed, so leave them alone.
+            shouldInstall = NV_OPTIONAL_BOOL_FALSE;
+        } else if (result == LIBGLVND_CHECK_RESULT_NOT_INSTALLED) {
+            // The libraries are not installed, so install our own copies.
+            shouldInstall = NV_OPTIONAL_BOOL_TRUE;
+        } else if (result == LIBGLVND_CHECK_RESULT_PARTIAL) {
+            // The libraries are partially installed. Ask the user what to do.
+            static int partialAction = -1;
+            if (partialAction < 0) {
+                static const char *ANSWERS[] = {
+                    "Don't install libglvnd files",
+                    "Install and overwrite existing files",
+                    "Abort installation."
+                };
+
+                partialAction = ui_multiple_choice(op, ANSWERS, 3, 2,
+                        "An incomplete installation of libglvnd was found. "
+                        "Do you want to install a full copy of libglvnd? "
+                        "This will overwrite any existing libglvnd libraries.");
+            }
+            if (partialAction == 0) {
+                // Don't install
+                shouldInstall = NV_OPTIONAL_BOOL_FALSE;
+            } else if (partialAction == 1) {
+                // Install and overwrite
+                shouldInstall = NV_OPTIONAL_BOOL_TRUE;
+            } else {
+                // Abort.
+                return FALSE;
+            }
+        } else {
+            // Some error occurred.
+            return FALSE;
+        }
+    }
+
+    // Sanity check: We should have set shouldInstall to true or false by now.
+    if (shouldInstall != NV_OPTIONAL_BOOL_FALSE && shouldInstall != NV_OPTIONAL_BOOL_TRUE) {
+        ui_error(op, "Internal error: Could not determine whether to install libglvnd");
+        return FALSE;
+    }
+
+    if (shouldInstall != NV_OPTIONAL_BOOL_TRUE) {
+        log_printf(op, NULL, "Will not install libglvnd libraries.");
+        for (i = 0; i < p->num_entries; i++) {
+            if (p->entries[i].type == FILE_TYPE_GLVND_LIB ||
+                p->entries[i].type == FILE_TYPE_GLVND_SYMLINK) {
+                invalidate_package_entry(&(p->entries[i]));
+            }
+        }
+    } else {
+        log_printf(op, NULL, "Will install libglvnd libraries.");
+    }
+    return TRUE;
+}
+

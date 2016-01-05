@@ -36,7 +36,6 @@
 #include <dirent.h>
 #include <libgen.h>
 #include <pciaccess.h>
-#include <dlfcn.h>
 #include <elf.h>
 #include <link.h>
 
@@ -1156,87 +1155,6 @@ void should_install_compat32_files(Options *op, Package *p)
         }
     }
 #endif /* NV_X86_64 */
-}
-
-
-/*
- * detect_library() - attempt to dlopen(3) a DSO, to detect its availability.
- */
-static int detect_library(const char *library)
-{
-    void *handle = dlopen(library, RTLD_NOW);
-
-    if (handle) {
-        dlclose(handle);
-        return TRUE;
-    }
-
-    return FALSE;
-}
-
-
-/*
- * should_install_vdpau_wrapper() - ask the user if he/she wishes to
- * install the VDPAU wrapper library.
- */
-
-void should_install_vdpau_wrapper(Options *op, Package *p)
-{
-    int i, vdpau_packaged = FALSE;
-
-    /*
-     * If the user did not specifically request installation or non-installation
-     * of the VDPAU wrapper, default to installing only if the wrapper was not
-     * detected.
-     */
-    if (op->install_vdpau_wrapper == NV_OPTIONAL_BOOL_DEFAULT) {
-        if (detect_library("libvdpau.so.1")) {
-            op->install_vdpau_wrapper = NV_OPTIONAL_BOOL_FALSE;
-        } else {
-            op->install_vdpau_wrapper = NV_OPTIONAL_BOOL_TRUE;
-        }
-    }
-
-    /* give expert users an opportunity to override the default behavior and/or
-     * change their minds about any explicit command line setting */
-    if (op->expert) {
-        if (ui_yes_no(op, op->install_vdpau_wrapper,
-                      "Install the libvdpau wrapper library?")) {
-            op->install_vdpau_wrapper = NV_OPTIONAL_BOOL_TRUE;
-        } else {
-            op->install_vdpau_wrapper = NV_OPTIONAL_BOOL_FALSE;
-        }
-    }
-
-    for (i = 0; i < p->num_entries; i++) {
-        if (p->entries[i].type == FILE_TYPE_VDPAU_WRAPPER_LIB ||
-            p->entries[i].type == FILE_TYPE_VDPAU_WRAPPER_SYMLINK) {
-            vdpau_packaged = TRUE;
-
-            if (op->install_vdpau_wrapper != NV_OPTIONAL_BOOL_TRUE) {
-                invalidate_package_entry(&(p->entries[i]));
-            }
-        }
-    }
-
-    if (!vdpau_packaged) {
-        return;
-    }
-
-    if (op->install_vdpau_wrapper == NV_OPTIONAL_BOOL_TRUE) {
-        ui_message(op, "nvidia-installer will install the libvdpau and "
-                       "libvdpau_trace libraries that were included with this "
-                       "installer package. These libraries are available "
-                       "separately through the libvdpau project and will be "
-                       "removed from the NVIDIA Linux driver installer package "
-                       "in the future, so it is recommended that VDPAU users "
-                       "install libvdpau separately, e.g. by using packages "
-                       "available from their distributions, or by building "
-                       "from the sources available at:\n\n"
-                       "http://people.freedesktop.org/~aplattner/vdpau");
-    } else {
-        ui_log(op, "Skipping installation of the libvdpau wrapper library.");
-    }
 }
 
 

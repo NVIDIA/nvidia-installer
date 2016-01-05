@@ -61,6 +61,9 @@ static void add_file_to_list(const char*, const char*, FileList*);
 
 static void append_to_rpm_file_list(Options *op, Command *c);
 
+static ConflictingFileInfo *build_conflicting_file_list(Options *op, Package *p);
+static void get_conflicting_file_info(const char *file, ConflictingFileInfo *cfi);
+
 /*
  * find_conflicting_files() optionally takes an array of NoRecursionDirectory
  * entries to indicate which directories should not be recursively searched.
@@ -243,6 +246,7 @@ CommandList *build_command_list(Options *op, Package *p)
     if (!op->kernel_module_only) {
         char **paths;
         int numpaths, i;
+        ConflictingFileInfo *conflicting_files;
 
         /*
          * stop recursing into any "nvidia-cg-toolkit"
@@ -266,11 +270,13 @@ CommandList *build_command_list(Options *op, Package *p)
 
         ui_status_begin(op, "Searching for conflicting files:", "Searching");
 
+        conflicting_files = build_conflicting_file_list(op, p);
         for (i = 0; i < numpaths; i++) {
             ui_status_update(op, (i + 1.0f) / numpaths, "Searching: %s", paths[i]);
-            find_conflicting_files(op, paths[i], p->conflicting_files, l,
+            find_conflicting_files(op, paths[i], conflicting_files, l,
                                    skipdirs);
         }
+        nvfree(conflicting_files);
 
         ui_status_end(op, "done.");
     }
@@ -416,7 +422,7 @@ CommandList *build_command_list(Options *op, Package *p)
      */
     
     if (!op->no_kernel_module) {
-        tmp = nvstrcat(op->utils[DEPMOD], " -aq ", op->kernel_name, NULL);
+        tmp = nvstrcat(op->utils[DEPMOD], " -a ", op->kernel_name, NULL);
         add_command(c, RUN_CMD, tmp);
         nvfree(tmp);
     }
@@ -857,6 +863,68 @@ static void find_conflicting_files(Options *op,
     fts_close(fts);
 
 } /* find_conflicting_files() */
+
+void get_conflicting_file_info(const char *file, ConflictingFileInfo *cfi)
+{
+    char *c;
+
+    cfi->name = file;
+
+    /*
+     * match the names of DSOs with "libfoo.so*" by stopping any comparisons
+     * after ".so".
+     */
+
+    c = strstr(file, ".so.");
+    if (c) {
+        cfi->len = (c - file) + 3;
+    } else {
+        cfi->len = strlen(file);
+    }
+
+    /*
+     * XXX avoid conflicting with libglx.so if it doesn't include the string
+     * "glxModuleData" to avoid removing the wrong libglx.so (bug 489316)
+     */
+
+    if (strncmp(file, "libglx.so", cfi->len) == 0) {
+        cfi->requiredString = "glxModuleData";
+    } else {
+        cfi->requiredString = NULL;
+    }
+}
+
+ConflictingFileInfo *build_conflicting_file_list(Options *op, Package *p)
+{
+    ConflictingFileInfo *cfList = NULL;
+    int index = 0;
+    int i;
+
+    // Allocate enough space for the whole file list, plus two extra files and
+    // a NULL at the end.
+    cfList = nvalloc((p->num_entries + 3) * sizeof(ConflictingFileInfo));
+
+    for (i = 0; i < p->num_entries; i++) {
+        PackageEntry *entry = &p->entries[i];
+        if (entry->caps.is_shared_lib && !entry->caps.is_wrapper) {
+            get_conflicting_file_info(entry->name, &cfList[index++]);
+        }
+    }
+
+    /* XXX always conflict with these files if OpenGL files will be installed
+     * libglamoregl.so: prevent X from loading libGL and libglx simultaneously
+     *                  (bug 1299091)
+     * libGLwrapper.so: this library has an SONAME of libGL.so.1 (bug 74761) */
+    if (!op->no_opengl_files) {
+        get_conflicting_file_info("libglamoregl.so", &cfList[index++]);
+        get_conflicting_file_info("libGLwrapper.so", &cfList[index++]);
+    }
+
+    /* terminate the conflicting files list */
+    cfList[index].name = NULL;
+
+    return cfList;
+}
 
 
 

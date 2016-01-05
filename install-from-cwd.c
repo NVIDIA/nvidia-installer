@@ -275,13 +275,9 @@ int install_from_cwd(Options *op)
         if (!run_existing_uninstaller(op)) goto failed;
     }
 
-    /*
-     * Determine whether the VDPAU wrapper should be installed: this must be
-     * done after uninstallation of the previous driver, to avoid detecting a
-     * leftover wrapper, and before building the command list.
-     */
-
-    should_install_vdpau_wrapper(op, p);
+    if (!check_libglvnd_files(op, p)) {
+        goto failed;
+    }
 
     /* build a list of operations to execute to do the install */
     
@@ -595,49 +591,6 @@ int add_this_kernel(Options *op)
 
 
 
-static void add_conflicting_file(Package *p, int *index, const char *file)
-{
-    char *c;
-
-    p->conflicting_files = nvrealloc(p->conflicting_files,
-                                     sizeof(ConflictingFileInfo) * (*index+1));
-    memset(&p->conflicting_files[*index], 0, sizeof(ConflictingFileInfo));
-
-    p->conflicting_files[*index].name = file;
-
-    if (file == NULL) {
-        /* Adding a terminator to the list. Pretend that the name is
-         * actually an empty string to avoid crashing later. */
-        file = "";
-    }
-
-    /*
-     * match the names of DSOs with "libfoo.so*" by stopping any comparisons
-     * after ".so".
-     */
-
-    c = strstr(file, ".so.");
-    if (c) {
-        p->conflicting_files[*index].len = (c - file) + 3;
-    } else {
-        p->conflicting_files[*index].len = strlen(file);
-    }
-
-    /*
-     * XXX avoid conflicting with libglx.so if it doesn't include the string
-     * "glxModuleData" to avoid removing the wrong libglx.so (bug 489316)
-     */
-
-    if (strncmp(file, "libglx.so", p->conflicting_files[*index].len) == 0) {
-        p->conflicting_files[*index].requiredString = "glxModuleData";
-    } else {
-        p->conflicting_files[*index].requiredString = NULL;
-    }
-
-    (*index)++;
-}
-
-
 /*
  * Returns TRUE if the given module has a separate interface, FALSE otherwise.
  */
@@ -773,10 +726,9 @@ static Package *parse_manifest (Options *op)
     Package *p;
     char *manifest = MAP_FAILED, *ptr;
     int opengl_files_packaged = FALSE;
-    int num_conflicting_files = 0;
-    
+
     p = (Package *) nvalloc(sizeof (Package));
-    
+
     /* open the manifest file */
 
     if ((fd = open(".manifest", O_RDONLY)) == -1) {
@@ -1037,14 +989,6 @@ static Package *parse_manifest (Options *op)
                           entry.compat_arch,
                           entry.mode);
 
-
-        /* Conflict with any non-wrapper shared libs. Don't conflict with
-         * OpenGL files if we won't be installing any. */
-        if (entry.caps.is_shared_lib && !entry.caps.is_wrapper &&
-            (!entry.caps.is_opengl || !op->no_opengl_files)) {
-            add_conflicting_file(p, &num_conflicting_files, entry.name);
-        }
-
         entry_success = TRUE;
 
  entry_done:
@@ -1064,18 +1008,6 @@ static Package *parse_manifest (Options *op)
     if (!opengl_files_packaged) {
         op->no_opengl_files = TRUE;
     }
-
-    /* XXX always conflict with these files if OpenGL files will be installed
-     * libglamoregl.so: prevent X from loading libGL and libglx simultaneously
-     *                  (bug 1299091)
-     * libGLwrapper.so: this library has an SONAME of libGL.so.1 (bug 74761) */
-    if (!op->no_opengl_files) {
-        add_conflicting_file(p, &num_conflicting_files, "libglamoregl.so");
-        add_conflicting_file(p, &num_conflicting_files, "libGLwrapper.so");
-    }
-
-    /* terminate the conflicting files list */
-    add_conflicting_file(p, &num_conflicting_files, NULL);
 
     munmap(manifest, len);
     if (fd != -1) close(fd);

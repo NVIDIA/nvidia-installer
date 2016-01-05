@@ -70,7 +70,6 @@ int continue_after_error(Options *op, const char *fmt, ...) NV_ATTRIBUTE_PRINTF(
 int do_install(Options *op, Package *p, CommandList *c);
 void should_install_opengl_headers(Options *op, Package *p);
 void should_install_compat32_files(Options *op, Package *p);
-void should_install_vdpau_wrapper(Options *op, Package *p);
 void should_install_uvm(Options *op, Package *p);
 void check_installed_files_from_package(Options *op, Package *p);
 int check_installed_file(Options*, const char*, const mode_t, const uint32,

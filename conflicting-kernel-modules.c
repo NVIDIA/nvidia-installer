@@ -28,6 +28,7 @@
 
 const char * const conflicting_kernel_modules[] = {
     "nvidia-uvm",
+    "nvidia-drm",
     "nvidia-modeset",
     "nvidia",
     "nvidia0", "nvidia1", "nvidia2", "nvidia3",

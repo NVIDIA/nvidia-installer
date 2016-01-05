@@ -157,8 +157,8 @@ typedef struct __options {
     int concurrency_level;
     int load_error_ignored;
     int install_libglx_indirect;
+    int install_libglvnd_libraries;
 
-    NVOptionalBool install_vdpau_wrapper;
     NVOptionalBool install_compat32_libs;
 
     char *opengl_prefix;
@@ -261,9 +261,7 @@ typedef enum {
     FILE_TYPE_OPENCL_LIB_SYMLINK,
     FILE_TYPE_OPENCL_WRAPPER_SYMLINK,
     FILE_TYPE_VDPAU_LIB,
-    FILE_TYPE_VDPAU_WRAPPER_LIB,
     FILE_TYPE_VDPAU_SYMLINK,
-    FILE_TYPE_VDPAU_WRAPPER_SYMLINK,
     FILE_TYPE_UTILITY_BIN_SYMLINK,
     FILE_TYPE_CUDA_ICD,
     FILE_TYPE_NVCUVID_LIB,
@@ -282,6 +280,8 @@ typedef enum {
     FILE_TYPE_NVIFR_LIB_SYMLINK,
     FILE_TYPE_XORG_OUTPUTCLASS_CONFIG,
     FILE_TYPE_DKMS_CONF,
+    FILE_TYPE_GLVND_LIB,
+    FILE_TYPE_GLVND_SYMLINK,
     FILE_TYPE_MAX
 } PackageEntryFileType;
 
@@ -414,8 +414,6 @@ typedef struct __package {
 
     PackageEntry *entries; /* array of filename/checksum/bytesize entries */
     int num_entries;
-
-    ConflictingFileInfo *conflicting_files;
 
     KernelModuleInfo *kernel_modules;
     int num_kernel_modules;

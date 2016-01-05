@@ -99,6 +99,7 @@ enum {
     X_SYSCONFIG_PATH_OPTION,
     FORCE_LIBGLX_INDIRECT,
     NO_LIBGLX_INDIRECT,
+    INSTALL_LIBGLVND_OPTION,
 };
 
 static const NVGetoptOption __options[] = {
@@ -577,10 +578,9 @@ static const NVGetoptOption __options[] = {
       "infrastructure to automatically build a new kernel module when "
       "changing kernels.  During installation, if DKMS is detected, "
       "nvidia-installer will ask the user if they wish to register the "
-      "module with DKMS; the default response is 'no'.  Use this option to "
-      "make the default response 'yes'.  This is useful with the "
-      "'--no-questions' or '--silent' options, which assume the default "
-      "values for all questions." },
+      "module with DKMS; the default response is 'no'.  This option will "
+      "bypass the detection of DKMS, and cause the installer to attempt a "
+      "DKMS-based installation regardless of whether DKMS is present."},
 
     { "module-signing-secret-key", MODULE_SIGNING_SECRET_KEY_OPTION, 
       NVGETOPT_STRING_ARGUMENT, NULL,
@@ -623,16 +623,6 @@ static const NVGetoptOption __options[] = {
       "name must be one of the message digest algorithms recognized by "
       "the x509(1) command." },
 
-    { "install-vdpau-wrapper", INSTALL_VDPAU_WRAPPER_OPTION,
-      NVGETOPT_IS_BOOLEAN, NULL,
-      "The NVIDIA driver package includes a VDPAU wrapper library for "
-      "convenience. By default, the wrapper library provided with the "
-      "driver package will not be installed if an existing wrapper "
-      "library is detected. Setting the '--install-vdpau-wrapper' option "
-      "will force the wrapper library to be installed; setting the "
-      "'--no-install-vdpau-wrapper' option will force the wrapper library to "
-      "be excluded from the installation." },
-
     { "no-check-for-alternate-installs", NO_CHECK_FOR_ALTERNATE_INSTALLS_OPTION,
       0, NULL,
       "Maintainers of alternate driver installation methods can report the "
@@ -660,6 +650,14 @@ static const NVGetoptOption __options[] = {
     { "no-libglx-indirect", NO_LIBGLX_INDIRECT, 0, NULL,
       "Do not install a libGLX_indirect.so.0 symlink." },
 
+    { "install-libglvnd", INSTALL_LIBGLVND_OPTION, NVGETOPT_IS_BOOLEAN, NULL,
+      "If the package includes a libglvnd-based OpenGL library, then it will "
+      "try to determine whether the libglvnd libraries are already available, "
+      "and will install them if they're not. Use --install-libglvnd to always "
+      "install the libglvnd libraries, overwriting any that already exist. "
+      "Use --no-install-libglvnd to exclude the libglvnd libraries, even if "
+      "they appear to be missing." },
+
     /* Orphaned options: These options were in the long_options table in
      * nvidia-installer.c but not in the help. */
     { "debug",                    'd', 0, NULL,NULL },
@@ -675,6 +673,7 @@ static const NVGetoptOption __options[] = {
      * nvidia-installer will allow the user to set them anyway, for
      * backwards-compatibility purposes. */
     { "no-runlevel-check", NO_RUNLEVEL_CHECK_OPTION, 0, NULL, NULL },
+    { "install-vdpau-wrapper", INSTALL_VDPAU_WRAPPER_OPTION, NVGETOPT_IS_BOOLEAN, NULL, NULL },
 
     { NULL, 0, 0, NULL, NULL },
 };
