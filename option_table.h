@@ -52,6 +52,8 @@ enum {
     INSTALLER_PREFIX_OPTION,
     FORCE_TLS_OPTION,
     SANITY_OPTION,
+    NO_SYMLINK_CHECK_OPTION,
+    NO_RUNTIME_CHECK_OPTION,
     ADVANCED_OPTIONS_ARGS_ONLY_OPTION,
     UTILITY_PREFIX_OPTION,
     UTILITY_LIBDIR_OPTION,
@@ -150,6 +152,12 @@ static const NVGetoptOption __options[] = {
     { "sanity", SANITY_OPTION, 0, NULL,
       "Perform basic sanity tests on an existing NVIDIA "
       "driver installation." },
+
+    { "no-symlink-check", NO_SYMLINK_CHECK_OPTION, 0, NULL,
+      "Skip test of library symlinks post installation." },
+
+    { "no-runtime-check", NO_RUNTIME_CHECK_OPTION, 0, NULL,
+      "Skip runtime configuration check post installation." },
 
     { "expert", 'e', NVGETOPT_OPTION_APPLIES_TO_NVIDIA_UNINSTALL, NULL,
       "Enable 'expert' installation mode; more detailed questions "

@@ -1214,7 +1214,8 @@ void check_installed_files_from_package(Options *op, Package *p)
         if (p->entries[i].caps.is_symlink &&
             /* Don't bother checking FILE_TYPE_NEWSYMs because we may not have
              * installed them. */
-            p->entries[i].type != FILE_TYPE_XMODULE_NEWSYM) {
+            p->entries[i].type != FILE_TYPE_XMODULE_NEWSYM &&
+            !op->no_symlink_check) {
 
             if (!check_symlink(op, p->entries[i].target,
                                p->entries[i].dst,

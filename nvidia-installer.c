@@ -331,6 +331,12 @@ static void parse_commandline(int argc, char *argv[], Options *op)
         case SANITY_OPTION:
             op->sanity = TRUE;
             break;
+        case NO_SYMLINK_CHECK_OPTION:
+            op->no_symlink_check = TRUE;
+            break;
+        case NO_RUNTIME_CHECK_OPTION:
+            op->no_runtime_check = TRUE;
+            break;
         case ADD_THIS_KERNEL_OPTION:
             op->add_this_kernel = TRUE;
             break;

@@ -130,6 +130,8 @@ typedef struct __options {
     int which_tls_compat32;
 #endif /* NV_TLS_TEST */
     int sanity;
+    int no_symlink_check;
+    int no_runtime_check;
     int add_this_kernel;
     int no_backup;
     int no_network;

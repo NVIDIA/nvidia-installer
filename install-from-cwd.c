@@ -326,7 +326,7 @@ int install_from_cwd(Options *op)
 
     check_installed_files_from_package(op, p);
 
-    if (!check_runtime_configuration(op, p)) goto failed;
+    if (!op->no_runtime_check && !check_runtime_configuration(op, p)) goto failed;
     
     /* done */
 
