@@ -630,6 +630,8 @@ int set_destinations(Options *op, Package *p)
         case FILE_TYPE_OPENGL_SYMLINK:
         case FILE_TYPE_GLVND_LIB:
         case FILE_TYPE_GLVND_SYMLINK:
+        case FILE_TYPE_GLX_CLIENT_LIB:
+        case FILE_TYPE_GLX_CLIENT_SYMLINK:
             if (p->entries[i].compat_arch == FILE_COMPAT_ARCH_COMPAT32) {
                 prefix = op->compat32_prefix;
                 dir = op->compat32_libdir;
@@ -1157,6 +1159,7 @@ static void add_kernel_module_helper(Options *op, Package *p,
                       FILE_TYPE_KERNEL_MODULE,
                       FILE_TLS_CLASS_NONE,
                       FILE_COMPAT_ARCH_NONE,
+                      FILE_GLVND_DONT_CARE,
                       0644);
 }
 
@@ -2089,6 +2092,7 @@ void process_libGL_la_files(Options *op, Package *p)
                                   FILE_TYPE_LIBGL_LA,
                                   p->entries[i].tls_class,
                                   p->entries[i].compat_arch,
+                                  p->entries[i].glvnd,
                                   p->entries[i].mode);
             }
 
@@ -2165,6 +2169,7 @@ void process_dot_desktop_files(Options *op, Package *p)
                                   FILE_TYPE_DOT_DESKTOP,
                                   p->entries[i].tls_class,
                                   p->entries[i].compat_arch,
+                                  p->entries[i].glvnd,
                                   p->entries[i].mode);
             }
         }
@@ -2243,6 +2248,7 @@ void process_dkms_conf(Options *op, Package *p)
                                   FILE_TYPE_DKMS_CONF,
                                   p->entries[i].tls_class,
                                   p->entries[i].compat_arch,
+                                  p->entries[i].glvnd,
                                   p->entries[i].mode);
             }
         }
@@ -3135,6 +3141,7 @@ void add_libgl_abi_symlink(Options *op, Package *p)
                           FILE_TYPE_OPENGL_SYMLINK,
                           FILE_TLS_CLASS_NONE,
                           FILE_COMPAT_ARCH_NATIVE,
+                          FILE_GLVND_DONT_CARE,
                           0000);
     } else {
         nvfree(libgl);
@@ -3275,7 +3282,10 @@ int check_libglvnd_files(Options *op, Package *p)
         log_printf(op, NULL, "Will not install libglvnd libraries.");
         for (i = 0; i < p->num_entries; i++) {
             if (p->entries[i].type == FILE_TYPE_GLVND_LIB ||
-                p->entries[i].type == FILE_TYPE_GLVND_SYMLINK) {
+                p->entries[i].type == FILE_TYPE_GLVND_SYMLINK ||
+                ((p->entries[i].type == FILE_TYPE_GLX_CLIENT_LIB ||
+                  p->entries[i].type == FILE_TYPE_GLX_CLIENT_SYMLINK) &&
+                 p->entries[i].glvnd == FILE_GLVND_GLVND_ONLY)) {
                 invalidate_package_entry(&(p->entries[i]));
             }
         }
@@ -3285,3 +3295,44 @@ int check_libglvnd_files(Options *op, Package *p)
     return TRUE;
 }
 
+/* Select between GLVND and non-GLVND installation; invalidate any
+ * package entries incompatible with the selection */
+
+void select_glvnd(Options *op, Package *p)
+{
+    int i;
+
+    if (op->expert) {
+        const char *choices[2] = {
+            "GLVND",
+            "non-GLVND"
+        };
+        const char *question = "The NVIDIA OpenGL GLX client libraries may be "
+                               "installed using the GL Vendor Neutral "
+                               "Dispatch (GLVND) architecture, or using a "
+                               "traditional, non-GLVND architecture. Choosing "
+                               "GLVND will allow GLVND-compliant GLX client "
+                               "libraries from other OpenGL implementations "
+                               "to coexist with the NVIDIA GLX client "
+                               "libraries, but may result in compatibility "
+                               "problems with some programs. What type of GLX "
+                               "client libraries do you want to install?";
+
+        op->glvnd_glx_client = ui_multiple_choice(op, choices, 2,
+                                                  op->glvnd_glx_client ? 0 : 1,
+                                                  "%s", question) == 0;
+    }
+
+    ui_log(op, "Will install %sGLVND GLX client libraries.",
+           op->glvnd_glx_client ? "" : "non-");
+
+    for (i = 0; i < p->num_entries; i++) {
+        if (op->glvnd_glx_client &&
+            p->entries[i].glvnd == FILE_GLVND_NON_GLVND_ONLY) {
+            invalidate_package_entry(&(p->entries[i]));
+        } else if (!op->glvnd_glx_client &&
+            p->entries[i].glvnd == FILE_GLVND_GLVND_ONLY) {
+            invalidate_package_entry(&(p->entries[i]));
+        }
+    }
+}

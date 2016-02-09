@@ -145,6 +145,7 @@ static Options *load_default_options(void)
     op->dkms = FALSE;
     op->check_for_alternate_installs = TRUE;
     op->install_uvm = TRUE;
+    op->glvnd_glx_client = FALSE;
     op->install_compat32_libs = NV_OPTIONAL_BOOL_DEFAULT;
     op->install_libglx_indirect = NV_OPTIONAL_BOOL_DEFAULT;
     op->install_libglvnd_libraries = NV_OPTIONAL_BOOL_DEFAULT;
@@ -450,6 +451,9 @@ static void parse_commandline(int argc, char *argv[], Options *op)
         case INSTALL_LIBGLVND_OPTION:
             op->install_libglvnd_libraries = boolval ? NV_OPTIONAL_BOOL_TRUE :
                                                        NV_OPTIONAL_BOOL_FALSE;
+            break;
+        case GLVND_GLX_CLIENT_OPTION:
+            op->glvnd_glx_client = boolval;
             break;
         default:
             goto fail;

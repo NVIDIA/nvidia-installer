@@ -100,6 +100,7 @@ enum {
     FORCE_LIBGLX_INDIRECT,
     NO_LIBGLX_INDIRECT,
     INSTALL_LIBGLVND_OPTION,
+    GLVND_GLX_CLIENT_OPTION,
 };
 
 static const NVGetoptOption __options[] = {
@@ -657,6 +658,16 @@ static const NVGetoptOption __options[] = {
       "install the libglvnd libraries, overwriting any that already exist. "
       "Use --no-install-libglvnd to exclude the libglvnd libraries, even if "
       "they appear to be missing." },
+
+    { "glvnd-glx-client", GLVND_GLX_CLIENT_OPTION, NVGETOPT_IS_BOOLEAN, NULL,
+      "The NVIDIA OpenGL driver may be installed with GLX client libraries "
+      "that conform to the GL Vendor Neutral Dispatch (GLVND) infrastructure, "
+      "or with legacy GLX client libraries that are not GLVND-compliant. "
+      "For maximum compatibility with existing OpenGL applications, the "
+      "installer will default to installing non-GLVND GLX client libraries. "
+      "The --glvnd-glx-client option will override this default and install "
+      "GLVND-compliant GLX client libraries instead."
+    },
 
     /* Orphaned options: These options were in the long_options table in
      * nvidia-installer.c but not in the help. */

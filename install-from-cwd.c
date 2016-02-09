@@ -243,6 +243,8 @@ int install_from_cwd(Options *op)
 
     if (op->no_opengl_files) {
         remove_opengl_files_from_package(op, p);
+    } else {
+        select_glvnd(op, p);
     }
 
     /*
@@ -967,6 +969,22 @@ static Package *parse_manifest (Options *op)
             entry.target = NULL;
         }
 
+        /* some files are exclusive to GLVND or non-GLVND installations */
+
+        if (entry.caps.glvnd_select) {
+            char *type = read_next_word(c, &c);
+
+            if (!type) goto invalid_manifest_file;
+
+            if (strcmp(type, "GLVND") == 0) {
+                entry.glvnd = FILE_GLVND_GLVND_ONLY;
+            } else if (strcmp(type, "NON_GLVND") == 0) {
+                entry.glvnd = FILE_GLVND_NON_GLVND_ONLY;
+            } else {
+                goto invalid_manifest_file;
+            }
+        }
+
         /*
          * as a convenience for later, set the 'name' pointer to
          * the basename contained in 'file' (ie the portion of
@@ -987,6 +1005,7 @@ static Package *parse_manifest (Options *op)
                           entry.type,
                           entry.tls_class,
                           entry.compat_arch,
+                          entry.glvnd,
                           entry.mode);
 
         entry_success = TRUE;
@@ -1048,6 +1067,7 @@ void add_package_entry(Package *p,
                        PackageEntryFileType type,
                        PackageEntryFileTlsClass tls_class,
                        PackageEntryFileCompatArch compat_arch,
+                       PackageEntryFileGLVND glvnd,
                        mode_t mode)
 {
     int n;
@@ -1070,6 +1090,7 @@ void add_package_entry(Package *p,
     p->entries[n].mode        = mode;
     p->entries[n].caps        = get_file_type_capabilities(type);
     p->entries[n].compat_arch = compat_arch;
+    p->entries[n].glvnd       = glvnd;
 
     if (stat(p->entries[n].file, &stat_buf) != -1) {
         p->entries[n].inode = stat_buf.st_ino;
@@ -1433,6 +1454,7 @@ generate_done:
                           FILE_TYPE_MODULE_SIGNING_KEY,
                           FILE_TLS_CLASS_NONE,
                           FILE_COMPAT_ARCH_NONE,
+                          FILE_GLVND_DONT_CARE,
                           0444);
 
         ui_message(op, "An X.509 certificate containing the public signing "
@@ -1465,6 +1487,7 @@ generate_done:
                               FILE_TYPE_MODULE_SIGNING_KEY,
                               FILE_TLS_CLASS_NONE,
                               FILE_COMPAT_ARCH_NONE,
+                              FILE_GLVND_DONT_CARE,
                               0400);
 
             ui_message(op, "The private signing key will be installed to %s/%s. "

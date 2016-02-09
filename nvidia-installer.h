@@ -156,6 +156,7 @@ typedef struct __options {
     int x_files_packaged;
     int concurrency_level;
     int load_error_ignored;
+    int glvnd_glx_client;
     int install_libglx_indirect;
     int install_libglvnd_libraries;
 
@@ -282,6 +283,8 @@ typedef enum {
     FILE_TYPE_DKMS_CONF,
     FILE_TYPE_GLVND_LIB,
     FILE_TYPE_GLVND_SYMLINK,
+    FILE_TYPE_GLX_CLIENT_LIB,
+    FILE_TYPE_GLX_CLIENT_SYMLINK,
     FILE_TYPE_MAX
 } PackageEntryFileType;
 
@@ -297,6 +300,12 @@ typedef enum {
     FILE_COMPAT_ARCH_COMPAT32,
 } PackageEntryFileCompatArch;
 
+typedef enum {
+    FILE_GLVND_DONT_CARE,
+    FILE_GLVND_GLVND_ONLY,
+    FILE_GLVND_NON_GLVND_ONLY,
+} PackageEntryFileGLVND;
+
 typedef struct {
     unsigned int has_arch      : 1;
     unsigned int has_tls_class : 1;
@@ -308,6 +317,7 @@ typedef struct {
     unsigned int is_temporary  : 1;
     unsigned int is_wrapper    : 1;
     unsigned int inherit_path  : 1;
+    unsigned int glvnd_select  : 1;
 } PackageEntryFileCapabilities;
 
 /*
@@ -355,6 +365,7 @@ typedef struct __package_entry {
     PackageEntryFileType type;
     PackageEntryFileTlsClass tls_class;
     PackageEntryFileCompatArch compat_arch;
+    PackageEntryFileGLVND glvnd;
     int inherit_path_depth;
 
     mode_t mode;
@@ -547,6 +558,7 @@ void add_package_entry(Package *p,
                        PackageEntryFileType type,
                        PackageEntryFileTlsClass tls_class,
                        PackageEntryFileCompatArch compat_arch,
+                       PackageEntryFileGLVND glvnd,
                        mode_t mode);
 /* XXX */
 
