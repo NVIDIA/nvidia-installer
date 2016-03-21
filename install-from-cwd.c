@@ -307,12 +307,12 @@ int install_from_cwd(Options *op)
         goto failed;
 
     /*
-     * Leave the RM loaded in case an X server with OutputClass-based driver
+     * Leave nvidia-drm loaded in case an X server with OutputClass-based driver
      * matching is being used.
      */
 
     if (!op->no_kernel_module || op->dkms) {
-        if (!load_kernel_module(op, p->kernel_modules[0].module_name)) {
+        if (!load_kernel_module(op, "nvidia-drm")) {
             goto failed;
         }
     }
@@ -601,6 +601,7 @@ static int has_separate_interface_file(char *name) {
 
     static const char* no_interface_modules[] = {
         "nvidia-uvm",
+        "nvidia-drm",
     };
 
     for (i = 0; i < ARRAY_LEN(no_interface_modules); i++) {

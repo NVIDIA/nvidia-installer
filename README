@@ -37,34 +37,58 @@ it writes this byte data to a temporary file and then dlopens() it.
 This directory also contains source for a simple tool 'mkprecompiled',
 which is used for stamping nv-linux.o's (aka the kernel interfaces)
 with the necessary information so that the installer can match it to a
-running kernel.
+running kernel. nvidia-installer can automate the process of building
+a precompiled kernel interface package when used with the installer's
+"--add-this-kernel" option - mkprecompiled is a standalone utility that
+can be used to build a precompiled kernel interface package independently
+of nvidia-installer.
 
-To build a precompiled kernel interface, you might do the following:
+To build a precompiled kernel interface package using mkprecompiled, you
+might do the following:
 
-    sh NVIDIA-Linux-x86-1.0-XXXX.run --extract-only
-    cd NVIDIA-Linux-x86-1.0-XXXX/usr/src/nv/
-    make nv-linux.o
-    mkprecompiled --interface=nv-linux.o --output=nv-linux.o-mykernel \
-            --description="This is not an interesting description" \
-            --proc-version="`cat /proc/version`" \
-            --major=1 --minor=0 --patch=XXXX
-    mv nv-linux.o-mykernel precompiled/
+    sh NVIDIA-Linux-x86-XXX.YY.run --extract-only
+    cd NVIDIA-Linux-x86-XXX.YY/kernel/
+    modules=`head -n 4 ../.manifest | tail -n 1`
+    interface_files=`for module in $modules; do
+        echo $module | grep -v nvidia-uvm |
+        sed -e 's/nvidia/nv/' -e 's/$/-linux.o/'
+    done`
+    make $interface_files
+    for interface in $interface_files; do
+        nv_stem=`echo $interface | sed 's/-linux.o$//'`
+        module_name=`echo $nv_stem | sed 's/nv/nvidia/'`
+        ../mkprecompiled --pack precompiled-mykernel \
+            --driver-version XXX.YY \
+            --proc-version-string "`cat /proc/version`" \
+            --description "This is not an interesting description" \
+            --kernel-interface $interface \
+            --linked-module-name $module_name.ko \
+            --core-object-name $module_name/$nv_stem-kernel.o_binary \
+            --target-directory .
+    done
+    if [ -f nvidia-uvm.ko ]; then
+        ../mkprecompiled --pack precompiled-mykernel \
+            --kernel-module nvidia-uvm.ko \
+            --target-directory .
+    fi
+    mkdir -p precompiled
+    mv precompiled-mykernel precompiled
 
-(where "XXXX" is replaced with the driver version number).
+(where "XXX.YY" is replaced with the driver version number).
 
 
-To build a precompiled kernel interface for a kernel other than
-the currently running one, you can build nv-linux.o with:
+To build precompiled kernel interfaces for a kernel other than the
+currently running one, set SYSSRC=/path/to/kernel-source on the `make`
+command line. If your kernel sources use a separate output directory,
+additionally set SYSOUT=/path/to/kernel-output. You will also need to
+extract the correct proc version string from the kernel image, so that
+it can be passed as an argument to mkprecompiled, e.g.:
 
-    make nv-linux.o SYSSRC=/path/to/kernel-source
-
-and extract the proc version string from a compressed kernel image with:
-
-    gzip -dc /boot/vmlinux.gz | strings | grep "^Linux version"
+    /path/to/kernel-source/scripts/extract-vmlinux /boot/vmlinuz |
+        strings | grep "^Linux version"
 
 
-
-nvidia-installer will scan the contents of the usr/src/nv/precompiled/
+nvidia-installer will scan the contents of the kernel/precompiled/
 directory for any precompiled kernel interfaces that match the running
 kernel's /proc/version string.
 
@@ -72,9 +96,10 @@ If you would like to provide precompiled kernel interfaces for others
 to use, you may build them as above.  To use them, users can do the
 following:
 
-    sh NVIDIA-Linux-x86-1.0-XXXX.run --extract-only
-    cp nv-linux.o-mykernel NVIDIA-Linux-x86-1.0-XXXX/usr/src/nv/
-    ./NVIDIA-Linux-x86-1.0-XXXX/nvidia-installer
+    sh NVIDIA-Linux-x86-XXX.YY.run --extract-only
+    mkdir -p NVIDIA-Linux-x86-XXX.YY/kernel/precompiled
+    cp precompiled-mykernel NVIDIA-Linux-x86-XXX.YY/kernel/precompiled
+    ./NVIDIA-Linux-x86-XXX.YY/nvidia-installer
 
 
 (Updated: 2003-09-23)  The search path for directories containing

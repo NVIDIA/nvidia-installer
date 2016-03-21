@@ -145,7 +145,7 @@ static Options *load_default_options(void)
     op->dkms = FALSE;
     op->check_for_alternate_installs = TRUE;
     op->install_uvm = TRUE;
-    op->glvnd_glx_client = FALSE;
+    op->glvnd_glx_client = TRUE;
     op->install_compat32_libs = NV_OPTIONAL_BOOL_DEFAULT;
     op->install_libglx_indirect = NV_OPTIONAL_BOOL_DEFAULT;
     op->install_libglvnd_libraries = NV_OPTIONAL_BOOL_DEFAULT;

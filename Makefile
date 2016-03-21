@@ -200,20 +200,20 @@ MANPAGE_install: $(MANPAGE)
 	$(MKDIR) $(MANDIR)
 	$(INSTALL) $(INSTALL_DOC_ARGS) $< $(MANDIR)/$(notdir $<)
 
-$(MKPRECOMPILED): $(MKPRECOMPILED_OBJS)
+$(eval $(call DEBUG_INFO_RULES, $(MKPRECOMPILED)))
+$(MKPRECOMPILED).unstripped: $(MKPRECOMPILED_OBJS)
 	$(call quiet_cmd,LINK) $(CFLAGS) $(LDFLAGS) $(BIN_LDFLAGS) \
 	  $(MKPRECOMPILED_OBJS) -o $@ $(LIBS)
-	$(call quiet_cmd,STRIP_CMD) $@
 
 $(MAKESELF_HELP_SCRIPT): $(MAKESELF_HELP_SCRIPT_OBJS)
 	$(call quiet_cmd,HOST_LINK) $(HOST_CFLAGS) $(HOST_LDFLAGS) \
 	  $(HOST_BIN_LDFLAGS) $(MAKESELF_HELP_SCRIPT_OBJS) -o $@
 
-$(NVIDIA_INSTALLER): $(INSTALLER_OBJS)
+$(eval $(call DEBUG_INFO_RULES, $(NVIDIA_INSTALLER)))
+$(NVIDIA_INSTALLER).unstripped: $(INSTALLER_OBJS)
 	$(call quiet_cmd,LINK) $(CFLAGS) $(LDFLAGS) $(PCIACCESS_LDFLAGS) \
 	  $(BIN_LDFLAGS) $(INSTALLER_OBJS) -o $@ \
 	  $(LIBS) -Bstatic -lpciaccess -Bdynamic
-	$(call quiet_cmd,STRIP_CMD) $@
 
 $(GEN_UI_ARRAY): gen-ui-array.c $(CONFIG_H)
 	$(call quiet_cmd,HOST_CC) $(HOST_CFLAGS) $(HOST_LDFLAGS) \
@@ -307,9 +307,9 @@ tls_test: tls_test.c
 # rule to rebuild rtld_test; a precompiled rtld_test is distributed with
 # nvidia-installer to simplify x86-64 builds.
 
-rebuild_rtld_test: rtld_test.c $(CONFIG_H)
+$(eval $(call DEBUG_INFO_RULES, rebuild_rtld_test))
+rebuild_rtld_test.unstripped: rtld_test.c $(CONFIG_H)
 	$(call quiet_cmd,LINK) $(CFLAGS) $(LDFLAGS) $(BIN_LDFLAGS) -o $(RTLD_TEST) -lGL -lEGL $<
-	$(call quiet_cmd,STRIP_CMD) $(RTLD_TEST)
 
 # dummy rule to override implicit rule that builds dls_test from
 # rtld_test.c

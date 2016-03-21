@@ -660,13 +660,13 @@ static const NVGetoptOption __options[] = {
       "they appear to be missing." },
 
     { "glvnd-glx-client", GLVND_GLX_CLIENT_OPTION, NVGETOPT_IS_BOOLEAN, NULL,
-      "The NVIDIA OpenGL driver may be installed with GLX client libraries "
-      "that conform to the GL Vendor Neutral Dispatch (GLVND) infrastructure, "
-      "or with legacy GLX client libraries that are not GLVND-compliant. "
-      "For maximum compatibility with existing OpenGL applications, the "
-      "installer will default to installing non-GLVND GLX client libraries. "
-      "The --glvnd-glx-client option will override this default and install "
-      "GLVND-compliant GLX client libraries instead."
+      "By default, the NVIDIA OpenGL driver will be installed with the new "
+      "GLVND architecture, to support coexisting with other GLVND-compliant "
+      "OpenGL drivers. However, some applications which do not conform to "
+      "the Linux OpenGL ABI may not be fully compatible with a GLVND-based "
+      "OpenGL driver. The --no-glvnd-glx-client option will select a "
+      "non-GLVND GLX client library (libGL.so.1), which may help to avoid "
+      "compatibility issues with such applications."
     },
 
     /* Orphaned options: These options were in the long_options table in

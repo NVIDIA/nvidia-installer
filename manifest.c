@@ -125,6 +125,7 @@ static const struct {
     { ENTRY(GLVND_SYMLINK,          T, F, F, F, T, F, T, F, F, F, F) },
     { ENTRY(GLX_CLIENT_LIB,         T, F, T, F, F, T, T, F, F, F, T) },
     { ENTRY(GLX_CLIENT_SYMLINK,     T, F, F, F, T, F, T, F, F, F, T) },
+    { ENTRY(VULKAN_ICD_JSON,        F, F, T, F, F, F, F, F, F, F, F) },
 };
 
 /*

@@ -838,6 +838,15 @@ int set_destinations(Options *op, Package *p)
             dir = path = "";
             break;
 
+        case FILE_TYPE_VULKAN_ICD_JSON:
+            /*
+             * Defined by the Vulkan Linux ICD loader specification.
+             */
+            prefix = "/etc/vulkan/icd.d/";
+            dir = path = "";
+            path = "";
+            break;
+
         default:
             
             /* 
@@ -3300,7 +3309,25 @@ int check_libglvnd_files(Options *op, Package *p)
 
 void select_glvnd(Options *op, Package *p)
 {
-    int i;
+    int i, glvnd_only_files_present = FALSE;
+
+    /* Always install non-GLVND when the package lacks GLVND-specific files */
+
+    for (i = 0; i < p->num_entries; i++) {
+        if (p->entries[i].glvnd == FILE_GLVND_GLVND_ONLY) {
+            glvnd_only_files_present = TRUE;
+            break;
+        }
+    }
+
+    if (!glvnd_only_files_present) {
+        op->glvnd_glx_client = FALSE;
+        ui_log(op, "Package does not include GLVND GLX client libraries: "
+               "forcing '--no-glvnd-glx-client'.");
+        return;
+    }
+
+    /* Allow expert users to change the default or commandline given choice */
 
     if (op->expert) {
         const char *choices[2] = {

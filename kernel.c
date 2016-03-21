@@ -1376,7 +1376,7 @@ int test_kernel_modules(Options *op, Package *p)
 {
     char *cmd = NULL, *data = NULL;
     int ret, i;
-    const char *depmods[] = { "i2c-core", "drm" };
+    const char *depmods[] = { "i2c-core", "drm", "drm-kms-helper" };
 
     /* 
      * If we're building/installing for a different kernel, then we
