@@ -752,6 +752,13 @@ int set_destinations(Options *op, Package *p)
             path = "";
             break;
 
+        case FILE_TYPE_GRID_LIB:
+        case FILE_TYPE_GRID_LIB_SYMLINK:
+            prefix = op->opengl_prefix;
+            dir = op->opengl_libdir;
+            path = p->entries[i].path;
+            break;
+
         case FILE_TYPE_OPENGL_HEADER:
             prefix = op->opengl_prefix;
             dir = op->opengl_incdir;

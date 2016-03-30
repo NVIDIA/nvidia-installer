@@ -643,7 +643,9 @@ static const NVGetoptOption __options[] = {
       "Set the concurrency level for operations such as building the kernel "
       "module which may be parallelized on SMP systems. By default, this will "
       "be set to the number of detected CPUs, or to '1', if nvidia-installer "
-      "fails to detect the number of CPUs." },
+      "fails to detect the number of CPUs. Systems with a large number of "
+      "CPUs will have the default concurrency level limited to 32; setting "
+      "a higher level on the command line will override this limit." },
 
     { "force-libglx-indirect", FORCE_LIBGLX_INDIRECT, 0, NULL,
       "If the package includes a libglvnd-based OpenGL library, then always "
