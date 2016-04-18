@@ -3089,12 +3089,21 @@ void set_concurrency_level(Options *op)
         ui_log(op, "Concurrency level set to %d on the command line.",
                op->concurrency_level);
     } else {
+        /* Systems with very high CPU counts may hit the max tasks limit. */
+        static const int max_default_cpus = 32;
+        int default_concurrency;
 #if defined _SC_NPROCESSORS_ONLN
         detected_cpus = sysconf(_SC_NPROCESSORS_ONLN);
 
+        if (detected_cpus < max_default_cpus) {
+            default_concurrency = detected_cpus;
+        } else {
+            default_concurrency = max_default_cpus;
+        }
+
         if (detected_cpus >= 1) {
             ui_log(op, "Detected %d CPUs online; setting concurrency level "
-                   "to %d.", detected_cpus, detected_cpus);
+                   "to %d.", detected_cpus, default_concurrency);
         } else
 #else
 #warning _SC_NPROCESSORS_ONLN not defined; nvidia-installer will not be able \
@@ -3103,9 +3112,9 @@ to detect the number of processors.
         {
             ui_log(op, "Unable to detect the number of processors: setting "
                    "concurrency level to 1.");
-            detected_cpus = 1;
+            default_concurrency = 1;
         }
-        op->concurrency_level = detected_cpus;
+        op->concurrency_level = default_concurrency;
     }
 
     if (op->expert) {
