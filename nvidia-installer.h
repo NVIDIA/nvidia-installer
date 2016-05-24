@@ -157,9 +157,9 @@ typedef struct __options {
     int concurrency_level;
     int load_error_ignored;
     int glvnd_glx_client;
-    int install_libglx_indirect;
-    int install_libglvnd_libraries;
 
+    NVOptionalBool install_libglx_indirect;
+    NVOptionalBool install_libglvnd_libraries;
     NVOptionalBool install_compat32_libs;
 
     char *opengl_prefix;
@@ -273,6 +273,8 @@ typedef enum {
     FILE_TYPE_ENCODEAPI_LIB_SYMLINK,
     FILE_TYPE_VGX_LIB,
     FILE_TYPE_VGX_LIB_SYMLINK,
+    FILE_TYPE_GRID_LIB,
+    FILE_TYPE_GRID_LIB_SYMLINK,
     FILE_TYPE_APPLICATION_PROFILE,
     FILE_TYPE_NVIDIA_MODPROBE,
     FILE_TYPE_NVIDIA_MODPROBE_MANPAGE,
@@ -283,9 +285,9 @@ typedef enum {
     FILE_TYPE_DKMS_CONF,
     FILE_TYPE_GLVND_LIB,
     FILE_TYPE_GLVND_SYMLINK,
+    FILE_TYPE_VULKAN_ICD_JSON,
     FILE_TYPE_GLX_CLIENT_LIB,
     FILE_TYPE_GLX_CLIENT_SYMLINK,
-    FILE_TYPE_VULKAN_ICD_JSON,
     FILE_TYPE_MAX
 } PackageEntryFileType;
 

@@ -114,6 +114,8 @@ static const struct {
     { ENTRY(ENCODEAPI_LIB_SYMLINK,  T, F, F, F, T, F, F, F, F, F, F) },
     { ENTRY(VGX_LIB,                F, F, T, F, F, T, F, F, F, F, F) },
     { ENTRY(VGX_LIB_SYMLINK,        F, F, F, F, T, F, F, F, F, F, F) },
+    { ENTRY(GRID_LIB,               F, F, T, T, F, T, F, F, F, F, F) },
+    { ENTRY(GRID_LIB_SYMLINK,       F, F, F, T, T, F, F, F, F, F, F) },
     { ENTRY(NVIDIA_MODPROBE,        F, F, T, T, F, F, F, F, F, F, F) },
     { ENTRY(NVIDIA_MODPROBE_MANPAGE,F, F, T, T, F, F, F, F, F, F, F) },
     { ENTRY(MODULE_SIGNING_KEY,     F, F, T, F, F, F, F, T, F, F, F) },

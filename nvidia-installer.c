@@ -34,9 +34,6 @@
 
 #include <errno.h>
 
-#define _GNU_SOURCE /* XXX not very portable */
-#include <getopt.h>
-
 #include "nvidia-installer.h"
 #include "kernel.h"
 #include "user-interface.h"

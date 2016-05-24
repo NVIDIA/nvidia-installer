@@ -1628,6 +1628,9 @@ static int rtld_test_internal(Options *op, Package *p,
 int check_runtime_configuration(Options *op, Package *p)
 {
     int ret = TRUE, which_tls, which_tls_compat32;
+    char *tmpdir = NULL;
+    char old_cwd[PATH_MAX];
+    int chdir_success = FALSE;
 
 #if defined(NV_TLS_TEST)
     which_tls = op->which_tls;
@@ -1638,6 +1641,17 @@ int check_runtime_configuration(Options *op, Package *p)
 #endif /* NV_TLS_TEST */
 
     ui_status_begin(op, "Running runtime sanity check:", "Checking");
+
+    /* chdir to an empty directory to avoid picking up DSOs from the CWD */
+
+    if (getcwd(old_cwd, sizeof(old_cwd)) != NULL &&
+        (tmpdir = make_tmpdir(op)) &&
+        chdir(tmpdir) == 0) {
+        chdir_success = TRUE;
+    } else {
+        ui_warn(op, "Unable to chdir into an empty directory: this may cause "
+                "the runtime configuration test to fail on some systems.");
+    }
 
 #if defined(NV_X86_64)
     ret = rtld_test_internal(op, p, which_tls_compat32,
@@ -1651,6 +1665,17 @@ int check_runtime_configuration(Options *op, Package *p)
                                  rtld_test_array,
                                  rtld_test_array_size,
                                  FALSE);
+    }
+
+    if (chdir_success) {
+        if (chdir(old_cwd) != 0) {
+            ui_error(op, "Unable to restore cwd to '%s' (%s)!", old_cwd,
+                     strerror(errno));
+        }
+    }
+
+    if (tmpdir) {
+        remove_directory(op, tmpdir);
     }
 
     ui_status_end(op, "done.");
