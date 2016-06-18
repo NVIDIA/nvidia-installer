@@ -1,0 +1,5 @@
+#!/bin/sh
+
+apt-get install xserver-xorg-video-nouveau
+pacman -S xf86-video-nouveau
+dnf install xorg-x11-drv-nouveau
