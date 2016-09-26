@@ -41,12 +41,11 @@
 #include "crc.h"
 #include "misc.h"
 #include "kernel.h"
+#include "conflicting-kernel-modules.h"
 
 #define BACKUP_DIRECTORY "/var/lib/nvidia"
 #define BACKUP_LOG       (BACKUP_DIRECTORY "/log")
 #define BACKUP_MKDIR_LOG (BACKUP_DIRECTORY "/dirs")
-
-#define RMMOD_MODULE_NAME "nvidia"
 
 
 
@@ -768,11 +767,15 @@ static int do_uninstall(Options *op, const char *version)
 
     if (!op->skip_module_unload) {
         /*
-         * attempt to unload the kernel module, but don't abort if this fails:
-         * the kernel may not have been configured with support for module
-         * unloading (Linux 2.6) or the user might have unloaded it themselves.
+         * attempt to unload the kernel module(s), but don't abort if this fails:
+         * the kernel may not have been configured with support for module 
+         * unloading or the user might have unloaded it themselves or the module 
+         * might not have existed at all.
          */
-        rmmod_kernel_module(op, RMMOD_MODULE_NAME);
+
+        for (i = 0; i < num_conflicting_kernel_modules; i++) {
+            rmmod_kernel_module(op, conflicting_kernel_modules[i]);
+        }
     }
 
     run_distro_hook(op, "post-uninstall");

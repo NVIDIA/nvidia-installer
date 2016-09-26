@@ -31,7 +31,7 @@ int build_kernel_module                       (Options*, Package*);
 int build_kernel_interface                    (Options*, Package*);
 int test_kernel_module                        (Options*, Package*);
 int load_kernel_module                        (Options*, Package*);
-int check_for_unloaded_kernel_module          (Options*, Package*);
+int check_for_unloaded_kernel_module          (Options*);
 int find_precompiled_kernel_interface         (Options*, Package*);
 char *get_kernel_name                         (Options*);
 int rmmod_kernel_module                       (Options*, const char*);

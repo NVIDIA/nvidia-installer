@@ -41,6 +41,7 @@
 #include "precompiled.h"
 #include "snarf.h"
 #include "crc.h"
+#include "conflicting-kernel-modules.h"
 
 /* local prototypes */
 
@@ -914,11 +915,11 @@ static void modprobe_remove_kernel_module_quiet(Options *op, const char *name)
  * we can't unload it, then report an error and return FALSE;
  */
 
-int check_for_unloaded_kernel_module(Options *op, Package *p)
+int check_for_unloaded_kernel_module(Options *op)
 {
-    int n = 0;
+    int n;
     int loaded = FALSE;
-    unsigned int bits = 0;
+    unsigned long long int bits = 0;
     
     /*
      * We can skip this check if we are installing for a non-running
@@ -943,30 +944,27 @@ int check_for_unloaded_kernel_module(Options *op, Package *p)
         return TRUE;
     }
 
-    while (p->bad_modules[n]) {
-        if (check_for_loaded_kernel_module(op, p->bad_modules[n])) {
+    for (n = 0; n < num_conflicting_kernel_modules; n++) {
+        if (check_for_loaded_kernel_module(op, conflicting_kernel_modules[n])) {
             loaded = TRUE;
             bits |= (1 << n);
         }
-        n++;
     }
 
     if (!loaded) return TRUE;
     
     /* one or more kernel modules is loaded... try to unload them */
 
-    n = 0;
-    while (p->bad_modules[n]) {
+    for (n = 0; n < num_conflicting_kernel_modules; n++) {
         if (!(bits & (1 << n))) {
-            n++;
             continue;
         }
         
-        rmmod_kernel_module(op, p->bad_modules[n]);
+        rmmod_kernel_module(op, conflicting_kernel_modules[n]);
 
         /* check again */
         
-        if (check_for_loaded_kernel_module(op, p->bad_modules[n])) {
+        if (check_for_loaded_kernel_module(op, conflicting_kernel_modules[n])) {
             ui_error(op,  "An NVIDIA kernel module '%s' appears to already "
                      "be loaded in your kernel.  This may be because it is "
                      "in use (for example, by the X server), but may also "
@@ -978,11 +976,10 @@ int check_for_unloaded_kernel_module(Options *op, Package *p)
                      "error may have occured that has corrupted the NVIDIA "
                      "kernel module's usage count; the simplest remedy is "
                      "to reboot your computer.",
-                     p->bad_modules[n]);
+                     conflicting_kernel_modules[n]);
     
             return FALSE;
         }
-        n++;
     }
 
     return TRUE;

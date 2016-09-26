@@ -43,6 +43,7 @@ SRC += stream-ui.c
 SRC += update.c
 SRC += user-interface.c
 SRC += sanity.c
+SRC += conflicting-kernel-modules.c
 
 DIST_FILES := $(SRC)
 
@@ -61,6 +62,7 @@ DIST_FILES += snarf-internal.h
 DIST_FILES += snarf.h
 DIST_FILES += update.h
 DIST_FILES += user-interface.h
+DIST_FILES += conflicting-kernel-modules.h
 
 DIST_FILES += COPYING
 DIST_FILES += README

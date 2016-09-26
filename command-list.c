@@ -42,6 +42,7 @@
 #include "misc.h"
 #include "files.h"
 #include "kernel.h"
+#include "conflicting-kernel-modules.h"
 
 
 static void free_file_list(FileList* l);
@@ -58,9 +59,7 @@ static void find_conflicting_opengl_libraries(Options *,
                                               const char *,
                                               FileList *);
 
-static void find_conflicting_kernel_modules(Options *op,
-                                            Package *p,
-                                            FileList *l);
+static void find_conflicting_kernel_modules(Options *op, FileList *l);
 
 static void find_existing_files(Package *p, FileList *l, uint64_t);
 
@@ -102,8 +101,9 @@ CommandList *build_command_list(Options *op, Package *p)
 
     /* find any possibly conflicting modules and/or libraries */
 
-    if (!op->no_kernel_module || op->dkms)
-        find_conflicting_kernel_modules(op, p, l);
+    if (!op->no_kernel_module || op->dkms) {
+        find_conflicting_kernel_modules(op, l);
+    }
 
     /* check the conflicting file list for any installed kernel modules */
 
@@ -684,17 +684,14 @@ static void find_conflicting_opengl_libraries(Options *op,
  * modules under the kernel module installation prefix.
  */
 
-static void find_conflicting_kernel_modules(Options *op,
-                                            Package *p, FileList *l)
+static void find_conflicting_kernel_modules(Options *op, FileList *l)
 {
-    int i = 0, n = 0;
-    ConflictingFileInfo files[2];
+    int i = 0;
+    ConflictingFileInfo *files;
     char *paths[3];
     char *tmp = get_kernel_name(op);
+    char **filenames;
 
-    memset(files, 0, sizeof(files));
-    files[1].name = NULL;
-    files[1].len = 0;
     if (op->kernel_module_installation_path) {
         paths[i++] = op->kernel_module_installation_path;
     }
@@ -704,18 +701,25 @@ static void find_conflicting_kernel_modules(Options *op,
     }
 
     paths[i] = NULL;
-    
-    for (i = 0; paths[i]; i++) {
-        for (n = 0; p->bad_module_filenames[n]; n++) {
-            /*
-             * Recursively search for this conflicting kernel module
-             * relative to the current prefix.
-             */
-            files[0].name = p->bad_module_filenames[n];
-            files[0].len = strlen(files[0].name);
 
-            find_conflicting_files(op, paths[i], files, l);
-        }
+    /* Build the list of conflicting kernel modules */
+
+    files = nvalloc((num_conflicting_kernel_modules + 1) * sizeof(files[0]));
+    filenames = nvalloc(num_conflicting_kernel_modules * sizeof(filenames[0]));
+
+    for (i = 0; i < num_conflicting_kernel_modules; i++) {
+        filenames[i] = nvstrcat(conflicting_kernel_modules[i], ".ko", NULL);
+        files[i].name = filenames[i];
+        files[i].len = strlen(filenames[i]);
+    }
+
+    for (i = 0; paths[i]; i++) {
+        /*
+         * Recursively search for the conflicting kernel modules
+         * relative to the current prefix.
+         */
+
+        find_conflicting_files(op, paths[i], files, l);
     }
 
     /* free any paths we nvstrcat()'d above  */
@@ -724,7 +728,14 @@ static void find_conflicting_kernel_modules(Options *op,
         nvfree(paths[i]);
     }
 
-} /* find_conflicting_kernel_modules() */
+    /* free the kernel module names */
+
+    for (i = 0; i < num_conflicting_kernel_modules; i++) {
+        nvfree(filenames[i]);
+    }
+    nvfree(filenames);
+    nvfree(files);
+}
 
 
 

@@ -59,6 +59,10 @@ extern InstallerUI stream_ui_dispatch_table;
 
 extern const char ncurses_ui_array[];
 extern const int ncurses_ui_array_size;
+#if defined(NV_INSTALLER_NCURSES6)
+extern const char ncurses6_ui_array[];
+extern const int ncurses6_ui_array_size;
+#endif
 
 /* struct describing the ui data */
 
@@ -88,76 +92,78 @@ int ui_init(Options *op)
     int i;
     user_interface_attribute_t ui_list[] = {
         /* { "nvidia-installer GTK+ user interface", NULL, NULL, 0 }, */
+#if defined(NV_INSTALLER_NCURSES6)
+        { "ncurses6", "nvidia-installer ncurses v6 user interface", NULL,
+          ncurses6_ui_array, ncurses6_ui_array_size },
+#endif
         { "ncurses", "nvidia-installer ncurses user interface", NULL,
           ncurses_ui_array, ncurses_ui_array_size },
         { "none", NULL, NULL, NULL, 0 }
     };
-    
+
     /* dlopen() the appropriate ui shared lib */
-    
+
     __ui = NULL;
 
-    if (op->ui_str) {
-        for (i = 0; i < ARRAY_LEN(ui_list); i++) {
-            if (strcmp(op->ui_str, ui_list[i].name) == 0) {
-                break;
+    if (!op->silent) {
+        if (op->ui_str) {
+            for (i = 0; i < ARRAY_LEN(ui_list); i++) {
+                if (strcmp(op->ui_str, ui_list[i].name) == 0) {
+                    break;
+                }
             }
-        }
 
-        if (i == ARRAY_LEN(ui_list)) {
-            log_printf(op, TRUE, NULL, "Invalid \"ui\" option: %s", op->ui_str);
-            i = 0;
-        }
-    } else {
-        i = 0;
-    }
-
-    if (op->silent) {
-        i = 1;
-    }
-    
-    for (; ui_list[i].descr && !__ui; i++) {
-
-        if (!extract_user_interface(op, &ui_list[i])) continue;
-        
-        handle = dlopen(ui_list[i].filename, RTLD_NOW);
-
-        if (handle) {
-            __ui = dlsym(handle, "ui_dispatch_table");
-            if (__ui && __ui->detect(op)) {
-                log_printf(op, TRUE, NULL, "Using: %s",
-                           ui_list[i].descr);
-                __extracted_user_interface_filename = ui_list[i].filename;
-                break;
-            } else {
-                log_printf(op, TRUE, NULL, "Unable to initialize: %s",
-                           ui_list[i].descr);
-                dlclose(handle);
-                __ui = NULL;
+            if (i == ARRAY_LEN(ui_list)) {
+                log_printf(op, TRUE, NULL, "Invalid \"ui\" option: %s",
+                           op->ui_str);
+                i = 0;
             }
         } else {
-            log_printf(op, TRUE, NULL, "Unable to load: %s",
-                       ui_list[i].descr);
-            log_printf(op, TRUE, NULL, "");
+            i = 0;
         }
-    }
-    
+
+        for (; ui_list[i].descr && !__ui; i++) {
+
+            if (!extract_user_interface(op, &ui_list[i])) continue;
+
+            handle = dlopen(ui_list[i].filename, RTLD_NOW);
+
+            if (handle) {
+                __ui = dlsym(handle, "ui_dispatch_table");
+                if (__ui && __ui->detect(op)) {
+                    log_printf(op, TRUE, NULL, "Using: %s", ui_list[i].descr);
+                    __extracted_user_interface_filename = ui_list[i].filename;
+                    break;
+                } else {
+                    log_printf(op, TRUE, NULL, "Unable to initialize: %s",
+                               ui_list[i].descr);
+                    dlclose(handle);
+                    __ui = NULL;
+                }
+            } else {
+                log_printf(op, TRUE, NULL, "Unable to load: %s",
+                           ui_list[i].descr);
+                log_printf(op, TRUE, NULL, "");
+            }
+        }
+    }   
+
     /* fall back to the always built-in stream ui */
 
     if (!__ui) {
         __ui = &stream_ui_dispatch_table;
         log_printf(op, TRUE, NULL, "Using built-in stream user interface");
     }
-    
+
     /*
      * init the ui
      *
      * XXX if init() fails, we should try to fall back to the build-in
      * stream ui.
      */
-    
+
     if (!__ui->init(op, nv_format_text_rows)) return FALSE;
-    
+
     /* handle some common signals */
 
     signal(SIGHUP,  ui_signal_handler);

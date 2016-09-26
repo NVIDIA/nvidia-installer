@@ -109,7 +109,7 @@ int install_from_cwd(Options *op)
 
     /* make sure the kernel module is unloaded */
     
-    if (!check_for_unloaded_kernel_module(op, p)) goto failed;
+    if (!check_for_unloaded_kernel_module(op)) goto failed;
     
     /* ask the user to accept the license */
     
@@ -549,7 +549,7 @@ int add_this_kernel(Options *op)
 static Package *parse_manifest (Options *op)
 {
     char *buf, *c, *flag , *tmpstr;
-    int done, n, line;
+    int done, line;
     int fd, ret, len = 0;
     struct stat stat_buf, entry_stat_buf;
     Package *p;
@@ -598,46 +598,14 @@ static Package *parse_manifest (Options *op)
     if (!p->kernel_module_name) goto invalid_manifest_file;
 
     /*
-     * the fifth line is a whitespace-separated list of kernel modules
-     * to be unloaded before installing the new kernel module
+     * ignore the fifth and sixth lines
      */
 
     line++;
-    tmpstr = get_next_line(ptr, &ptr, manifest, len);
-    if (!tmpstr) goto invalid_manifest_file;
-
-    p->bad_modules = NULL;
-    c = tmpstr;
-    n = 0;
-    
-    do {
-        n++;
-        p->bad_modules = (char **)
-            nvrealloc(p->bad_modules, n * sizeof(char *));
-        p->bad_modules[n-1] = read_next_word(c, &c);
-    } while (p->bad_modules[n-1]);
-    
-    /*
-     * the sixth line is a whitespace-separated list of kernel module
-     * filenames to be uninstalled before installing the new kernel
-     * module
-     */
-
+    nvfree(get_next_line(ptr, &ptr, manifest, len));
     line++;
-    tmpstr = get_next_line(ptr, &ptr, manifest, len);
-    if (!tmpstr) goto invalid_manifest_file;
+    nvfree(get_next_line(ptr, &ptr, manifest, len));
 
-    p->bad_module_filenames = NULL;
-    c = tmpstr;
-    n = 0;
-    
-    do {
-        n++;
-        p->bad_module_filenames = (char **)
-            nvrealloc(p->bad_module_filenames, n * sizeof(char *));
-        p->bad_module_filenames[n-1] = read_next_word(c, &c);
-    } while (p->bad_module_filenames[n-1]);
-    
     /* the seventh line is the kernel module build directory */
 
     line++;
@@ -670,9 +638,9 @@ static Package *parse_manifest (Options *op)
             free(buf);
             done = TRUE;
         } else {
-            
+            int n = p->num_entries;
+
             p->num_entries++;
-            n = p->num_entries - 1;
             
             /* extend the PackageEntry array */
 
@@ -959,20 +927,6 @@ static void free_package(Package *p)
     nvfree(p->kernel_module_filename);
     nvfree(p->kernel_interface_filename);
     nvfree(p->kernel_module_name);
-    
-    if (p->bad_modules) {
-        for (i = 0; p->bad_modules[i]; i++) {
-            nvfree(p->bad_modules[i]);
-        }
-        nvfree((char *) p->bad_modules);
-    }
-
-    if (p->bad_module_filenames) {
-        for (i = 0; p->bad_module_filenames[i]; i++) {
-            nvfree(p->bad_module_filenames[i]);
-        }
-        nvfree((char *) p->bad_module_filenames);
-    }
     
     nvfree(p->kernel_module_build_directory);
     
