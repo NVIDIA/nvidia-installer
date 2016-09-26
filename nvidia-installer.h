@@ -383,8 +383,6 @@ typedef struct __package {
     char *kernel_module_filename;
     char *kernel_interface_filename;
     char *kernel_module_name;
-    char **bad_modules;
-    char **bad_module_filenames;
     char *kernel_module_build_directory;
     char *uvm_module_build_directory;
     char *precompiled_kernel_interface_directory;

@@ -41,12 +41,11 @@
 #include "crc.h"
 #include "misc.h"
 #include "kernel.h"
+#include "conflicting-kernel-modules.h"
 
 #define BACKUP_DIRECTORY "/var/lib/nvidia"
 #define BACKUP_LOG       (BACKUP_DIRECTORY "/log")
 #define BACKUP_MKDIR_LOG (BACKUP_DIRECTORY "/dirs")
-
-#define RMMOD_MODULE_NAME "nvidia"
 
 
 
@@ -623,18 +622,6 @@ static int rmdir_recursive(Options *op)
 
 
 
-/* unload_nvidia_module() - unload nvidia${suffix}.ko, ignoring failures. */
-
-static void unload_nvidia_module(Options *op, const char *suffix)
-{
-    char *name;
-    name = nvstrcat(RMMOD_MODULE_NAME, suffix, NULL);
-    rmmod_kernel_module(op, name);
-    nvfree(name);
-}
-
-
-
 /*
  * do_uninstall() - this function uninstalls a previously installed
  * driver, by parsing the BACKUP_LOG file.
@@ -839,20 +826,9 @@ static int do_uninstall(Options *op, const char *version)
      * might not have existed at all.
      */
 
-    unload_nvidia_module(op, "-uvm");
-
-    unload_nvidia_module(op, "");
-
-    for (i = 0; i < NV_MAX_MODULE_INSTANCES; i++) {
-        char num[5];
-        memset(num, 0, sizeof(num));
-        snprintf(num, sizeof(num), "%d", i);
-        num[sizeof(num) - 1] = '\0';
-
-        unload_nvidia_module(op, num);   
+    for (i = 0; i < num_conflicting_kernel_modules; i++) {
+        rmmod_kernel_module(op, conflicting_kernel_modules[i]);
     }
-
-    unload_nvidia_module(op, "-frontend");
 
     run_distro_hook(op, "post-uninstall");
 
