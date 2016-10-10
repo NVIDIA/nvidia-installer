@@ -155,7 +155,7 @@ typedef struct __options {
     int compat32_files_packaged;
     int x_files_packaged;
     int concurrency_level;
-    int load_error_ignored;
+    int skip_module_load;
     int glvnd_glx_client;
 
     NVOptionalBool install_libglx_indirect;
