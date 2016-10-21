@@ -315,6 +315,12 @@ int install_from_cwd(Options *op)
         if (!load_kernel_module(op, "nvidia-drm")) {
             goto failed;
         }
+
+        if (package_includes_kernel_module(p, "nvidia-vgpu-vfio")) {
+            if (!load_kernel_module(op, "nvidia-vgpu-vfio")) {
+                goto failed;
+            }
+        }
     }
 
     /* run the distro postinstall script */
@@ -600,6 +606,7 @@ static int has_separate_interface_file(char *name) {
     int i;
 
     static const char* no_interface_modules[] = {
+        "nvidia-vgpu-vfio",
         "nvidia-uvm",
         "nvidia-drm",
     };

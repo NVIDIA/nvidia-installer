@@ -603,7 +603,8 @@ static void check_libGLX_indirect_links(Options *op, Package *p)
 int set_destinations(Options *op, Package *p)
 {
     char *name;
-    char *prefix, *dir, *path;
+    char *dir, *path;
+    const char *prefix;
     char *xdg_data_dir;
     int i;
     if (!op->kernel_module_src_dir) {
@@ -632,6 +633,8 @@ int set_destinations(Options *op, Package *p)
         case FILE_TYPE_GLVND_SYMLINK:
         case FILE_TYPE_GLX_CLIENT_LIB:
         case FILE_TYPE_GLX_CLIENT_SYMLINK:
+        case FILE_TYPE_EGL_CLIENT_LIB:
+        case FILE_TYPE_EGL_CLIENT_SYMLINK:
             if (p->entries[i].compat_arch == FILE_COMPAT_ARCH_COMPAT32) {
                 prefix = op->compat32_prefix;
                 dir = op->compat32_libdir;
@@ -853,6 +856,14 @@ int set_destinations(Options *op, Package *p)
             dir = path = "";
             path = "";
             break;
+
+        case FILE_TYPE_GLVND_EGL_ICD_JSON:
+            // We'll set this path later in check_libglvnd_files. We have to
+            // wait until we figure out whether we're going to install our own
+            // build of the libglvnd libraries, which will determine where the
+            // JSON file goes.
+            p->entries[i].dst = NULL;
+            continue;
 
         default:
             
@@ -3213,6 +3224,41 @@ done:
 }
 
 /*
+ * set_libglvnd_egl_json_path() - Tries to figure out what path to install the
+ * JSON file to for a libglvnd EGL vendor library.
+ *
+ * This is only needed to work with an existing copy of the libglvnd libraries.
+ * If we're installing our own build, then we already know what path libEGL
+ * expects.
+ */
+static void set_libglvnd_egl_json_path(Options *op)
+{
+    if (op->libglvnd_json_path == NULL) {
+        if (op->utils[PKG_CONFIG]) {
+            char *path = NULL;
+            char *cmd = nvstrcat(op->utils[PKG_CONFIG], " --variable=datadir libglvnd", NULL);
+            int ret = run_command(op, cmd, &path, FALSE, 0, TRUE);
+            nvfree(cmd);
+
+            if (ret == 0) {
+                op->libglvnd_json_path = nvstrcat(path, "/glvnd/egl_vendor.d", NULL);
+                collapse_multiple_slashes(op->libglvnd_json_path);
+            }
+            nvfree(path);
+        }
+    }
+
+    if (op->libglvnd_json_path == NULL) {
+        ui_warn(op, "Unable to determine the path to install the "
+                "libglvnd EGL vendor library config files. Check that "
+                "you have pkg-config and the libglvnd development "
+                "libraries installed, or specify a path with "
+                "--glvnd-egl-config-path.");
+        op->libglvnd_json_path = nvstrdup(DEFAULT_GLVND_EGL_JSON_PATH);
+    }
+}
+
+/*
  * check_libglvnd_files() - Checks whether or not the installer should install
  * the libglvnd libraries.
  *
@@ -3229,6 +3275,7 @@ int check_libglvnd_files(Options *op, Package *p)
 {
     int shouldInstall = op->install_libglvnd_libraries;
     int foundAnyFiles = FALSE;
+    int foundJSONFile = FALSE;
     int i;
 
     // Start by checking for any libGLX_indirect.so.0 links.
@@ -3239,7 +3286,11 @@ int check_libglvnd_files(Options *op, Package *p)
         if (p->entries[i].type == FILE_TYPE_GLVND_LIB ||
             p->entries[i].type == FILE_TYPE_GLVND_SYMLINK) {
             foundAnyFiles = TRUE;
-            break;
+        }
+
+        if (p->entries[i].type == FILE_TYPE_GLVND_EGL_ICD_JSON) {
+            foundAnyFiles = TRUE;
+            foundJSONFile = TRUE;
         }
     }
     if (!foundAnyFiles) {
@@ -3299,14 +3350,32 @@ int check_libglvnd_files(Options *op, Package *p)
         for (i = 0; i < p->num_entries; i++) {
             if (p->entries[i].type == FILE_TYPE_GLVND_LIB ||
                 p->entries[i].type == FILE_TYPE_GLVND_SYMLINK ||
-                ((p->entries[i].type == FILE_TYPE_GLX_CLIENT_LIB ||
-                  p->entries[i].type == FILE_TYPE_GLX_CLIENT_SYMLINK) &&
-                 p->entries[i].glvnd == FILE_GLVND_GLVND_ONLY)) {
+                p->entries[i].glvnd == FILE_GLVND_GLVND_ONLY) {
+                ui_log(op, "Skipping GLVND file: \"%s\"", p->entries[i].file);
                 invalidate_package_entry(&(p->entries[i]));
             }
         }
+
+        if (foundJSONFile) {
+            set_libglvnd_egl_json_path(op);
+        }
     } else {
         log_printf(op, NULL, "Will install libglvnd libraries.");
+
+        if (foundJSONFile && op->libglvnd_json_path == NULL) {
+            op->libglvnd_json_path = nvstrdup(DEFAULT_GLVND_EGL_JSON_PATH);
+        }
+    }
+    if (foundJSONFile) {
+        log_printf(op, NULL,
+                "Will install libEGL vendor library config file to %s",
+                op->libglvnd_json_path);
+        for (i = 0; i < p->num_entries; i++) {
+            if (p->entries[i].type == FILE_TYPE_GLVND_EGL_ICD_JSON) {
+                p->entries[i].dst = nvstrcat(op->libglvnd_json_path, "/", p->entries[i].name, NULL);
+                collapse_multiple_slashes(p->entries[i].dst);
+            }
+        }
     }
     return TRUE;
 }
@@ -3314,59 +3383,126 @@ int check_libglvnd_files(Options *op, Package *p)
 /* Select between GLVND and non-GLVND installation; invalidate any
  * package entries incompatible with the selection */
 
+static int prompt_user_glvnd(Options *op, Package *p,
+        const char *api, int defaultEnabled)
+{
+#define GLVND_PROMPT_QUESTION "The NVIDIA OpenGL %s client libraries " \
+                           "may be installed using the GL Vendor Neutral " \
+                           "Dispatch (GLVND) architecture, or using a " \
+                           "traditional, non-GLVND architecture. Choosing " \
+                           "GLVND will allow GLVND-compliant client " \
+                           "libraries from other OpenGL implementations to " \
+                           "coexist with the NVIDIA client libraries, but " \
+                           "may result in compatibility problems with some " \
+                           "programs. What type of client libraries do you " \
+                           "want to install?"
+
+    const char *choices[2] = {
+        "GLVND",
+        "non-GLVND"
+    };
+    int result = ui_multiple_choice(op, choices, 2,
+                                    defaultEnabled ? 0 : 1,
+                                    GLVND_PROMPT_QUESTION, api);
+    return (result == 0);
+}
+
 void select_glvnd(Options *op, Package *p)
 {
-    int i, glvnd_only_files_present = FALSE;
+    int i;
+    int glvnd_glx_present = FALSE;
+    int glvnd_egl_present = FALSE;
+    int non_glvnd_glx_present = FALSE;
+    int non_glvnd_egl_present = FALSE;
 
-    /* Always install non-GLVND when the package lacks GLVND-specific files */
-
+    /* Figure out if the package contains GLVND or non-GLVND files for EGL and GLX. */
     for (i = 0; i < p->num_entries; i++) {
         if (p->entries[i].glvnd == FILE_GLVND_GLVND_ONLY) {
-            glvnd_only_files_present = TRUE;
-            break;
+            if (p->entries[i].type == FILE_TYPE_GLX_CLIENT_LIB ||
+                    p->entries[i].type == FILE_TYPE_GLX_CLIENT_SYMLINK) {
+                glvnd_glx_present = TRUE;
+            } else if (p->entries[i].type == FILE_TYPE_EGL_CLIENT_LIB ||
+                    p->entries[i].type == FILE_TYPE_EGL_CLIENT_SYMLINK) {
+                glvnd_egl_present = TRUE;
+            }
+        } else if (p->entries[i].glvnd == FILE_GLVND_NON_GLVND_ONLY) {
+            if (p->entries[i].type == FILE_TYPE_GLX_CLIENT_LIB ||
+                    p->entries[i].type == FILE_TYPE_GLX_CLIENT_SYMLINK) {
+                non_glvnd_glx_present = TRUE;
+            } else if (p->entries[i].type == FILE_TYPE_EGL_CLIENT_LIB ||
+                    p->entries[i].type == FILE_TYPE_EGL_CLIENT_SYMLINK) {
+                non_glvnd_egl_present = TRUE;
+            }
         }
     }
 
-    if (!glvnd_only_files_present) {
-        op->glvnd_glx_client = FALSE;
+    if (!glvnd_glx_present && non_glvnd_glx_present) {
         ui_log(op, "Package does not include GLVND GLX client libraries: "
                "forcing '--no-glvnd-glx-client'.");
+        op->glvnd_glx_client = FALSE;
+    } else if (glvnd_glx_present && !non_glvnd_glx_present) {
+        ui_log(op, "Package does not include non-GLVND GLX client libraries: "
+               "forcing '--glvnd-glx-client'.");
+        op->glvnd_glx_client = TRUE;
+    }
+
+    if (!glvnd_egl_present && non_glvnd_egl_present) {
+        ui_log(op, "Package does not include GLVND EGL client libraries: "
+               "forcing '--no-glvnd-egl-client'.");
+        op->glvnd_egl_client = FALSE;
+    } else if (glvnd_egl_present && !non_glvnd_egl_present) {
+        ui_log(op, "Package does not include non-GLVND EGL client libraries: "
+               "forcing '--glvnd-egl-client'.");
+        op->glvnd_egl_client = TRUE;
+    }
+
+    if (!(glvnd_glx_present && non_glvnd_glx_present) &&
+            !(glvnd_egl_present && non_glvnd_egl_present)) {
+
         return;
     }
 
     /* Allow expert users to change the default or commandline given choice */
 
     if (op->expert) {
-        const char *choices[2] = {
-            "GLVND",
-            "non-GLVND"
-        };
-        const char *question = "The NVIDIA OpenGL GLX client libraries may be "
-                               "installed using the GL Vendor Neutral "
-                               "Dispatch (GLVND) architecture, or using a "
-                               "traditional, non-GLVND architecture. Choosing "
-                               "GLVND will allow GLVND-compliant GLX client "
-                               "libraries from other OpenGL implementations "
-                               "to coexist with the NVIDIA GLX client "
-                               "libraries, but may result in compatibility "
-                               "problems with some programs. What type of GLX "
-                               "client libraries do you want to install?";
-
-        op->glvnd_glx_client = ui_multiple_choice(op, choices, 2,
-                                                  op->glvnd_glx_client ? 0 : 1,
-                                                  "%s", question) == 0;
+        if (glvnd_glx_present && non_glvnd_glx_present) {
+            op->glvnd_glx_client = prompt_user_glvnd(op, p, "GLX", op->glvnd_glx_client);
+        }
+        if (glvnd_egl_present && non_glvnd_egl_present) {
+            op->glvnd_egl_client = prompt_user_glvnd(op, p, "EGL", op->glvnd_egl_client);
+        }
     }
 
     ui_log(op, "Will install %sGLVND GLX client libraries.",
            op->glvnd_glx_client ? "" : "non-");
 
+    ui_log(op, "Will install %sGLVND EGL client libraries.",
+           op->glvnd_egl_client ? "" : "non-");
+
+    // Select the correct GLX and EGL libraries.
     for (i = 0; i < p->num_entries; i++) {
-        if (op->glvnd_glx_client &&
-            p->entries[i].glvnd == FILE_GLVND_NON_GLVND_ONLY) {
-            invalidate_package_entry(&(p->entries[i]));
-        } else if (!op->glvnd_glx_client &&
-            p->entries[i].glvnd == FILE_GLVND_GLVND_ONLY) {
-            invalidate_package_entry(&(p->entries[i]));
+        if (p->entries[i].type == FILE_TYPE_GLX_CLIENT_LIB ||
+                 p->entries[i].type == FILE_TYPE_GLX_CLIENT_SYMLINK) {
+            if (op->glvnd_glx_client &&
+                    p->entries[i].glvnd == FILE_GLVND_NON_GLVND_ONLY) {
+                ui_log(op, "Skipping GLX non-GLVND file: \"%s\"", p->entries[i].file);
+                invalidate_package_entry(&(p->entries[i]));
+            } else if (!op->glvnd_glx_client &&
+                    p->entries[i].glvnd == FILE_GLVND_GLVND_ONLY) {
+                ui_log(op, "Skipping GLX GLVND file: \"%s\"", p->entries[i].file);
+                invalidate_package_entry(&(p->entries[i]));
+            }
+        } else if (p->entries[i].type == FILE_TYPE_EGL_CLIENT_LIB ||
+                 p->entries[i].type == FILE_TYPE_EGL_CLIENT_SYMLINK) {
+            if (op->glvnd_egl_client &&
+                    p->entries[i].glvnd == FILE_GLVND_NON_GLVND_ONLY) {
+                ui_log(op, "Skipping EGL non-GLVND file: \"%s\"", p->entries[i].file);
+                invalidate_package_entry(&(p->entries[i]));
+            } else if (!op->glvnd_egl_client &&
+                    p->entries[i].glvnd == FILE_GLVND_GLVND_ONLY) {
+                ui_log(op, "Skipping EGL GLVND file: \"%s\"", p->entries[i].file);
+                invalidate_package_entry(&(p->entries[i]));
+            }
         }
     }
 }

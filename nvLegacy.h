@@ -41,6 +41,7 @@ typedef struct _LEGACY_STRINGS {
  * This table describes how we should refer to legacy branches.
  */
 static const LEGACY_STRINGS LegacyStrings[] = {
+    { 6, "367.xx" },
     { 5, "340.xx" },
     { 4, "304.xx" },
     { 3, "173.14.xx" },
@@ -564,7 +565,11 @@ static const LEGACY_INFO LegacyList[] = {
     { 0x10C0, 0x0000, 0x0000,  5,      "GeForce 9300 GS" },
     { 0x10C3, 0x0000, 0x0000,  5,      "GeForce 8400GS" },
     { 0x10C5, 0x0000, 0x0000,  5,      "GeForce 405" },
-    { 0x10D8, 0x0000, 0x0000,  5,      "NVS 300" }
+    { 0x10D8, 0x0000, 0x0000,  5,      "NVS 300" },
+    { 0x0FEF, 0x0000, 0x0000,  6,      "GRID K340" },
+    { 0x0FF2, 0x0000, 0x0000,  6,      "GRID K1" },
+    { 0x118A, 0x0000, 0x0000,  6,      "GRID K520" },
+    { 0x11BF, 0x0000, 0x0000,  6,      "GRID K2" }
 };
 
 #endif /* __NV_LEGACY_H */

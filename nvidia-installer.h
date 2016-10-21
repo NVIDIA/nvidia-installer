@@ -155,8 +155,9 @@ typedef struct __options {
     int compat32_files_packaged;
     int x_files_packaged;
     int concurrency_level;
-    int load_error_ignored;
+    int skip_module_load;
     int glvnd_glx_client;
+    int glvnd_egl_client;
 
     NVOptionalBool install_libglx_indirect;
     NVOptionalBool install_libglvnd_libraries;
@@ -221,6 +222,8 @@ typedef struct __options {
     char *module_signing_key_path;
     char *module_signing_hash;
     char *module_signing_x509_hash;
+
+    char *libglvnd_json_path;
 
     int kernel_module_signed;
 
@@ -288,6 +291,9 @@ typedef enum {
     FILE_TYPE_VULKAN_ICD_JSON,
     FILE_TYPE_GLX_CLIENT_LIB,
     FILE_TYPE_GLX_CLIENT_SYMLINK,
+    FILE_TYPE_GLVND_EGL_ICD_JSON,
+    FILE_TYPE_EGL_CLIENT_LIB,
+    FILE_TYPE_EGL_CLIENT_SYMLINK,
     FILE_TYPE_MAX
 } PackageEntryFileType;
 
@@ -504,6 +510,8 @@ typedef struct __package {
  */
 #define XORG7_DEFAULT_X_PREFIX          "/usr"
 #define XORG7_DEFAULT_X_MODULEDIR       "xorg/modules"
+
+#define DEFAULT_GLVND_EGL_JSON_PATH     "/usr/share/glvnd/egl_vendor.d"
 
 /*
  * Older versions of Debian GNU/Linux for x86-64 install 32-bit

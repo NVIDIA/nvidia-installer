@@ -101,6 +101,8 @@ enum {
     NO_LIBGLX_INDIRECT,
     INSTALL_LIBGLVND_OPTION,
     GLVND_GLX_CLIENT_OPTION,
+    GLVND_EGL_CONFIG_FILE_PATH_OPTION,
+    GLVND_EGL_CLIENT_OPTION,
 };
 
 static const NVGetoptOption __options[] = {
@@ -662,12 +664,30 @@ static const NVGetoptOption __options[] = {
       "they appear to be missing." },
 
     { "glvnd-glx-client", GLVND_GLX_CLIENT_OPTION, NVGETOPT_IS_BOOLEAN, NULL,
-      "By default, the NVIDIA OpenGL driver will be installed with the new "
+      "By default, the NVIDIA GLX driver will be installed with the new "
       "GLVND architecture, to support coexisting with other GLVND-compliant "
-      "OpenGL drivers. However, some applications which do not conform to "
+      "GLX drivers. However, some applications which do not conform to "
       "the Linux OpenGL ABI may not be fully compatible with a GLVND-based "
-      "OpenGL driver. The --no-glvnd-glx-client option will select a "
+      "GLX driver. The --no-glvnd-glx-client option will select a "
       "non-GLVND GLX client library (libGL.so.1), which may help to avoid "
+      "compatibility issues with such applications."
+    },
+
+    { "glvnd-egl-config-path", GLVND_EGL_CONFIG_FILE_PATH_OPTION, NVGETOPT_STRING_ARGUMENT, NULL,
+      "If the package includes a libglvnd-based EGL library, then install the "
+      "EGL vendor library config file to this directory. If the libglvnd "
+      "libraries are already present, then by default the installer will try "
+      "to determine the path by running `pkg-config --variable=datadir "
+      "libglvnd`. If that fails, then it will default to "
+      DEFAULT_GLVND_EGL_JSON_PATH "."
+    },
+
+    { "glvnd-egl-client", GLVND_EGL_CLIENT_OPTION, NVGETOPT_IS_BOOLEAN, NULL,
+      "By default, the NVIDIA EGL driver will be installed with the new "
+      "GLVND architecture, to support coexisting with other GLVND-compliant "
+      "EGL drivers. However, some applications may not be fully compatible "
+      "with a GLVND-based EGL driver. The --no-glvnd-egl-client option will "
+      "select a non-GLVND EGL client library, which may help to avoid "
       "compatibility issues with such applications."
     },
 
