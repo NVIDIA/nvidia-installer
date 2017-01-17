@@ -103,6 +103,7 @@ enum {
     GLVND_GLX_CLIENT_OPTION,
     GLVND_EGL_CONFIG_FILE_PATH_OPTION,
     GLVND_EGL_CLIENT_OPTION,
+    EGL_EXTERNAL_PLATFORM_CONFIG_FILE_PATH_OPTION,
 };
 
 static const NVGetoptOption __options[] = {
@@ -689,6 +690,13 @@ static const NVGetoptOption __options[] = {
       "with a GLVND-based EGL driver. The --no-glvnd-egl-client option will "
       "select a non-GLVND EGL client library, which may help to avoid "
       "compatibility issues with such applications."
+    },
+
+    { "egl-external-platform-config-path",
+      EGL_EXTERNAL_PLATFORM_CONFIG_FILE_PATH_OPTION, NVGETOPT_STRING_ARGUMENT, NULL,
+      "If the package includes an EGL external platform library, then install "
+      "the EGL external platform library config file to this directory. "
+      "Defaults to " DEFAULT_EGL_EXTERNAL_PLATFORM_JSON_PATH "."
     },
 
     /* Orphaned options: These options were in the long_options table in

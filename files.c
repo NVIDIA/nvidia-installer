@@ -865,6 +865,12 @@ int set_destinations(Options *op, Package *p)
             p->entries[i].dst = NULL;
             continue;
 
+        case FILE_TYPE_EGL_EXTERNAL_PLATFORM_JSON:
+            prefix = op->external_platform_json_path;
+            dir = "";
+            path = "";
+            break;
+
         default:
             
             /* 

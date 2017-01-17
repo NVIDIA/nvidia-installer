@@ -147,6 +147,7 @@ static Options *load_default_options(void)
     op->install_compat32_libs = NV_OPTIONAL_BOOL_DEFAULT;
     op->install_libglx_indirect = NV_OPTIONAL_BOOL_DEFAULT;
     op->install_libglvnd_libraries = NV_OPTIONAL_BOOL_DEFAULT;
+    op->external_platform_json_path = DEFAULT_EGL_EXTERNAL_PLATFORM_JSON_PATH;
 
     return op;
 
@@ -458,6 +459,9 @@ static void parse_commandline(int argc, char *argv[], Options *op)
             break;
         case GLVND_EGL_CLIENT_OPTION:
             op->glvnd_egl_client = boolval;
+            break;
+        case EGL_EXTERNAL_PLATFORM_CONFIG_FILE_PATH_OPTION:
+            op->external_platform_json_path = strval;
             break;
         default:
             goto fail;

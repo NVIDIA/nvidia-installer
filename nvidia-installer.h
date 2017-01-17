@@ -225,6 +225,8 @@ typedef struct __options {
 
     char *libglvnd_json_path;
 
+    char *external_platform_json_path;
+
     int kernel_module_signed;
 
     void *ui_priv; /* for use by the ui's */
@@ -294,6 +296,7 @@ typedef enum {
     FILE_TYPE_GLVND_EGL_ICD_JSON,
     FILE_TYPE_EGL_CLIENT_LIB,
     FILE_TYPE_EGL_CLIENT_SYMLINK,
+    FILE_TYPE_EGL_EXTERNAL_PLATFORM_JSON,
     FILE_TYPE_MAX
 } PackageEntryFileType;
 
@@ -512,6 +515,8 @@ typedef struct __package {
 #define XORG7_DEFAULT_X_MODULEDIR       "xorg/modules"
 
 #define DEFAULT_GLVND_EGL_JSON_PATH     "/usr/share/glvnd/egl_vendor.d"
+
+#define DEFAULT_EGL_EXTERNAL_PLATFORM_JSON_PATH "/usr/share/egl/egl_external_platform.d"
 
 /*
  * Older versions of Debian GNU/Linux for x86-64 install 32-bit
