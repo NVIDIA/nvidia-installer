@@ -312,8 +312,10 @@ int install_from_cwd(Options *op)
      */
 
     if (!op->no_kernel_module || op->dkms) {
-        if (!load_kernel_module(op, "nvidia-drm")) {
-            goto failed;
+        if (package_includes_kernel_module(p, "nvidia-drm")) {
+            if (!load_kernel_module(op, "nvidia-drm")) {
+                goto failed;
+            }
         }
 
         if (package_includes_kernel_module(p, "nvidia-vgpu-vfio")) {
