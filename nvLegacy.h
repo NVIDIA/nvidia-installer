@@ -568,7 +568,6 @@ static const LEGACY_INFO LegacyList[] = {
     { 0x10D8, 0x0000, 0x0000,  5,      "NVS 300" },
     { 0x0FEF, 0x0000, 0x0000,  6,      "GRID K340" },
     { 0x0FF2, 0x0000, 0x0000,  6,      "GRID K1" },
-    { 0x118A, 0x0000, 0x0000,  6,      "GRID K520" },
     { 0x11BF, 0x0000, 0x0000,  6,      "GRID K2" }
 };
 

@@ -297,6 +297,8 @@ typedef enum {
     FILE_TYPE_EGL_CLIENT_LIB,
     FILE_TYPE_EGL_CLIENT_SYMLINK,
     FILE_TYPE_EGL_EXTERNAL_PLATFORM_JSON,
+    FILE_TYPE_FLEXERA_LIB,
+    FILE_TYPE_FLEXERA_LIB_SYMLINK,
     FILE_TYPE_MAX
 } PackageEntryFileType;
 
@@ -319,17 +321,17 @@ typedef enum {
 } PackageEntryFileGLVND;
 
 typedef struct {
-    unsigned int has_arch      : 1;
-    unsigned int has_tls_class : 1;
-    unsigned int installable   : 1;
-    unsigned int has_path      : 1;
-    unsigned int is_symlink    : 1;
-    unsigned int is_shared_lib : 1;
-    unsigned int is_opengl     : 1;
-    unsigned int is_temporary  : 1;
-    unsigned int is_wrapper    : 1;
-    unsigned int inherit_path  : 1;
-    unsigned int glvnd_select  : 1;
+    unsigned int has_arch       : 1;
+    unsigned int has_tls_class  : 1;
+    unsigned int installable    : 1;
+    unsigned int has_path       : 1;
+    unsigned int is_symlink     : 1;
+    unsigned int is_shared_lib  : 1;
+    unsigned int is_opengl      : 1;
+    unsigned int is_temporary   : 1;
+    unsigned int is_conflicting : 1;
+    unsigned int inherit_path   : 1;
+    unsigned int glvnd_select   : 1;
 } PackageEntryFileCapabilities;
 
 /*
