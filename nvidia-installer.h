@@ -152,6 +152,7 @@ typedef struct __options {
     int dkms;
     int check_for_alternate_installs;
     int install_uvm;
+    int install_drm;
     int compat32_files_packaged;
     int x_files_packaged;
     int concurrency_level;
@@ -427,6 +428,7 @@ typedef struct {
     int is_optional;                 /* e.g. TRUE for "nvidia-uvm" */
     char *optional_module_dependee;  /* e.g. "CUDA" for "nvidia-uvm" */
     char *disable_option;            /* e.g. "--no-unified-memory" */
+    int option_offset;               /* offset in Options struct for option */
 } KernelModuleInfo;
 
 

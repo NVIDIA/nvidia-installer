@@ -1158,34 +1158,67 @@ void should_install_compat32_files(Options *op, Package *p)
 }
 
 
+#define member_at_offset(base, offset, target_type) \
+    ((target_type *) ((char *) base + offset))
+
+
+static void set_optional_module_install(Options *op, int offset, int val) {
+    *member_at_offset(op, offset, int) = val;
+}
+
+static int get_optional_module_install(Options *op, int offset) {
+    return *member_at_offset(op, offset, int);
+}
+
 /*
- * should_install_uvm() - ask the user if he/she wishes to install UVM
+ * should_install_optional_modules() - ask the user if he/she wishes to install
+ * optional kernel modules
  */
 
-void should_install_uvm(Options *op, Package *p)
+void should_install_optional_modules(Options *op, Package *p,
+                                     const KernelModuleInfo* optional_modules,
+                                     int num_optional_modules)
 {
-    /* if the package does not include UVM, it can't be installed. */
+    int i;
 
-    if (!package_includes_kernel_module(p, "nvidia-uvm")) {
-        op->install_uvm = FALSE;
-        return;
-    }
+    for (i = 0; i < num_optional_modules; i++) {
+        int install = get_optional_module_install(op,
+                          optional_modules[i].option_offset);
 
-    /* ask expert users whether they want to install UVM */
+        /* if the package doesn't include the module, it can't be installed. */
 
-    if (op->expert) {
-        op->install_uvm = ui_yes_no(op, op->install_uvm, "Would you like to "
-                                    "install the NVIDIA Unified Memory kernel "
-                                    "module? You must install this module in "
-                                    "order to use CUDA.");
-    }
+        if (!package_includes_kernel_module(p,
+                                            optional_modules[i].module_name)) {
+            set_optional_module_install(op, optional_modules[i].option_offset,
+                                        FALSE);
+            continue;
+        }
 
-    if (!op->install_uvm) {
-        ui_warn(op, "The NVIDIA Unified Memory kernel module will not be "
-                "installed. As a result, CUDA applications will not be able to "
-                "run with this installation of the NVIDIA driver.");
+        /* ask expert users whether they want to install the module */
 
-        remove_kernel_module_from_package(p, "nvidia-uvm");
+        if (op->expert) {
+            int default_value = install;
+            install = ui_yes_no(op, default_value, "Would you like to install "
+                                "the %s kernel module? You must install "
+                                "this module in order to use %s.",
+                                optional_modules[i].module_name,
+                                optional_modules[i].optional_module_dependee);
+            if (install != default_value) {
+                set_optional_module_install(op,
+                                            optional_modules[i].option_offset,
+                                            install);
+            }
+        }
+
+        if (!install) {
+            ui_warn(op, "The %s module will not be installed. As a result, %s "
+                    "will not function with this installation of the NVIDIA "
+                    "driver.", optional_modules[i].module_name,
+                    optional_modules[i].optional_module_dependee);
+
+            remove_kernel_module_from_package(p,
+                                              optional_modules[i].module_name);
+        }
     }
 }
 

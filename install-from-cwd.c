@@ -32,6 +32,7 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <unistd.h>
+#include <stddef.h>
 
 #include <sys/mman.h>
 #include <sys/types.h>
@@ -55,6 +56,20 @@ static int install_kernel_modules(Options *op,  Package *p);
 static void free_package(Package *p);
 static int assisted_module_signing(Options *op, Package *p);
 
+static const KernelModuleInfo optional_modules[] = {
+    {
+         .module_name = "nvidia-uvm",
+         .optional_module_dependee = "CUDA",
+         .disable_option = "no-unified-memory",
+         .option_offset = offsetof(Options, install_uvm),
+    },
+    {
+         .module_name = "nvidia-drm",
+         .optional_module_dependee = "DRM-KMS",
+         .disable_option = "no-drm",
+         .option_offset = offsetof(Options, install_drm),
+    },
+};
 
 /*
  * install_from_cwd() - perform an installation from the current
@@ -167,9 +182,10 @@ int install_from_cwd(Options *op)
 
     if (!check_for_nouveau(op)) goto failed;
 
-    /* ask if we should install the UVM kernel module */
+    /* ask if we should install the optional kernel modules */
 
-    should_install_uvm(op, p);
+    should_install_optional_modules(op, p, optional_modules,
+                                    ARRAY_LEN(optional_modules));
 
     /* attempt to build the kernel modules for the target kernel */
 
@@ -622,7 +638,6 @@ static int has_separate_interface_file(char *name) {
     return TRUE;
 };
 
-
 /*
  * Populate the module info records for optional records with information
  * that can be used in e.g. error messages.
@@ -631,19 +646,13 @@ static void populate_optional_module_info(KernelModuleInfo *module)
 {
     int i;
 
-    static struct {
-        const char *name;
-        char * const dependee;
-        char * const disable_option;
-    } optional_modules[] = {
-        { "nvidia-uvm", "CUDA", "no-unified-memory" },
-    };
-
     for (i = 0; i < ARRAY_LEN(optional_modules); i++) {
-        if (strcmp(optional_modules[i].name, module->module_name) == 0) {
+        if (strcmp(optional_modules[i].module_name, module->module_name) == 0) {
             module->is_optional = TRUE;
-            module->optional_module_dependee = optional_modules[i].dependee;
+            module->optional_module_dependee =
+                optional_modules[i].optional_module_dependee;
             module->disable_option = optional_modules[i].disable_option;
+            module->option_offset = optional_modules[i].option_offset;
             return;
         }
     }

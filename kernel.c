@@ -71,7 +71,7 @@ static int init_libkmod(void);
 static void close_libkmod(void);
 static int run_conftest(Options *op, const char *dir, const char *args,
                         char **result);
-static int run_make(Options *op, Package *p, char *dir, const char *target,
+static int run_make(Options *op, Package *p, const char *dir, const char *target,
                     char **vars, const char *status, int lines);
 static void load_kernel_module_quiet(Options *op, const char *module_name);
 static void modprobe_remove_kernel_module_quiet(Options *op, const char *name);
@@ -572,13 +572,31 @@ int unpack_kernel_modules(Options *op, Package *p, const char *build_directory,
 }
 
 
-static int check_file(Options *op, const char *dir, const char *modname)
+static int check_file(Options *op, Package *p, const char *dir,
+                      const char *modname)
 {
     int ret;
     char *path;
 
     path = nvstrcat(dir, "/", modname, ".ko", NULL);
     ret = access(path, F_OK);
+
+    if (ret == -1) {
+        char *single_module_list = nvstrcat("NV_KERNEL_MODULES=\"", modname,
+                                            "\"", NULL);
+        char *rebuild_msg = nvstrcat("Checking to see whether the ", modname,
+                                     " kernel module was successfully built",
+                                     NULL);
+        /* Attempt to rebuild the individual module, in case the failure
+         * is module-specific and due to a different module */
+        run_make(op, p, dir, single_module_list, NULL, rebuild_msg, 25);
+        nvfree(single_module_list);
+        nvfree(rebuild_msg);
+
+        /* Check the file again */
+        ret = access(path, F_OK);
+    }
+
     nvfree(path);
 
     if (ret == -1) {
@@ -933,7 +951,7 @@ int build_kernel_interfaces(Options *op, Package *p,
 
     /* Test to make sure that all kernel modules were built. */
     for (i = 0; i < p->num_kernel_modules; i++) {
-        if (!check_file(op, builddir, p->kernel_modules[i].module_name)) {
+        if (!check_file(op, p, builddir, p->kernel_modules[i].module_name)) {
             handle_optional_module_failure(op,
                                            p->kernel_modules[i], ui_error,
                                            "build");
@@ -2543,7 +2561,7 @@ char *get_machine_arch(Options *op)
  * using 'status' as the initial message, expecting 'lines' lines of output
  * from the make command.
  */
-static int run_make(Options *op, Package *p, char *dir, const char *target,
+static int run_make(Options *op, Package *p, const char *dir, const char *target,
                     char **vars, const char *status, int lines) {
     char *cmd, *concurrency, *data = NULL;
     int i = 0, ret;
