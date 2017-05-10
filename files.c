@@ -757,6 +757,8 @@ int set_destinations(Options *op, Package *p)
 
         case FILE_TYPE_GRID_LIB:
         case FILE_TYPE_GRID_LIB_SYMLINK:
+        case FILE_TYPE_FLEXERA_LIB:
+        case FILE_TYPE_FLEXERA_LIB_SYMLINK:
             prefix = op->opengl_prefix;
             dir = op->opengl_libdir;
             path = p->entries[i].path;

@@ -906,7 +906,7 @@ ConflictingFileInfo *build_conflicting_file_list(Options *op, Package *p)
 
     for (i = 0; i < p->num_entries; i++) {
         PackageEntry *entry = &p->entries[i];
-        if (entry->caps.is_shared_lib && !entry->caps.is_wrapper) {
+        if (entry->caps.is_shared_lib && entry->caps.is_conflicting) {
             get_conflicting_file_info(entry->name, &cfList[index++]);
         }
     }

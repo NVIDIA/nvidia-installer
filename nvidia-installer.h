@@ -152,6 +152,7 @@ typedef struct __options {
     int dkms;
     int check_for_alternate_installs;
     int install_uvm;
+    int install_drm;
     int compat32_files_packaged;
     int x_files_packaged;
     int concurrency_level;
@@ -294,6 +295,8 @@ typedef enum {
     FILE_TYPE_GLVND_EGL_ICD_JSON,
     FILE_TYPE_EGL_CLIENT_LIB,
     FILE_TYPE_EGL_CLIENT_SYMLINK,
+    FILE_TYPE_FLEXERA_LIB,
+    FILE_TYPE_FLEXERA_LIB_SYMLINK,
     FILE_TYPE_MAX
 } PackageEntryFileType;
 
@@ -316,17 +319,17 @@ typedef enum {
 } PackageEntryFileGLVND;
 
 typedef struct {
-    unsigned int has_arch      : 1;
-    unsigned int has_tls_class : 1;
-    unsigned int installable   : 1;
-    unsigned int has_path      : 1;
-    unsigned int is_symlink    : 1;
-    unsigned int is_shared_lib : 1;
-    unsigned int is_opengl     : 1;
-    unsigned int is_temporary  : 1;
-    unsigned int is_wrapper    : 1;
-    unsigned int inherit_path  : 1;
-    unsigned int glvnd_select  : 1;
+    unsigned int has_arch       : 1;
+    unsigned int has_tls_class  : 1;
+    unsigned int installable    : 1;
+    unsigned int has_path       : 1;
+    unsigned int is_symlink     : 1;
+    unsigned int is_shared_lib  : 1;
+    unsigned int is_opengl      : 1;
+    unsigned int is_temporary   : 1;
+    unsigned int is_conflicting : 1;
+    unsigned int inherit_path   : 1;
+    unsigned int glvnd_select   : 1;
 } PackageEntryFileCapabilities;
 
 /*
@@ -422,6 +425,7 @@ typedef struct {
     int is_optional;                 /* e.g. TRUE for "nvidia-uvm" */
     char *optional_module_dependee;  /* e.g. "CUDA" for "nvidia-uvm" */
     char *disable_option;            /* e.g. "--no-unified-memory" */
+    int option_offset;               /* offset in Options struct for option */
 } KernelModuleInfo;
 
 

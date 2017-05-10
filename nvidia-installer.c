@@ -142,6 +142,7 @@ static Options *load_default_options(void)
     op->dkms = FALSE;
     op->check_for_alternate_installs = TRUE;
     op->install_uvm = TRUE;
+    op->install_drm = TRUE;
     op->glvnd_glx_client = TRUE;
     op->glvnd_egl_client = TRUE;
     op->install_compat32_libs = NV_OPTIONAL_BOOL_DEFAULT;
@@ -436,6 +437,9 @@ static void parse_commandline(int argc, char *argv[], Options *op)
             break;
         case NO_UVM_OPTION:
             op->install_uvm = FALSE;
+        break;
+        case NO_DRM_OPTION:
+            op->install_drm = FALSE;
         break;
         case NO_CHECK_FOR_ALTERNATE_INSTALLS_OPTION:
             op->check_for_alternate_installs = FALSE;

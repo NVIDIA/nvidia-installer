@@ -95,6 +95,7 @@ enum {
     INSTALL_VDPAU_WRAPPER_OPTION,
     NO_CHECK_FOR_ALTERNATE_INSTALLS_OPTION,
     NO_UVM_OPTION,
+    NO_DRM_OPTION,
     INSTALL_COMPAT32_LIBS_OPTION,
     X_SYSCONFIG_PATH_OPTION,
     FORCE_LIBGLX_INDIRECT,
@@ -640,6 +641,14 @@ static const NVGetoptOption __options[] = {
       "run. The '--no-unified-memory' option should only be used to work "
       "around failures to build or install the Unified Memory kernel module on "
       "systems that do not need to run CUDA." },
+
+    { "no-drm", NO_DRM_OPTION, 0, NULL,
+      "Do not install the nvidia-drm kernel module. This kernel module "
+      "provides several features, including X11 autoconfiguration, support for "
+      "PRIME, and DRM-KMS. The latter is used to support modesetting on "
+      "windowing systems that run independently of X11. The '--no-drm' option "
+      "should only be used to work around failures to build or install the "
+      "nvidia-drm kernel module on systems that do not need these features." },
 
     { "concurrency-level", 'j', NVGETOPT_INTEGER_ARGUMENT, NULL,
       "Set the concurrency level for operations such as building the kernel "
