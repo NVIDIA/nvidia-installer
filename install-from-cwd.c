@@ -264,6 +264,12 @@ int install_from_cwd(Options *op)
     }
 
     /*
+     * now that we selected GLVND, generate the proper Vulkan ICD configuration
+     * file
+     */
+    process_vulkan_icd_file(op, p);
+
+    /*
      * now that we have the installation prefixes, build the
      * destination for each file to be installed
      */

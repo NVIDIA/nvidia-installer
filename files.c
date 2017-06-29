@@ -2294,12 +2294,56 @@ void process_dkms_conf(Options *op, Package *p)
 
 }
 
+void process_vulkan_icd_file(Options *op, Package *p)
+{
+    int i;
+    char *tmpfile;
+
+    PackageEntry *vkIcdJsonEntry = NULL;
+
+    char *tokens[2] = { "__NV_VK_ICD__", NULL };
+    char *replacements[2] = { NULL, NULL };
+
+    for (i = 0; i < p->num_entries; i++) {
+        if (p->entries[i].type == FILE_TYPE_VULKAN_ICD_JSON) {
+            vkIcdJsonEntry = &p->entries[i];
+        }
+    }
+
+    if (!vkIcdJsonEntry) {
+        return;
+    }
+
+    invalidate_package_entry(vkIcdJsonEntry);
+
+    if (op->glvnd_glx_client) {
+        replacements[0] = "libGLX_nvidia.so.0";
+    } else {
+        replacements[0] = "libGL.so.1";
+    }
+
+    tmpfile = process_template_file(op, vkIcdJsonEntry, tokens, replacements);
+
+    if (tmpfile) {
+        add_package_entry(p,
+                          tmpfile,
+                          vkIcdJsonEntry->path,
+                          "nvidia_icd.json",
+                          NULL /* target */,
+                          NULL /* dst */,
+                          FILE_TYPE_VULKAN_ICD_JSON,
+                          vkIcdJsonEntry->tls_class,
+                          vkIcdJsonEntry->compat_arch,
+                          vkIcdJsonEntry->glvnd,
+                          vkIcdJsonEntry->mode);
+    }
+}
 
 /*
- * set_security_context() - set the security context of the file to 'shlib_t'
+ * set_security_context() - set the security context of the file to 'type'
  * Returns TRUE on success or if SELinux is disabled, FALSE otherwise
  */
-int set_security_context(Options *op, const char *filename) 
+int set_security_context(Options *op, const char *filename, const char *type)
 {
     char *cmd = NULL;
     int ret = FALSE;
@@ -2308,8 +2352,7 @@ int set_security_context(Options *op, const char *filename)
         return TRUE;
     } 
     
-    cmd = nvstrcat(op->utils[CHCON], " -t ", op->selinux_chcon_type, " ",
-                   filename, NULL);
+    cmd = nvstrcat(op->utils[CHCON], " -t ", type, " ", filename, NULL);
     
     ret = run_command(op, cmd, NULL, FALSE, 0, TRUE);
     
@@ -2317,7 +2360,7 @@ int set_security_context(Options *op, const char *filename)
     nvfree(cmd);
     
     return ret;
-} /* set_security_context() */
+}
 
 
 static char * const native_libdirs[] = {
