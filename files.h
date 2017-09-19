@@ -64,7 +64,7 @@ char *process_template_file(Options *op, PackageEntry *pe,
                             char **tokens, char **replacements);
 void process_libGL_la_files(Options *op, Package *p);
 void process_dot_desktop_files(Options *op, Package *p);
-int set_security_context(Options *op, const char *filename);
+int set_security_context(Options *op, const char *filename, const char *type);
 void get_default_prefixes_and_paths(Options *op);
 char *nv_strreplace(char *src, char *orig, char *replace);
 char *get_filename(Options *op, const char *def, const char *msg);

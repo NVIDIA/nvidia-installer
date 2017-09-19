@@ -43,7 +43,6 @@
 #include "backup.h"
 #include "files.h"
 #include "misc.h"
-#include "update.h"
 #include "sanity.h"
 #include "option_table.h"
 #include "msg.h"
@@ -132,7 +131,6 @@ static Options *load_default_options(void)
     /* statically initialized strings */
     op->proc_mount_point = DEFAULT_PROC_MOUNT_POINT;
     op->log_file_name = DEFAULT_LOG_FILE_NAME;
-    op->ftp_site = DEFAULT_FTP_SITE;
 
     op->tmpdir = get_tmpdir(op);
     op->distro = get_distribution(op);
@@ -199,7 +197,6 @@ static void parse_commandline(int argc, char *argv[], Options *op)
         switch (c) {
             
         case 'a': op->accept_license = TRUE; break;
-        case UPDATE_OPTION: op->update = TRUE; break;
         case 'e': op->expert = TRUE; break;
         case 'v': print_version(); exit(0); break;
         case 'd': op->debug = TRUE; break;
@@ -210,9 +207,6 @@ static void parse_commandline(int argc, char *argv[], Options *op)
             
         case 'n': op->no_precompiled_interface = TRUE; break;
         case 'c': op->no_ncurses_color = TRUE; break;
-        case 'l': op->latest = TRUE; break;
-        case 'm': op->ftp_site = strval; break;
-        case 'f': op->update = op->force_update = TRUE; break;
         case 'h': print_help_after = TRUE; break;
         case 'A':
             print_help_after = TRUE;
@@ -333,13 +327,12 @@ static void parse_commandline(int argc, char *argv[], Options *op)
                            "nvidia-installer will ignore this option.");
             break;
         case 'N':
-            op->no_network = TRUE;
+            /* This option is no longer used; ignore it. */
+            nv_warning_msg("The '--no-network' option is deprecated:  "
+                           "nvidia-installer will ignore this option.");
             break;
         case PRECOMPILED_KERNEL_INTERFACES_PATH_OPTION:
             op->precompiled_kernel_interfaces_path = strval;
-            break;
-        case PRECOMPILED_KERNEL_INTERFACES_URL_OPTION:
-            op->precompiled_kernel_interfaces_url = strval;
             break;
         case NO_ABI_NOTE_OPTION:
             op->no_abi_note = TRUE;
@@ -440,21 +433,6 @@ static void parse_commandline(int argc, char *argv[], Options *op)
         break;
         default:
             goto fail;
-        }
-
-        /*
-         * as we go, build a list of options that we would pass on to
-         * a new invocation of the installer if we were to download a
-         * new driver and run its installer (update mode).  Be sure
-         * not to place "--update" or "--force-update" in the update
-         * argument list (avoid infinite loop)
-         */
-    
-        if ((c != UPDATE_OPTION) && (c != 'f')) {
-            
-            op->update_arguments =
-                append_update_arguments(op->update_arguments,
-                                        c, strval, __options);
         }
 
     }
@@ -570,15 +548,9 @@ int main(int argc, char *argv[])
 
     get_default_prefixes_and_paths(op);
 
-    /* get the latest available driver version */
-
-    if (op->latest) {
-        ret = report_latest_driver_version(op);
-    }
-
     /* get driver information */
 
-    else if (op->driver_info) {
+    if (op->driver_info) {
         ret = report_driver_information(op);
     }
 
@@ -592,12 +564,6 @@ int main(int argc, char *argv[])
 
     else if (op->uninstall) {
         ret = uninstall_existing_driver(op, TRUE);
-    }
-
-    /* update */
-    
-    else if (op->update) {
-        ret = update(op);
     }
 
     /* add this kernel */

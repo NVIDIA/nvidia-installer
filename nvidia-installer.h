@@ -125,7 +125,6 @@ typedef uint8_t uint8;
 typedef struct __options {
 
     int accept_license;
-    int update;
     int expert;
     int uninstall;
     int driver_info;
@@ -133,8 +132,6 @@ typedef struct __options {
     int logging;
     int no_precompiled_interface;
     int no_ncurses_color;
-    int latest;
-    int force_update;
     int opengl_headers;
     int nvidia_modprobe;
     int no_questions;
@@ -144,7 +141,6 @@ typedef struct __options {
     int sanity;
     int add_this_kernel;
     int no_backup;
-    int no_network;
     int kernel_module_only;
     int no_kernel_module;
     int no_abi_note;
@@ -214,14 +210,10 @@ typedef struct __options {
     char *ui_str;
     char *log_file_name;
 
-    char *ftp_site;
-
     char *tmpdir;
-    char *update_arguments;
     char *kernel_name;
     char *rpm_file_list;
     char *precompiled_kernel_interfaces_path;
-    char *precompiled_kernel_interfaces_url;
     const char *selinux_chcon_type;
 
     char *module_signing_secret_key;
@@ -491,8 +483,6 @@ typedef struct __package {
 #define DEBIAN_DEFAULT_COMPAT32_LIBDIR "lib/i386-linux-gnu"
 
 #define DEFAULT_PROC_MOUNT_POINT "/proc"
-
-#define DEFAULT_FTP_SITE "ftp://download.nvidia.com"
 
 #define LICENSE_FILE "LICENSE"
 

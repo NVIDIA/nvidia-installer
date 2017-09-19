@@ -2112,10 +2112,10 @@ void process_dot_desktop_files(Options *op, Package *p)
 
 
 /*
- * set_security_context() - set the security context of the file to 'shlib_t'
+ * set_security_context() - set the security context of the file to 'type'
  * Returns TRUE on success or if SELinux is disabled, FALSE otherwise
  */
-int set_security_context(Options *op, const char *filename) 
+int set_security_context(Options *op, const char *filename, const char *type)
 {
     char *cmd = NULL;
     int ret = FALSE;
@@ -2124,8 +2124,7 @@ int set_security_context(Options *op, const char *filename)
         return TRUE;
     } 
     
-    cmd = nvstrcat(op->utils[CHCON], " -t ", op->selinux_chcon_type, " ",
-                   filename, NULL);
+    cmd = nvstrcat(op->utils[CHCON], " -t ", type, " ", filename, NULL);
     
     ret = run_command(op, cmd, NULL, FALSE, 0, TRUE);
     
@@ -2133,7 +2132,7 @@ int set_security_context(Options *op, const char *filename)
     if (cmd) nvfree(cmd);
     
     return ret;
-} /* set_security_context() */
+}
 
 
 /*
