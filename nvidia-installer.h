@@ -168,6 +168,7 @@ typedef struct __options {
     int install_uvm;
     int uvm_files_packaged;
     int x_files_packaged;
+    int skip_module_load;
 
     NVOptionalBool install_vdpau_wrapper;
 
