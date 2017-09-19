@@ -858,6 +858,10 @@ static int modprobe_helper(Options *op, const char *module_name,
     char *cmd, *data;
     int ret, old_loglevel, loglevel_set;
 
+    if (op->skip_module_load) {
+        return TRUE;
+    }
+
     cmd = nvstrcat(op->utils[MODPROBE],
                    quiet ? " -q" : "",
                    unload ? " -r" : "",
@@ -1113,7 +1117,7 @@ int find_precompiled_kernel_interface(Options *op, Package *p)
 
 /*
  * get_kernel_name() - get the kernel name: this is either what
- * the user specified via the --kernel-name option, or `name -r`.
+ * the user specified via the --kernel-name option, or `uname -r`.
  */
 
 char __kernel_name[256];
@@ -1122,18 +1126,29 @@ char *get_kernel_name(Options *op)
 {
     struct utsname uname_buf;
 
-    if (op->kernel_name) {
-        return op->kernel_name;
+    __kernel_name[0] = '\0';
+
+    if (uname(&uname_buf) == -1) {
+        ui_warn(op, "Unable to determine the version of the running kernel "
+                "(%s).", strerror(errno));
     } else {
-        if (uname(&uname_buf) == -1) {
-            ui_warn(op, "Unable to determine kernel version (%s).",
-                    strerror(errno));
-            return NULL;
-        } else {
-            strncpy(__kernel_name, uname_buf.release, 256);
-            return __kernel_name;
-        }
+        strncpy(__kernel_name, uname_buf.release, sizeof(__kernel_name));
+        __kernel_name[sizeof(__kernel_name) - 1] = '\0';
     }
+
+    if (op->kernel_name) {
+        if (strcmp(op->kernel_name, __kernel_name) != 0) {
+            /* Don't load kernel modules built against a non-running kernel */
+            op->skip_module_load = TRUE;
+        }
+        return op->kernel_name;
+    }
+
+    if (__kernel_name[0]) {
+        return __kernel_name;
+    }
+
+    return NULL;
 } /* get_kernel_name() */
 
 

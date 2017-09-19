@@ -143,6 +143,7 @@ typedef struct __options {
     int no_opengl_files;
     int no_kernel_module_source;
     int dkms;
+    int skip_module_load;
 
     char *opengl_prefix;
     char *opengl_libdir;
