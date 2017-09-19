@@ -1446,7 +1446,7 @@ static int tls_test_internal(Options *op, int which_tls,
         goto done;
     }
     
-    if (set_security_context(op, dso_tmpfile) == FALSE) {
+    if (!set_security_context(op, dso_tmpfile, op->selinux_chcon_type)) {
         /* We are on a system with SELinux and the chcon command failed.
          * Assume that the system is recent enough to have the new TLS
          */
@@ -2222,17 +2222,13 @@ int check_selinux(Options *op)
             ui_warn(op, "Couldn't test chcon.  Assuming shlib_t.");
             op->selinux_chcon_type = "shlib_t";
         } else {
-            int i, ret;
-            char *cmd;
+            int i;
 
             /* Try each chcon command */
             for (i = 0; chcon_types[i]; i++) {
-                cmd = nvstrcat(op->utils[CHCON], " -t ", chcon_types[i], " ",
-                               tmpfile, NULL);
-                ret = run_command(op, cmd, NULL, FALSE, 0, TRUE);
-                nvfree(cmd);
-
-                if (ret == 0) break;
+                if (set_security_context(op, tmpfile, chcon_types[i])) {
+                    break;
+                }
             }
 
             if (!chcon_types[i]) {

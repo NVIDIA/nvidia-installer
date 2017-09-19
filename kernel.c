@@ -39,7 +39,6 @@
 #include "files.h"
 #include "misc.h"
 #include "precompiled.h"
-#include "snarf.h"
 #include "crc.h"
 #include "conflicting-kernel-modules.h"
 
@@ -49,8 +48,6 @@ static char *default_kernel_module_installation_path(Options *op);
 static char *default_kernel_source_path(Options *op);
 static int check_for_loaded_kernel_module(Options *op, const char *);
 static void check_for_warning_messages(Options *op);
-static PrecompiledInfo *download_updated_kernel_interface(Options*, Package*,
-                                                          const char*);
 static int fbdev_check(Options *op, Package *p);
 static int xen_check(Options *op, Package *p);
 
@@ -733,9 +730,15 @@ static int set_loglevel(int level, int *old_level)
 
 int test_kernel_module(Options *op, Package *p)
 {
-    char *cmd = NULL, *data;
+    char *cmd = NULL, *data, *kernel_module_fullpath;
     int ret, i, old_loglevel, loglevel_set;
     const char *depmods[] = { "agpgart", "i2c-core", "drm" };
+
+    /* SELinux type labels to add to kernel modules */
+    static const char *selinux_kmod_types[] = {
+        "modules_object_t",
+        NULL
+    };
 
     /* 
      * If we're building/installing for a different kernel, then we
@@ -755,12 +758,27 @@ int test_kernel_module(Options *op, Package *p)
         }
     }
 
+    kernel_module_fullpath = nvstrcat(p->kernel_module_build_directory, "/",
+                                      p->kernel_module_filename, NULL);
+
+    /* Some SELinux policies require specific file type labels for inserting
+     * kernel modules. Attempt to set known types until one succeeds. If all
+     * types fail, hopefully it's just because no type is needed. */
+    for (i = 0; selinux_kmod_types[i]; i++) {
+        if (set_security_context(op, kernel_module_fullpath,
+                                 selinux_kmod_types[i])) {
+            break;
+
+        }
+    }
+
     cmd = nvstrcat(op->utils[INSMOD], " ",
-                   p->kernel_module_build_directory, "/",
-                   p->kernel_module_filename,
+                   kernel_module_fullpath,
                    " NVreg_DeviceFileUID=0 NVreg_DeviceFileGID=0"
                    " NVreg_DeviceFileMode=0 NVreg_ModifyDeviceFiles=0",
                    NULL);
+
+    nvfree(kernel_module_fullpath);
 
     loglevel_set = set_loglevel(PRINTK_LOGLEVEL_KERN_ALERT, &old_loglevel);
 
@@ -1065,23 +1083,6 @@ int find_precompiled_kernel_interface(Options *op, Package *p)
         info = scan_dir(op, p, p->precompiled_kernel_interface_directory,
                         output_filename, proc_version_string);
     }
-    
-    /*
-     * If we didn't find a matching precompiled kernel interface, ask
-     * if we should try to download one.
-     */
-
-    if (!info && !op->no_network && op->precompiled_kernel_interfaces_url) {
-        info = download_updated_kernel_interface(op, p,
-                                                 proc_version_string);
-        if (!info) {
-            ui_message(op, "No matching precompiled kernel interface was "
-                       "found at '%s'; this means that the installer will need "
-                       "to compile a kernel interface for your kernel.",
-                       op->precompiled_kernel_interfaces_url);
-            return FALSE;
-        }
-    }
 
     /* If we found one, ask expert users if they really want to use it */
 
@@ -1370,169 +1371,6 @@ int rmmod_kernel_module(Options *op, const char *module_name)
     return ret ? FALSE : TRUE;
     
 } /* rmmod_kernel_module() */
-
-
-
-/*
- * get_updated_kernel_interfaces() - 
- */
-
-static PrecompiledInfo *
-download_updated_kernel_interface(Options *op, Package *p,
-                                  const char *proc_version_string)
-{
-    int fd = -1;
-    int dst_fd = -1;
-    int length;
-    char *url = NULL;
-    char *tmpfile = NULL;
-    char *dstfile = NULL;
-    char *buf = NULL;
-    char *output_filename = NULL;
-    char *str = (void *) -1;
-    char *ptr, *s;
-    struct stat stat_buf;
-    PrecompiledInfo *info = NULL;
-    uint32 crc;
-    
-    /* initialize the tmpfile and url strings */
-    
-    tmpfile = nvstrcat(op->tmpdir, "/nv-updates-XXXXXX", NULL);
-    url = nvstrcat(op->precompiled_kernel_interfaces_url, "/", INSTALLER_OS,
-                   "-", INSTALLER_ARCH, "/", p->version, "/updates/updates.txt",
-                   NULL);
-
-    /*
-     * create a temporary file in which to write the list of available
-     * updates
-     */
-
-    if ((fd = mkstemp(tmpfile)) == -1) {
-        ui_error(op, "Unable to create temporary file (%s)", strerror(errno));
-        goto done;
-    }
-
-    /* download the updates list */
-
-    if (!snarf(op, url, fd, SNARF_FLAGS_DOWNLOAD_SILENT)) goto done;
-    
-    /* get the length of the file */
-
-    if (fstat(fd, &stat_buf) == -1) goto done;
-
-    length = stat_buf.st_size;
-    
-    /* map the file into memory for easier reading */
-    
-    str = mmap(0, length, PROT_READ, MAP_FILE | MAP_SHARED, fd, 0);
-    if (str == (void *) -1) goto done;
-    
-    /*
-     * loop over each line of the updates file: each line should be of
-     * the format: "[filename]:::[proc version string]"
-     */
-
-    ptr = str;
-
-    while (TRUE) {
-        buf = get_next_line(ptr, &ptr, str, length);
-        if ((!buf) || (buf[0] == '\0')) goto done;
-
-        s = strstr(buf, ":::");
-        if (!s) {
-            ui_error(op, "Invalid updates.txt list.");
-            goto done;
-        }
-        
-        s += 3; /* skip past the ":::" separator */
-        
-        if (strcmp(proc_version_string, s) == 0) {
-            
-            /* proc versions strings match */
-            
-            /*
-             * terminate the string at the start of the ":::"
-             * separator so that buf is the filename
-             */
-            
-            s -= 3;
-            *s = '\0';
-
-            /* build the new url and dstfile strings */
-
-            nvfree(url);
-            url = nvstrcat(op->precompiled_kernel_interfaces_url, "/",
-                           INSTALLER_OS, "-", INSTALLER_ARCH, "/", p->version,
-                           "/updates/", buf, NULL);
-
-            dstfile = nvstrcat(p->precompiled_kernel_interface_directory,
-                               "/", buf, NULL);
-            
-            /* create dstfile */
-            
-            dst_fd = creat(dstfile, S_IRUSR | S_IWUSR);
-            if (dst_fd == -1) {
-                ui_error(op, "Unable to create file '%s' (%s).",
-                         dstfile, strerror(errno));
-                goto done;
-            }
-            
-            /* download the file */
-            
-            if (!snarf(op, url, dst_fd, SNARF_FLAGS_STATUS_BAR)) goto done;
-            
-            close(dst_fd);
-            dst_fd = -1;
-            
-            /* XXX once we have gpg setup, should check the file here */
-
-            /* build the output filename string */
-            
-            output_filename = nvstrcat(p->kernel_module_build_directory, "/",
-                                       PRECOMPILED_KERNEL_INTERFACE_FILENAME,
-                                       NULL);
-            
-            /* unpack the downloaded file */
-            
-            info = precompiled_unpack(op, dstfile, output_filename,
-                                      proc_version_string,
-                                      p->version);
-            
-            /* compare checksums */
-            
-            crc = compute_crc(op, output_filename);
-            
-            if (info && (info->crc != crc)) {
-                ui_error(op, "The embedded checksum of the downloaded file "
-                         "'%s' (%d) does not match the computed checksum ",
-                         "(%d); not using.", buf, info->crc, crc);
-                unlink(dstfile);
-                /* XXX free info */
-                info = NULL;
-            }
-            
-            goto done;
-        }
-
-        nvfree(buf);
-    }
-    
-
- done:
-
-    if (dstfile) nvfree(dstfile);
-    if (buf) nvfree(buf);
-    if (str != (void *) -1) munmap(str, stat_buf.st_size);
-    if (dst_fd > 0) close(dst_fd);
-    if (fd > 0) close(fd);
-
-    unlink(tmpfile);
-    if (tmpfile) nvfree(tmpfile);
-    if (url) nvfree(url);
-
-    return info;
-
-} /* get_updated_kernel_interfaces() */
 
 
 
