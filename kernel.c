@@ -71,6 +71,8 @@ static int run_make(Options *op, Package *p, const char *dir, const char *target
                     char **vars, const char *status, int lines);
 static void load_kernel_module_quiet(Options *op, const char *module_name);
 static void modprobe_remove_kernel_module_quiet(Options *op, const char *name);
+static int kernel_configuration_conflict(Options *op, Package *p,
+                                         int target_system_checks);
 
 /* libkmod handle and function pointers */
 static void *libkmod = NULL;
@@ -823,10 +825,9 @@ static int pack_kernel_interface(Options *op, Package *p,
 
 static void handle_optional_module_failure(Options *op,
                                            KernelModuleInfo module,
-                                           ui_message_func msg_func,
                                            const char *action) {
     if (module.is_optional) {
-        msg_func(op, "The %s kernel module failed to %s. This kernel module "
+        ui_error(op, "The %s kernel module failed to %s. This kernel module "
                  "is required for the proper operation of %s. If you do not "
                  "need to use %s, you can try to install this driver package "
                  "again with the '--%s' option.",
@@ -898,6 +899,13 @@ int build_kernel_interfaces(Options *op, Package *p,
         { "PREEMPT_RT", "preempt_rt_sanity_check" },
     };
 
+    /* do not build if there is a kernel configuration conflict (and don't
+     * perform target system checks if we're only building interfaces) */
+
+    if (kernel_configuration_conflict(op, p, fileInfos == NULL)) {
+        return 0;
+    }
+
     if (fileInfos) {
         *fileInfos = NULL;
     }
@@ -948,9 +956,7 @@ int build_kernel_interfaces(Options *op, Package *p,
     /* Test to make sure that all kernel modules were built. */
     for (i = 0; i < p->num_kernel_modules; i++) {
         if (!check_file(op, p, builddir, p->kernel_modules[i].module_name)) {
-            handle_optional_module_failure(op,
-                                           p->kernel_modules[i], ui_error,
-                                           "build");
+            handle_optional_module_failure(op, p->kernel_modules[i], "build");
             goto done;
         }
     }
@@ -1452,8 +1458,10 @@ int test_kernel_modules(Options *op, Package *p)
                                     cmd_output, ret);
             if (ret) {
                 op->skip_module_load = TRUE;
-                handle_optional_module_failure(op,
-                                               p->kernel_modules[i], ui_warn,
+                ui_log(op, "Ignoring failure to load %s.",
+                       p->kernel_modules[i].module_filename);
+            } else {
+                handle_optional_module_failure(op, p->kernel_modules[i],
                                                "load");
             }
         }
@@ -2509,6 +2517,96 @@ int package_includes_kernel_module(const Package *p, const char *module)
             return TRUE;
         }
     }
+
+    return FALSE;
+}
+
+#if defined(NV_PPC64LE)
+/*
+ * Check the current policy for onlining new memory blocks.
+ * Returns NV_OPTIONAL_BOOL_TRUE if the policy is to auto-online new blocks,
+ * NV_OPTIONAL_BOOL_FALSE if the policy is to leave new blocks offline, and
+ * NV_OPTIONAL_BOOL_DEFAULT if the policy cannot be determined.
+ */
+static NVOptionalBool auto_online_blocks(void)
+{
+    static const char *file = "/sys/devices/system/memory/auto_online_blocks";
+    int fd;
+    NVOptionalBool ret = NV_OPTIONAL_BOOL_DEFAULT;
+
+    fd = open(file, O_RDONLY);
+    if (fd >= 0) {
+        char auto_online_status[9]; /* strlen("offline\n") + 1 */
+        ssize_t bytes_read = read(fd, auto_online_status,
+                                  sizeof(auto_online_status) - 1);
+
+        if (bytes_read >= 0) {
+            int i = bytes_read;
+
+            /* NUL-terminate and truncate any trailing whitespace */
+            do {
+                auto_online_status[i] = '\0';
+                i--;
+            } while (i >= 0 && isspace(auto_online_status[i]));
+
+            if (strcmp(auto_online_status, "online") == 0) {
+                ret = NV_OPTIONAL_BOOL_TRUE;
+            } else if (strcmp(auto_online_status, "offline") == 0) {
+                ret = NV_OPTIONAL_BOOL_FALSE;
+            }
+        }
+
+        close(fd);
+    }
+
+    return ret;
+}
+#endif
+
+/*
+ * Check the kernel configuration for potential conflicts. Return TRUE if a
+ * conflict is detected, or FALSE if no conflict is detected, or the user
+ * chooses to ignore a conflict. target_system_checks enables additional
+ * checks that are only valid when performed on the target system.
+ */
+static int kernel_configuration_conflict(Options *op, Package *p,
+                                         int target_system_checks)
+{
+/* Auto-onlining is problematic on POWER9 and Volta or later */
+#if defined(NV_PPC64LE)
+    if (test_kernel_config_option(op, p, "CONFIG_MEMORY_HOTPLUG_DEFAULT_ONLINE")
+        == KERNEL_CONFIG_OPTION_DEFINED) {
+        NVOptionalBool auto_online = NV_OPTIONAL_BOOL_DEFAULT;
+
+        if (target_system_checks) {
+            auto_online = auto_online_blocks();
+        }
+
+        if (auto_online == NV_OPTIONAL_BOOL_FALSE) {
+            ui_log(op, "CONFIG_MEMORY_HOTPLUG_DEFAULT_ONLINE is enabled, but "
+                   "current policy is offline new memory blocks; continuing.");
+        } else {
+            int choice;
+            const char *msg = "CONFIG_MEMORY_HOTPLUG_DEFAULT_ONLINE is enabled "
+                              "on the target kernel. Some NVIDIA GPUs on some "
+                              "system configurations will not work correctly "
+                              "with auto-onlined memory; if you are not sure "
+                              "whether your system will work, configure your "
+                              "bootloader to set memhp_default_state=offline "
+                              "on the kernel command line, or build a kernel "
+                              "with CONFIG_MEMORY_HOTPLUG_DEFAULT_ONLINE "
+                              "disabled in the kernel configuration. If you "
+                              "choose to make these changes, you may abort "
+                              "the installation now in order to make them.";
+
+            choice = ui_multiple_choice(op, CONTINUE_ABORT_CHOICES,
+                                        NUM_CONTINUE_ABORT_CHOICES,
+                                        ABORT_CHOICE, "%s", msg);
+
+            return choice == ABORT_CHOICE;
+        }
+    }
+#endif
 
     return FALSE;
 }
