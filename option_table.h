@@ -116,13 +116,6 @@ static const NVGetoptOption __options[] = {
       "License Agreement contained in the file 'LICENSE' (in the top "
       "level directory of the driver package)." },
 
-    { "update", UPDATE_OPTION, NVGETOPT_HELP_ALWAYS, NULL,
-      "Connect to the NVIDIA FTP server ' " DEFAULT_FTP_SITE " ' and "
-      "determine the latest available driver version.  If there is a more "
-      "recent driver available, automatically download and install it.  Any "
-      "other options given on the commandline will be passed on to the "
-      "downloaded driver package when installing it." },
-
     { "version", 'v',
       NVGETOPT_HELP_ALWAYS | NVGETOPT_OPTION_APPLIES_TO_NVIDIA_UNINSTALL, NULL,
       "Print the nvidia-installer version and exit." },
@@ -342,26 +335,10 @@ static const NVGetoptOption __options[] = {
     { "tmpdir", TMPDIR_OPTION,
       NVGETOPT_STRING_ARGUMENT | NVGETOPT_OPTION_APPLIES_TO_NVIDIA_UNINSTALL,
       NULL, "Use the specified directory as a temporary directory when "
-      "downloading files from the NVIDIA ftp site; "
+      "generating transient files used by the installer; "
       "if not given, then the following list will be searched, and "
       "the first one that exists will be used: $TMPDIR, /tmp, ., "
       "$HOME." },
-
-    { "ftp-mirror", 'm', NVGETOPT_STRING_ARGUMENT, NULL,
-      "Use the specified FTP mirror rather than the default ' "
-      DEFAULT_FTP_SITE
-      " ' when downloading driver updates." },
-
-    { "latest", 'l', 0, NULL,
-      "Connect to the NVIDIA FTP server ' " DEFAULT_FTP_SITE " ' "
-      "(or use the ftp mirror "
-      "specified with the '--ftp-mirror' option) and query the most "
-      "recent " INSTALLER_OS "-" INSTALLER_ARCH " driver version number." },
-
-    { "force-update", 'f', 0, NULL,
-      "Forces an update to proceed, even if the installer "
-      "thinks the latest driver is already installed; this option "
-      "implies '--update'." },
 
     { "ui", USER_INTERFACE_OPTION,
       NVGETOPT_STRING_ARGUMENT | NVGETOPT_OPTION_APPLIES_TO_NVIDIA_UNINSTALL,
@@ -445,10 +422,6 @@ static const NVGetoptOption __options[] = {
       "uninstalled.  This option causes the installer to simply delete "
       "conflicting files, rather than back them up." },
 
-    { "no-network", 'N', 0, NULL,
-      "This option instructs the installer to not attempt to access the "
-      "network." },
-
     { "no-recursion", 'r', 0, NULL,
       "Normally, nvidia-installer will recursively search for "
       "potentially conflicting libraries under the default OpenGL "
@@ -482,16 +455,6 @@ static const NVGetoptOption __options[] = {
       NVGETOPT_STRING_ARGUMENT, NULL,
       "Before searching for a precompiled kernel interface in the "
       ".run file, search in the specified directory." },
-
-    { "precompiled-kernel-interfaces-url",
-      PRECOMPILED_KERNEL_INTERFACES_URL_OPTION,
-      NVGETOPT_STRING_ARGUMENT, NULL,
-      "If no precompiled kernel interfaces are found within the driver package "
-      "or provided on the file system by the Linux distribution, check the "
-      "specified URL for updates.  NVIDIA does not intend to provide updated "
-      "precompiled kernel interfaces, but system administrators might use this "
-      "for distributing precompiled kernel interfaces in a local area "
-      "network." },
 
     { "no-nouveau-check", 'z', 0, NULL,
       "Normally, nvidia-installer aborts installation if the nouveau kernel "
@@ -716,6 +679,7 @@ static const NVGetoptOption __options[] = {
      * backwards-compatibility purposes. */
     { "no-runlevel-check", NO_RUNLEVEL_CHECK_OPTION, 0, NULL, NULL },
     { "install-vdpau-wrapper", INSTALL_VDPAU_WRAPPER_OPTION, NVGETOPT_IS_BOOLEAN, NULL, NULL },
+    { "no-network", 'N', 0, NULL, NULL },
 
     { NULL, 0, 0, NULL, NULL },
 };
