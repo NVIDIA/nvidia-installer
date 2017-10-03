@@ -19,7 +19,7 @@ well commented.
 
 Build dependencies of nvidia-installer include:
 
-   libkmod ncurses pciutils
+   ncurses pciutils
 
 Please ensure that the appropriate development packages for these
 dependencies have been installed before building nvidia-installer.

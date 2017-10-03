@@ -32,8 +32,7 @@
 #include <string.h>
 #include <limits.h>
 #include <fts.h>
-#include <dlfcn.h>
-#include <libkmod.h>
+#include <syscall.h>
 
 #include "nvidia-installer.h"
 #include "kernel.h"
@@ -63,8 +62,6 @@ static PrecompiledInfo *scan_dir(Options *op, Package *p,
 static char *build_distro_precompiled_kernel_interface_dir(Options *op);
 static char *convert_include_path_to_source_path(const char *inc);
 static char *get_machine_arch(Options *op);
-static int init_libkmod(void);
-static void close_libkmod(void);
 static int run_conftest(Options *op, const char *dir, const char *args,
                         char **result);
 static int run_make(Options *op, Package *p, const char *dir, const char *target,
@@ -73,16 +70,6 @@ static void load_kernel_module_quiet(Options *op, const char *module_name);
 static void modprobe_remove_kernel_module_quiet(Options *op, const char *name);
 static int kernel_configuration_conflict(Options *op, Package *p,
                                          int target_system_checks);
-
-/* libkmod handle and function pointers */
-static void *libkmod = NULL;
-static struct kmod_ctx* (*lkmod_new)(const char*, const char* const*) = NULL;
-static struct kmod_ctx* (*lkmod_unref)(struct kmod_ctx*) = NULL;
-static struct kmod_module* (*lkmod_module_unref)(struct kmod_module *) = NULL;
-static int (*lkmod_module_new_from_path)(struct kmod_ctx*, const char*,
-             struct kmod_module**) = NULL;
-static int (*lkmod_module_insert_module)(struct kmod_module*, unsigned int,
-             const char*) = NULL;
 
 /*
  * Message text that is used by several error messages.
@@ -1063,61 +1050,6 @@ void check_for_warning_messages(Options *op)
 
 
 
-/*
- * init_libkmod() - Attempt to dlopen() libkmod and the function symbols we
- * need from it. Set the global libkmod handle and function pointers on
- * success. Return TRUE if loading all symbols succeeded; FALSE otherwise.
- */
-static int init_libkmod(void)
-{
-    if (!libkmod) {
-        libkmod = dlopen("libkmod.so.2", RTLD_LAZY);
-        if(!libkmod) {
-            return FALSE;
-        }
-
-        lkmod_new = dlsym(libkmod, "kmod_new");
-        lkmod_unref = dlsym(libkmod, "kmod_unref");
-        lkmod_module_unref = dlsym(libkmod, "kmod_module_unref");
-        lkmod_module_new_from_path = dlsym(libkmod, "kmod_module_new_from_path");
-        lkmod_module_insert_module = dlsym(libkmod, "kmod_module_insert_module");
-    }
-
-    if (libkmod) {
-        /* libkmod was already open, or was just successfully dlopen()ed:
-         * check to make sure all of the symbols are set */
-        if (lkmod_new && lkmod_unref && lkmod_module_unref &&
-            lkmod_module_new_from_path && lkmod_module_insert_module) {
-            return TRUE;
-        } else {
-            /* One or more symbols missing; abort */
-            close_libkmod();
-            return FALSE;
-        }
-    }
-    return FALSE;
-} /* init_libkmod() */
-
-
-
-/*
- * close_libkmod() - clear all libkmod function pointers and dlclose() libkmod
- */
-static void close_libkmod(void)
-{
-    if (libkmod) {
-        dlclose(libkmod);
-    }
-
-    libkmod = NULL;
-    lkmod_new = NULL;
-    lkmod_unref = NULL;
-    lkmod_module_unref = NULL;
-    lkmod_module_new_from_path = NULL;
-    lkmod_module_insert_module = NULL;
-} /* close_libkmod() */
-
-
 
 #define PRINTK_LOGLEVEL_KERN_ALERT 1
 
@@ -1168,23 +1100,14 @@ static int set_loglevel(int level, int *old_level)
 
 
 /*
- * do_insmod() - load the kernel module using libkmod if available; fall back
- * to insmod otherwise. Returns the result of kmod_module_insert_module() if
- * available, or of insmod otherwise. Pass the result of module loading up
- * through the data argument, regardless of whether we used libkmod or insmod.
+ * do_insmod() - mmap(2) the kernel module and load it with init_module(2).
+ * Returns 0 on success, or errno on failure.
  */
-static int do_insmod(Options *op, const char *module, char **data,
-                     const char *module_opts)
+static int do_insmod(Options *op, const char *module, const char *module_opts)
 {
-    int ret = 0, libkmod_failed = FALSE, old_loglevel, loglevel_set, i;
-
-    /* SELinux type labels to add to kernel modules */
-    static const char *selinux_kmod_types[] = {
-        "modules_object_t",
-        NULL
-    };
-
-    *data = NULL;
+    int ret = ENOENT, loglevel_set, old_loglevel, fd = -1;
+    void *buf = MAP_FAILED;
+    struct stat st;
 
     /*
      * Temporarily disable most console messages to keep the curses
@@ -1195,76 +1118,42 @@ static int do_insmod(Options *op, const char *module, char **data,
 
     loglevel_set = set_loglevel(PRINTK_LOGLEVEL_KERN_ALERT, &old_loglevel);
 
-    /* Some SELinux policies require specific file type labels for inserting
-     * kernel modules. Attempt to set known types until one succeeds. If all
-     * types fail, hopefully it's just because no type is needed. */
-    for (i = 0; selinux_kmod_types[i]; i++) {
-        if (set_security_context(op, module, selinux_kmod_types[i])) {
-            break;
-        }
+    fd = open(module, O_RDONLY);
+    if (fd < 0) {
+        goto done;
     }
 
-    if (init_libkmod()) {
-        struct kmod_ctx *ctx = NULL;
-        struct kmod_module *mod = NULL;
-        const char *config_paths = NULL;
-
-        ctx = lkmod_new(NULL, &config_paths);
-        if (!ctx) {
-            libkmod_failed = TRUE;
-            goto kmod_done;
-        }
-
-        ret = lkmod_module_new_from_path(ctx, module, &mod);
-        if (ret < 0) {
-            libkmod_failed = TRUE;
-            goto kmod_done;
-        }
-
-        ret = lkmod_module_insert_module(mod, 0, module_opts);
-        if (ret < 0) {
-            /* insmod ignores > 0 return codes of kmod_module_insert_module(),
-             * so we should do it too. On failure, strdup() the error string to
-             * *data to ensure that it can be freed later. */
-            *data = nvstrdup(strerror(-ret));
-        }
-
-kmod_done:
-        if (mod) {
-            lkmod_module_unref(mod);
-        }
-        if (ctx) {
-            lkmod_unref(ctx);
-        }
-    } else {
-        if (op->expert) {
-            ui_log(op, "Unable to load module with libkmod; "
-                   "falling back to insmod.");
-        }
-        libkmod_failed = TRUE;
+    if (fstat(fd, &st) != 0) {
+        goto done;
     }
 
-    if (!libkmod || libkmod_failed) {
-        char *cmd;
-
-        /* Fall back to insmod */
-
-        cmd = nvstrcat(op->utils[INSMOD], " ", module, " ", module_opts, NULL);
-
-        /* only output the result of the test if in expert mode */
-
-        ret = run_command(op, cmd, data, op->expert, 0, TRUE);
-        nvfree(cmd);
+    buf = mmap(NULL, st.st_size, PROT_READ, MAP_PRIVATE, fd, 0);
+    if (buf == MAP_FAILED) {
+        goto done;
     }
 
-    close_libkmod();
+    ret = syscall(SYS_init_module, buf, st.st_size, module_opts);
+    if (ret != 0) {
+        ret = errno;
+    }
+
+done:
+
+    if (buf != MAP_FAILED) {
+        /* st is always populated by the time mmap(2) is called */
+        munmap(buf, st.st_size);
+    }
+
+    if (fd >= 0) {
+        close(fd);
+    }
 
     if (loglevel_set) {
         set_loglevel(old_loglevel, NULL);
     }
 
     return ret;
-} /* do_insmod() */
+}
 
 
 /*
@@ -1275,13 +1164,13 @@ kmod_done:
  */
 
 static int ignore_load_error(Options *op, Package *p, 
-                             const char *module_filename,
-                             const char* data, int insmod_status)
+                             const char *module_filename, int insmod_status)
 {
     int ignore_error = FALSE, secureboot, module_sig_force, enokey;
     const char *probable_reason, *signature_related;
+    char *error = strerror(insmod_status);
 
-    enokey = (-insmod_status == ENOKEY);
+    enokey = (insmod_status == ENOKEY);
     secureboot = (secure_boot_enabled() == 1);
     module_sig_force =
         (test_kernel_config_option(op, p, "CONFIG_MODULE_SIG_FORCE") ==
@@ -1357,7 +1246,7 @@ static int ignore_load_error(Options *op, Package *p,
     if (ignore_error) {
         ui_log(op, "An error was encountered when loading the kernel "
                "module, but that error was ignored, and the kernel module "
-               "will be installed, anyway. The error was: %s", data);
+               "will be installed, anyway. The error was: %s", error);
     } else {
         ui_error(op, "Unable to load the kernel module '%s'.  This "
                  "happens most frequently when this kernel module was "
@@ -1380,11 +1269,11 @@ static int ignore_load_error(Options *op, Package *p,
          * the output now.
          */
 
-        if (!op->expert) ui_log(op, "Kernel module load error: %s", data);
+        if (!op->expert) ui_log(op, "Kernel module load error: %s", error);
     }
 
     return ignore_error; 
-} /* ignore_load_error() */
+}
 
 
 /*
@@ -1410,8 +1299,9 @@ static void unload_kernel_modules(Options *op, Package *p) {
 int test_kernel_modules(Options *op, Package *p)
 {
     char *cmd = NULL, *data = NULL;
-    int ret, i;
-    const char *depmods[] = { "i2c-core", "drm", "drm-kms-helper", "vfio_mdev" };
+    int ret = FALSE, i;
+    const char *depmods[] = { "i2c-core", "drm", "drm-kms-helper", "vfio_mdev",
+                              "ipmi_msghandler" };
 
     /* 
      * If we're building/installing for a different kernel, then we
@@ -1436,8 +1326,7 @@ int test_kernel_modules(Options *op, Package *p)
      */
 
     for (i = 0; i < p->num_kernel_modules; i++) {
-        int module_success = FALSE;
-        char *cmd_output;
+        int module_success = FALSE, insmod_ret;
         char *module_path = nvstrcat(p->kernel_module_build_directory, "/",
                                      p->kernel_modules[i].module_filename,
                                      NULL);
@@ -1448,14 +1337,14 @@ int test_kernel_modules(Options *op, Package *p)
                           "NVreg_DeviceFileMode=0 NVreg_ModifyDeviceFiles=0";
         }
 
-        ret = do_insmod(op, module_path, &cmd_output, module_opts);
+        insmod_ret = do_insmod(op, module_path, module_opts);
         nvfree(module_path);
 
-        if (ret == 0) {
+        if (insmod_ret == 0) {
             module_success = TRUE;
         } else {
             ret = ignore_load_error(op, p, p->kernel_modules[i].module_filename,
-                                    cmd_output, ret);
+                                    insmod_ret);
             if (ret) {
                 op->skip_module_load = TRUE;
                 ui_log(op, "Ignoring failure to load %s.",
@@ -1465,8 +1354,6 @@ int test_kernel_modules(Options *op, Package *p)
                                                "load");
             }
         }
-
-        nvfree(cmd_output);
 
         if (!module_success) {
             goto test_exit;
@@ -2173,12 +2060,6 @@ int check_cc_version(Options *op, Package *p)
 {
     char *result;
     int ret;
-    Options dummyop;
-
-    const char *choices[2] = {
-        "Ignore CC version check",
-        "Abort installation"
-    };
 
     /* 
      * If we're building/installing for a different kernel, then we
@@ -2193,30 +2074,33 @@ int check_cc_version(Options *op, Package *p)
         return TRUE;
     }
 
-    /* Kernel source/output paths may not be set yet; we don't need them
-     * for this test, anyway. */
-    dummyop = *op;
-    dummyop.kernel_source_path = "DUMMY_SOURCE_PATH";
-    dummyop.kernel_output_path = "DUMMY_OUTPUT_PATH";
-
-    ret = run_conftest(&dummyop, p->kernel_module_build_directory,
+    ret = run_conftest(op, p->kernel_module_build_directory,
                        "cc_version_check just_msg", &result);
 
-    if (ret) return TRUE;
+    if (!ret) {
+        const char *choices[2] = {
+            "Ignore CC version check",
+            "Abort installation"
+        };
 
-    ret = (ui_multiple_choice(op, choices, 2, 1, "The CC version check failed:"
-                              "\n\n%s\n\nIf you know what you are doing you "
-                              "can either ignore the CC version check and "
-                              "continue installation, or abort installation, "
-                              "set the CC environment variable to the name of "
-                              "the compiler used to compile your kernel, and "
-                              "restart installation.", result) == 1);
+        ret = (ui_multiple_choice(op, choices, 2, 0,
+                                  "The CC version check failed:\n\n%s\n\n"
+                                  "This may lead to subtle problems; if you "
+                                  "are not certain whether the mismatched "
+                                  "compiler will be compatible with your "
+                                  "kernel, you may wish to abort installation, "
+                                  "set the CC environment variable to the name "
+                                  "of the compiler used to compile your kernel, "
+                                  "and restart installation.", result) == 0);
+
+        if (ret) {
+            setenv("IGNORE_CC_MISMATCH", "1", 1);
+            ui_warn(op, "Ignoring CC version mismatch:\n\n%s", result);
+        }
+    }
+
     nvfree(result);
-    
-    if (!ret) setenv("IGNORE_CC_MISMATCH", "1", 1);
-    
-    return !ret;
-             
+    return ret;
 } /* check_cc_version() */
 
 
@@ -2561,6 +2445,39 @@ static NVOptionalBool auto_online_blocks(void)
 
     return ret;
 }
+
+/*
+ * Get the CPU type from /proc/cpuinfo: this is ppc64le-only for now because
+ * it's only used by ppc64le-only code, and because the contents of the cpuinfo
+ * file in procfs vary greatly by CPU architecture.
+ */
+static char *get_cpu_type(const Options *op)
+{
+    char *proc_cpuinfo = nvstrcat(op->proc_mount_point, "/", "cpuinfo", NULL);
+    FILE *fp = fopen(proc_cpuinfo, "r");
+
+    nvfree(proc_cpuinfo);
+    if (fp) {
+        char *line, *ret = NULL;
+        int eof;
+
+        while((line = fget_next_line(fp, &eof))) {
+            ret = nvrealloc(ret, strlen(line) + 1);
+
+            if (sscanf(line, "cpu : %s", ret) == 1) {
+                return ret;
+            }
+
+            if (eof) {
+                break;
+            }
+        }
+
+        nvfree(ret);
+    }
+
+    return NULL;
+}
 #endif
 
 /*
@@ -2579,6 +2496,15 @@ static int kernel_configuration_conflict(Options *op, Package *p,
         NVOptionalBool auto_online = NV_OPTIONAL_BOOL_DEFAULT;
 
         if (target_system_checks) {
+            char *cpu_type = get_cpu_type(op);
+            int cpu_is_power8 = strncmp(cpu_type, "POWER8", strlen("POWER8")) == 0;
+
+            nvfree(cpu_type);
+            if (cpu_is_power8) {
+                /* No conflict on pre-POWER9 systems */
+                return FALSE;
+            }
+
             auto_online = auto_online_blocks();
         }
 

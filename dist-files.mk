@@ -64,9 +64,6 @@ DIST_FILES += README
 DIST_FILES += dist-files.mk
 
 DIST_FILES += rtld_test_Linux-x86
-DIST_FILES += rtld_test_Linux-x86_64
-DIST_FILES += rtld_test_Linux-armv7l-gnueabi
-DIST_FILES += rtld_test_Linux-armv7l-gnueabihf
 
 DIST_FILES += tls_test_Linux-x86
 DIST_FILES += tls_test_Linux-x86_64

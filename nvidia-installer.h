@@ -69,8 +69,7 @@ typedef enum {
 
 typedef enum {
     MIN_MODULE_UTILS = MAX_SYSTEM_OPTIONAL_UTILS,
-    INSMOD = MIN_MODULE_UTILS,
-    MODPROBE,
+    MODPROBE = MIN_MODULE_UTILS,
     RMMOD,
     LSMOD,
     DEPMOD,

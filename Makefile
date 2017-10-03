@@ -94,7 +94,11 @@ else
 endif
 
 RTLD_TEST_C        = $(OUTPUTDIR)/g_rtld_test.c
-RTLD_TEST          = rtld_test_$(TARGET_OS)-$(TARGET_ARCH)$(if $(TARGET_ARCH_ABI),-$(TARGET_ARCH_ABI))
+RTLD_TEST          = $(OUTPUTDIR)/rtld_test
+
+# Use a precompiled rtld_test-Linux-x86 binary to simplify the Linux-x86_64
+# build. If a fresh rtld_test-Linux-x86 binary is needed, it can be copied
+# from a Linux-x86 build of nvidia-settings.
 
 RTLD_TEST_32_C     = $(OUTPUTDIR)/g_rtld_test_32.c
 RTLD_TEST_32       = rtld_test_$(TARGET_OS)-x86
@@ -328,18 +332,12 @@ rebuild_tls_test_dso: tls_test_dso.c
 tls_test: tls_test.c
 	touch $@
 
-# rule to rebuild rtld_test; a precompiled rtld_test is distributed with
-# nvidia-installer to simplify x86-64 builds.
+# rule to build a native rtld_test; a precompiled Linux-x86 rtld_test is
+# distributed with nvidia-installer to simplify Linux-x86_64 builds.
 
-$(eval $(call DEBUG_INFO_RULES, rebuild_rtld_test))
-rebuild_rtld_test.unstripped: rtld_test.c $(CONFIG_H)
-	$(call quiet_cmd,LINK) $(CFLAGS) $(LDFLAGS) $(BIN_LDFLAGS) -o $(RTLD_TEST) -lGL -lEGL $<
-
-# dummy rule to override implicit rule that builds dls_test from
-# rtld_test.c
-
-rtld_test: rtld_test.c
-	touch $@
+$(eval $(call DEBUG_INFO_RULES, $(RTLD_TEST)))
+$(RTLD_TEST).unstripped: rtld_test.c $(CONFIG_H)
+	$(call quiet_cmd,LINK) $(CFLAGS) $(LDFLAGS) $(BIN_LDFLAGS) -o $@ -lGL -lEGL $<
 
 
 ##############################################################################

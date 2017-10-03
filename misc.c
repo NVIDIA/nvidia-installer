@@ -460,7 +460,6 @@ static const Util __utils[] = {
     [DKMS]            = { "dkms",           "dkms"    },
 
     /* ModuleUtils */
-    [INSMOD]   = { "insmod",   "module-init-tools' or 'kmod" },
     [MODPROBE] = { "modprobe", "module-init-tools' or 'kmod" },
     [RMMOD]    = { "rmmod",    "module-init-tools' or 'kmod" },
     [LSMOD]    = { "lsmod",    "module-init-tools' or 'kmod" },

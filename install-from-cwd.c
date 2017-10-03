@@ -536,19 +536,19 @@ precompiled_done:
         if (!check_development_tools(op, p)) return FALSE;
 
         /*
-         * make sure that the selected or default system compiler
-         * is compatible with the target kernel; the user may choose
-         * to override the check.
-         */
-        if (!check_cc_version(op, p)) return FALSE;
-
-        /*
          * we do not have a prebuilt kernel interface; thus we'll need
          * to compile the kernel interface, so determine where the
          * kernel source files are.
          */
         
         if (!determine_kernel_source_path(op, p)) return FALSE;
+
+        /*
+         * make sure that the selected or default system compiler
+         * is compatible with the target kernel; the user may choose
+         * to override the check.
+         */
+        if (!check_cc_version(op, p)) return FALSE;
     
         /* and now, build the kernel interface */
         
