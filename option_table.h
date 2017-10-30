@@ -105,6 +105,7 @@ enum {
     GLVND_EGL_CONFIG_FILE_PATH_OPTION,
     GLVND_EGL_CLIENT_OPTION,
     EGL_EXTERNAL_PLATFORM_CONFIG_FILE_PATH_OPTION,
+    MULTIPLE_KERNEL_MODULES_OPTION,
 };
 
 static const NVGetoptOption __options[] = {
@@ -670,6 +671,10 @@ static const NVGetoptOption __options[] = {
       "the EGL external platform library config file to this directory. "
       "Defaults to " DEFAULT_EGL_EXTERNAL_PLATFORM_JSON_PATH "."
     },
+
+    /* Undocumented options with no help text */
+    { "multiple-kernel-modules", MULTIPLE_KERNEL_MODULES_OPTION,
+       NVGETOPT_INTEGER_ARGUMENT, NULL, NULL},
 
     /* Orphaned options: These options were in the long_options table in
      * nvidia-installer.c but not in the help. */
