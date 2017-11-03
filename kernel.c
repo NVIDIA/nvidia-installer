@@ -2561,6 +2561,39 @@ static NVOptionalBool auto_online_blocks(void)
 
     return ret;
 }
+
+/*
+ * Get the CPU type from /proc/cpuinfo: this is ppc64le-only for now because
+ * it's only used by ppc64le-only code, and because the contents of the cpuinfo
+ * file in procfs vary greatly by CPU architecture.
+ */
+static char *get_cpu_type(const Options *op)
+{
+    char *proc_cpuinfo = nvstrcat(op->proc_mount_point, "/", "cpuinfo", NULL);
+    FILE *fp = fopen(proc_cpuinfo, "r");
+
+    nvfree(proc_cpuinfo);
+    if (fp) {
+        char *line, *ret = NULL;
+        int eof;
+
+        while((line = fget_next_line(fp, &eof))) {
+            ret = nvrealloc(ret, strlen(line) + 1);
+
+            if (sscanf(line, "cpu : %s", ret) == 1) {
+                return ret;
+            }
+
+            if (eof) {
+                break;
+            }
+        }
+
+        nvfree(ret);
+    }
+
+    return NULL;
+}
 #endif
 
 /*
@@ -2579,6 +2612,15 @@ static int kernel_configuration_conflict(Options *op, Package *p,
         NVOptionalBool auto_online = NV_OPTIONAL_BOOL_DEFAULT;
 
         if (target_system_checks) {
+            char *cpu_type = get_cpu_type(op);
+            int cpu_is_power8 = strncmp(cpu_type, "POWER8", strlen("POWER8")) == 0;
+
+            nvfree(cpu_type);
+            if (cpu_is_power8) {
+                /* No conflict on pre-POWER9 systems */
+                return FALSE;
+            }
+
             auto_online = auto_online_blocks();
         }
 
