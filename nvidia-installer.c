@@ -133,7 +133,7 @@ static Options *load_default_options(void)
     op->nvidia_modprobe = TRUE;
     op->run_nvidia_xconfig = FALSE;
     op->selinux_option = SELINUX_DEFAULT;
-    op->num_rm_instances = NV_MODULE_INSTANCE_NONE;
+
     op->sigwinch_workaround = TRUE;
     op->run_distro_scripts = TRUE;
     op->no_kernel_module_source = FALSE;
@@ -459,32 +459,6 @@ static void parse_commandline(int argc, char *argv[], Options *op)
             break;
         case EGL_EXTERNAL_PLATFORM_CONFIG_FILE_PATH_OPTION:
             op->external_platform_json_path = strval;
-            break;
-        case MULTIPLE_KERNEL_MODULES_OPTION:
-            op->num_rm_instances = intval;
-
-            /*
-             * Determine if we need to install a multi-RM driver. If the
-             * argument for '--multiple-kernel-modules' is between 1 and 8,
-             * then set the environment variable NV_BUILD_MODULE_INSTANCES
-             * for the RM makefiles and install a multi-RM driver. Otherwise,
-             * for invalid values of '--multiple-kernel-modules', quit the
-             * installer.
-             */
-            if (is_multi_rm_install(op)) {
-                char *num;
-
-                num = nvasprintf("%d", op->num_rm_instances);
-                setenv("NV_BUILD_MODULE_INSTANCES", num, 1);
-                nvfree(num);
-            } else {
-                nv_error_msg("The '--multiple-kernel-modules' option only "
-                             "accepts values greater than %d and less than or "
-                             "equal to %d.", NV_MODULE_INSTANCE_ZERO,
-                             NV_MAX_MODULE_INSTANCES);
-
-                goto fail;
-            }
             break;
         default:
             goto fail;

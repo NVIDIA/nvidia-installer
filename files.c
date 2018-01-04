@@ -856,7 +856,6 @@ int set_destinations(Options *op, Package *p)
              */
             prefix = "/etc/vulkan/icd.d/";
             dir = path = "";
-            path = "";
             break;
 
         case FILE_TYPE_GLVND_EGL_ICD_JSON:
@@ -869,8 +868,15 @@ int set_destinations(Options *op, Package *p)
 
         case FILE_TYPE_EGL_EXTERNAL_PLATFORM_JSON:
             prefix = op->external_platform_json_path;
-            dir = "";
-            path = "";
+            dir = path = "";
+            break;
+
+        case FILE_TYPE_ALLOCATOR_JSON:
+            /*
+             * Defined in the prototype allocator driver loader module code.
+             */
+            prefix = "/etc/allocator/";
+            dir = path = "";
             break;
 
         default:

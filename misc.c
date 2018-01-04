@@ -108,15 +108,7 @@ int check_euid(Options *op)
 
 } /* check_euid() */
 
-/*
- * Determine if the installation is Single RM or a multi-RM installation.
- * Return TRUE, if it is a multi-RM install, else return FALSE.
- */
-int is_multi_rm_install(const Options *op)
-{
-    return ((op->num_rm_instances > NV_MODULE_INSTANCE_ZERO) &&
-            (op->num_rm_instances <= NV_MAX_MODULE_INSTANCES));
-}
+
 
 /* 
  * adjust_cwd() - this function scans through program_name (ie

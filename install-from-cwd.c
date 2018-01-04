@@ -793,35 +793,6 @@ static Package *parse_manifest (Options *op)
 
     line++;
     tmpstr = get_next_line(ptr, &ptr, manifest, len);
-
-    /* 
-     * On Multi-RM builds, build nvidia-frontend and nvidiaX modules.
-     * On Single-RM builds, build all the modules as specified in 
-     * the '.manifest' file on line 4.
-     */
-    if (is_multi_rm_install(op)) {
-        char *multi_rm_modules = NULL;
-        char *tmp_buffer = NULL;
-        int i;
-
-        multi_rm_modules = nvstrcat("nvidia-frontend ", NULL);
-
-        for (i = 0; i < op->num_rm_instances; i++) {
-            char *module_name;
-
-            module_name = nvasprintf("nvidia%d ", i);
-
-            tmp_buffer = nvstrcat(multi_rm_modules, module_name, NULL);
-            nvfree(multi_rm_modules);
-            nvfree(module_name);
-
-            multi_rm_modules = tmp_buffer;
-        }
-
-        nvfree(tmpstr); 
-        tmpstr = multi_rm_modules;
-    }
-
     if (parse_kernel_modules_list(p, tmpstr) == 0) {
         goto invalid_manifest_file;
     }

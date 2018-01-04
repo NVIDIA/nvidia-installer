@@ -130,7 +130,6 @@ typedef struct __options {
     int no_backup;
     int kernel_module_only;
     int no_kernel_module;
-    int num_rm_instances;
     int no_abi_note;
     int no_rpms;
     int no_recursion;
@@ -292,6 +291,7 @@ typedef enum {
     FILE_TYPE_EGL_EXTERNAL_PLATFORM_JSON,
     FILE_TYPE_FLEXERA_LIB,
     FILE_TYPE_FLEXERA_LIB_SYMLINK,
+    FILE_TYPE_ALLOCATOR_JSON,
     FILE_TYPE_MAX
 } PackageEntryFileType;
 

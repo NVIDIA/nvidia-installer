@@ -31,11 +31,6 @@
 #include "command-list.h"
 #include "user-interface.h"
 
-/* Definitions for Multi-RM build  */
-#define NV_MODULE_INSTANCE_NONE              -1
-#define NV_MODULE_INSTANCE_ZERO              0
-#define NV_MAX_MODULE_INSTANCES              8
-
 /*
  * Enumeration to identify whether the execution of a distro hook script has
  * succeeded, failed or the script has not actually been executed
@@ -58,7 +53,6 @@ typedef enum {
 char *read_next_word (char *buf, char **e);
 
 int check_euid(Options *op);
-int is_multi_rm_install(const Options *op);
 int adjust_cwd(Options *op, const char *program_name);
 char *get_next_line(char *buf, char **e, char *start, int length);
 int run_command(Options *op, const char *cmd, char **data,

@@ -134,6 +134,7 @@ static const struct {
     { ENTRY(EGL_EXTERNAL_PLATFORM_JSON, F, F, T, F, F, F, T, F, T, F, F) },
     { ENTRY(FLEXERA_LIB,                F, F, T, T, F, T, F, F, F, F, F) },
     { ENTRY(FLEXERA_LIB_SYMLINK,        F, F, F, T, T, F, F, F, F, F, F) },
+    { ENTRY(ALLOCATOR_JSON,             F, F, T, F, F, F, F, F, T, F, F) },
 };
 
 /*

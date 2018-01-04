@@ -884,6 +884,7 @@ int build_kernel_interfaces(Options *op, Package *p,
         { "Dom0", "dom0_sanity_check" },
         { "Xen", "xen_sanity_check" },
         { "PREEMPT_RT", "preempt_rt_sanity_check" },
+        { "vgpu_kvm", "vgpu_kvm_sanity_check" },
     };
 
     /* do not build if there is a kernel configuration conflict (and don't
@@ -1332,22 +1333,7 @@ int test_kernel_modules(Options *op, Package *p)
                                      NULL);
         const char *module_opts = "";
 
-        /*
-         * For Multi-RM, only test load the modules nvidia-frontend.ko and
-         * nvidia0.ko because the moment you load nvidia0.ko (without the
-         * NVreg_AssignGpus registry key) it gets attached to all the GPUs in
-         * the system. Later, when we attempt to load nvidia1.ko, it can't find
-         * any GPU's left to which it could attach. Hence nvidia_init_module()
-         * fails to load other nvidiaX modules.
-         */
-        if (is_multi_rm_install(op) &&
-            ((strcmp(p->kernel_modules[i].module_name, "nvidia-frontend") != 0) &&
-             (strcmp(p->kernel_modules[i].module_name, "nvidia0") != 0))) {
-            continue;
-        }
-
-        if ((strcmp(p->kernel_modules[i].module_name, "nvidia") == 0) ||
-            (strcmp(p->kernel_modules[i].module_name, "nvidia0") == 0)) {
+        if (strcmp(p->kernel_modules[i].module_name, "nvidia") == 0) {
             module_opts = "NVreg_DeviceFileUID=0 NVreg_DeviceFileGID=0 "
                           "NVreg_DeviceFileMode=0 NVreg_ModifyDeviceFiles=0";
         }
