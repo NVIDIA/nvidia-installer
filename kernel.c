@@ -897,6 +897,7 @@ int build_kernel_interfaces(Options *op, Package *p,
         { "Dom0", "dom0_sanity_check" },
         { "Xen", "xen_sanity_check" },
         { "PREEMPT_RT", "preempt_rt_sanity_check" },
+        { "vgpu_kvm", "vgpu_kvm_sanity_check" },
     };
 
     /* do not build if there is a kernel configuration conflict (and don't
