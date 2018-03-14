@@ -128,10 +128,6 @@ int install_from_cwd(Options *op)
     
     if (!check_for_unloaded_kernel_module(op)) goto failed;
     
-    /* ask the user to accept the license */
-    
-    if (!get_license_acceptance(op)) goto exit_install;
-    
     ui_log(op, "Installing NVIDIA driver version %s.", p->version);
 
     /*

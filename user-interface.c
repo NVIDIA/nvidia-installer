@@ -241,20 +241,6 @@ char *ui_get_input(Options *op, const char *def, const char *fmt, ...)
 
 
 /*
- * ui_display_license()
- */
-
-int ui_display_license (Options *op, const char *license)
-{
-    if (op->silent) return TRUE;
-
-    return __ui->display_license(op, license);
-    
-} /* ui_display_license() */
-
-
-
-/*
  * ui_error() - have the ui display an error message
  */
 

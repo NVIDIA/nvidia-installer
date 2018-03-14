@@ -65,14 +65,6 @@ typedef struct __nv_installer_ui {
 
     char *(*get_input)(Options *op, const char *def, const char *msg);
 
-    /*
-     * display_license - given the text from the license file, display
-     * the text to the user and prompt the user for acceptance.
-     * Returns whether or not the user accepted the license.
-     */
-
-    int (*display_license)(Options *op, const char *license);
-    
     /* 
      * message - display a message at the specified message level; the
      * possible message levels are:

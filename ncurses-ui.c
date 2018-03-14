@@ -154,7 +154,6 @@ static int   nv_ncurses_init                (Options*,
 static void  nv_ncurses_set_title           (Options*, const char*);
 static char *nv_ncurses_get_input           (Options*, const char*,
                                              const char*);
-static int   nv_ncurses_display_license     (Options*, const char*);
 static void  nv_ncurses_message             (Options*, const int level,
                                              const char*);
 static void  nv_ncurses_command_output      (Options*, const char*);
@@ -247,7 +246,6 @@ InstallerUI ui_dispatch_table = {
     nv_ncurses_init,
     nv_ncurses_set_title,
     nv_ncurses_get_input,
-    nv_ncurses_display_license,
     nv_ncurses_message,
     nv_ncurses_command_output,
     nv_ncurses_approve_command_list,
@@ -616,31 +614,6 @@ static char *nv_ncurses_get_input(Options *op,
     return tmp;
 
 } /* nv_ncurses_get_input() */
-
-
-
-
-/*
- * nv_ncurses_display_license() - print the text from the license file,
- * prompt for acceptance from the user, and return whether or not the
- * user accepted.
- */
-
-static int nv_ncurses_display_license(Options *op, const char *license)
-{
-    static const char *descr = "Please read the following LICENSE "
-        "and then select either \"Accept\" to accept the license "
-        "and continue with the installation, or select "
-        "\"Do Not Accept\" to abort the installation.";
-
-    static const char *buttons[2] = {"Accept", "Do Not Accept"};
-
-    int ret = nv_ncurses_paged_prompt(op, descr, "NVIDIA Software License",
-                                      license, buttons, 2, 1);
-
-    return ret == 0;
-} /* nv_ncurses_display_license() */
-
 
 
 

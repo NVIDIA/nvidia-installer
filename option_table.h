@@ -110,13 +110,6 @@ enum {
 static const NVGetoptOption __options[] = {
     /* These options are printed by "nvidia-installer --help" */
 
-    { "accept-license", 'a', NVGETOPT_HELP_ALWAYS, NULL,
-      "Bypass the display and prompting for acceptance of the "
-      "NVIDIA Software License Agreement.  By passing this option to "
-      "nvidia-installer, you indicate that you have read and accept the "
-      "License Agreement contained in the file 'LICENSE' (in the top "
-      "level directory of the driver package)." },
-
     { "version", 'v',
       NVGETOPT_HELP_ALWAYS | NVGETOPT_OPTION_APPLIES_TO_NVIDIA_UNINSTALL, NULL,
       "Print the nvidia-installer version and exit." },
@@ -132,6 +125,14 @@ static const NVGetoptOption __options[] = {
       "as well as the advanced options, and then exit." },
 
     /* These options are only printed by "nvidia-installer --advanced-help" */
+
+    { "accept-license", 'a', 0, NULL,
+      "This option is obsolete and ignored by nvidia-installer.  It is "
+      "provided for compatibility with older versions of nvidia-installer, "
+      "which required this option for explicit license acceptance. "
+      "Use of the NVIDIA driver implies acceptance of the NVIDIA Software "
+      "License Agreement, contained in the file 'LICENSE' (in the top "
+      "level directory of the driver package)." },
 
     { "driver-info", 'i', 0, NULL,
       "Print information about the currently installed NVIDIA "
@@ -159,15 +160,12 @@ static const NVGetoptOption __options[] = {
       "Do not ask any questions; the default (normally 'yes') "
       "is assumed for "
       "all yes/no questions, and the default string is assumed in "
-      "any situation where the user is prompted for string input.  "
-      "The one question that is not bypassed by this option is "
-      "license acceptance; the license may be accepted with the "
-      "commandline option '--accept-license'." },
+      "any situation where the user is prompted for string input." },
 
     { "silent", 's', NVGETOPT_OPTION_APPLIES_TO_NVIDIA_UNINSTALL, NULL,
       "Run silently; no questions are asked and no output is "
       "printed, except for error messages to stderr.  This option "
-      "implies '--ui=none --no-questions --accept-license'." },
+      "implies '--ui=none --no-questions'." },
 
     { "x-prefix", X_PREFIX_OPTION, NVGETOPT_STRING_ARGUMENT, NULL,
       "The prefix under which the X components of the "

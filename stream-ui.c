@@ -41,7 +41,6 @@ int   stream_detect              (Options*);
 int   stream_init                (Options*, FormatTextRows format_text_rows);
 void  stream_set_title           (Options*, const char*);
 char *stream_get_input           (Options*, const char*, const char*);
-int   stream_display_license     (Options*, const char*);
 void  stream_message             (Options*, int level, const char*);
 void  stream_command_output      (Options*, const char*);
 int   stream_approve_command_list(Options*, CommandList*, const char*);
@@ -60,7 +59,6 @@ InstallerUI stream_ui_dispatch_table = {
     stream_init,
     stream_set_title,
     stream_get_input,
-    stream_display_license,
     stream_message,
     stream_command_output,
     stream_approve_command_list,
@@ -206,52 +204,6 @@ char *stream_get_input(Options *op, const char *def, const char *msg)
 
 } /* stream_get_input() */
 
-
-
-
-/*
- * stream_display_license() - print the text from the license file,
- * prompt for acceptance from the user, and return whether or not the
- * user accepted.
- */
-
-int stream_display_license(Options *op, const char *license)
-{
-    char *str;
-    
-    nv_info_msg(NULL, "");
-    nv_info_msg(NULL, "Please read the following LICENSE and type \""
-                      "accept\" followed by the Enter key to accept the "
-                      "license, or type anything else to not accept and "
-                      "exit nvidia-installer.");
-    nv_info_msg(NULL, "");
-    
-    nv_info_msg(NULL, "________");
-    nv_info_msg(NULL, "");
-    printf("%s", license);
-    nv_info_msg(NULL, "________");
-    nv_info_msg(NULL, "");
-    
-    printf("Accept? (Type \"Accept\" to accept, or anything else to abort): ");
-    fflush(stdout);
-
-    str = fget_next_line(stdin, NULL);
-    if (strlen(str) < 6) {
-        free(str);
-        return FALSE;
-    }
-    
-    str[7] = '\0';
-    
-    if (strcasecmp(str, "ACCEPT") == 0) {
-        free(str);
-        return TRUE;
-    } else {
-        free(str);
-        return FALSE;
-    }
-    
-} /* stream_display_license() */
 
 
 

@@ -31,7 +31,6 @@ char *write_temp_file(Options *op, const int len,
                       const unsigned char *data, mode_t perm);
 void select_tls_class(Options *op, Package *p); /* XXX move? */
 int set_destinations(Options *op, Package *p); /* XXX move? */
-int get_license_acceptance(Options *op); /* XXX move? */
 int get_prefixes(Options *op); /* XXX move? */
 void add_kernel_modules_to_package(Options *op, Package *p);
 void remove_non_kernel_module_files_from_package(Options *op, Package *p);

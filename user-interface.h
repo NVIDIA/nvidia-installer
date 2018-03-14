@@ -36,7 +36,6 @@ extern const char * const CONTINUE_ABORT_CHOICES[];
 int   ui_init                (Options*);
 void  ui_set_title           (Options*, const char*, ...)              NV_ATTRIBUTE_PRINTF(2, 3);
 char *ui_get_input           (Options*, const char*, const char*, ...) NV_ATTRIBUTE_PRINTF(3, 4);
-int   ui_display_license     (Options*, const char*);
 void  ui_error               (Options*, const char*, ...)              NV_ATTRIBUTE_PRINTF(2, 3);
 void  ui_warn                (Options*, const char*, ...)              NV_ATTRIBUTE_PRINTF(2, 3);
 void  ui_message             (Options*, const char*, ...)              NV_ATTRIBUTE_PRINTF(2, 3);

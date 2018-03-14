@@ -108,7 +108,6 @@ typedef uint8_t uint8;
 
 typedef struct __options {
 
-    int accept_license;
     int expert;
     int uninstall;
     int skip_module_unload;
@@ -522,8 +521,6 @@ typedef struct __package {
 #define DEBIAN_DEFAULT_COMPAT32_CHROOT  "/emul/ia32-linux"
 
 #define DEFAULT_PROC_MOUNT_POINT "/proc"
-
-#define LICENSE_FILE "LICENSE"
 
 #define DEFAULT_LOG_FILE_NAME "/var/log/nvidia-installer.log"
 #define DEFAULT_UNINSTALL_LOG_FILE_NAME "/var/log/nvidia-uninstall.log"

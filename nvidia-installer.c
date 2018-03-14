@@ -194,7 +194,7 @@ static void parse_commandline(int argc, char *argv[], Options *op)
         
         switch (c) {
             
-        case 'a': op->accept_license = TRUE; break;
+        case 'a': /* ignored (but retained for compatibility) */ break;
         case 'e': op->expert = TRUE; break;
         case 'v': print_version(); exit(0); break;
         case 'd': op->debug = TRUE; break;
@@ -217,7 +217,7 @@ static void parse_commandline(int argc, char *argv[], Options *op)
             break;
         case 'X': op->run_nvidia_xconfig = TRUE; break;
         case 's':
-            op->silent = op->no_questions = op->accept_license = TRUE;
+            op->silent = op->no_questions = TRUE;
             op->ui_str = "none";
             break;
         case 'z': op->no_nouveau_check = TRUE; break;
