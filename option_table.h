@@ -442,7 +442,7 @@ static const NVGetoptOption __options[] = {
       "existing, possibly conflicting kernel modules.  This can be "
       "useful in some DEBUG environments.  If you use this option, you "
       "must be careful to ensure that a NVIDIA kernel module matching "
-      "this driver version is installed seperately." },
+      "this driver version is installed separately." },
 
     { "no-x-check", NO_X_CHECK_OPTION, 0, NULL,
       "Do not abort the installation if nvidia-installer detects that "

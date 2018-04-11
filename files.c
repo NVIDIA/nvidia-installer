@@ -3185,12 +3185,17 @@ typedef enum {
  * If the helper script is not included in the package, then it will just
  * return LIBGLVND_CHECK_RESULT_NOT_INSTALLED.
  */
-static LibglvndInstallCheckResult run_libglvnd_script(Options *op, Package *p)
+static LibglvndInstallCheckResult run_libglvnd_script(Options *op, Package *p,
+                                                      char **missing_libs)
 {
     const char *scriptPath = "./libglvnd_install_checker/check-libglvnd-install.sh";
-    char *cmdline = NULL;
+    char *cmdline = NULL, *output = NULL;
     int status;
     LibglvndInstallCheckResult result = LIBGLVND_CHECK_RESULT_ERROR;
+
+    if (missing_libs) {
+        *missing_libs = "";
+    }
 
     log_printf(op, NULL, "Looking for install checker script at %s", scriptPath);
     if (access(scriptPath, R_OK) != 0) {
@@ -3202,14 +3207,40 @@ static LibglvndInstallCheckResult run_libglvnd_script(Options *op, Package *p)
     }
 
     cmdline = nvasprintf("/bin/sh %s", scriptPath);
-    status = run_command(op, cmdline, NULL, TRUE, 0, FALSE);
+    status = run_command(op, cmdline, &output, TRUE, 0, FALSE);
     if (WIFEXITED(status)) {
         result = WEXITSTATUS(status);
     } else {
         result = LIBGLVND_CHECK_RESULT_ERROR;
     }
 
+    // If the installation is partial, pass the list of missing libraries
+    // reported by the script back to the caller.
+    if (result == LIBGLVND_CHECK_RESULT_PARTIAL && missing_libs) {
+        char *line, *end, *buf;
+        int len = strlen(output);
+        static const char *missing_label = "Missing libglvnd libraries: ";
+
+        for (buf = output;
+             (line = get_next_line(buf, &end, output, len));
+             buf = end) {
+            int found = FALSE;
+
+            if (strncmp(line, missing_label, strlen(missing_label)) == 0) {
+                *missing_libs = nvstrdup(line + strlen(missing_label));
+                found = TRUE;
+            }
+
+            free(line);
+
+            if (found) {
+                break;
+            }
+        }
+    }
+
 done:
+    nvfree(output);
     nvfree(cmdline);
     return result;
 }
@@ -3247,6 +3278,47 @@ static void set_libglvnd_egl_json_path(Options *op)
                 "--glvnd-egl-config-path.");
         op->libglvnd_json_path = nvstrdup(DEFAULT_GLVND_EGL_JSON_PATH);
     }
+}
+
+/*
+ * Reports whether the given library is an optional part of libglvnd.
+ */
+static int library_is_optional(const char *library)
+{
+    const char * const optional_libs[] = {
+        "libOpenGL.so", // libOpenGL.so is not needed for classic GLX/EGL ABIs
+    };
+    int i;
+
+    for (i = 0; i < ARRAY_LEN(optional_libs); i++) {
+        // Do a partial name match to allow versioned and unversioned SONAMEs
+        if (strncmp(library, optional_libs[i], strlen(optional_libs[i])) == 0) {
+            return TRUE;
+        }
+    }
+
+    return FALSE;
+}
+
+/*
+ * Reports whether the given space-delimited list of libraries includes a
+ * mandatory part of the libglvnd stack.
+ */
+static int list_includes_essential_library(const char *libraries)
+{
+    int essential_library_found = FALSE;
+    char *libs = nvstrdup(libraries);
+    char *lib;
+
+    for (lib = strtok(libs, " "); lib; lib = strtok(NULL, " ")) {
+        if (!library_is_optional(lib)) {
+            essential_library_found = TRUE;
+            break;
+        }
+    }
+
+    nvfree(libs);
+    return essential_library_found;
 }
 
 /*
@@ -3289,10 +3361,12 @@ int check_libglvnd_files(Options *op, Package *p)
     }
 
     if (shouldInstall == NV_OPTIONAL_BOOL_DEFAULT) {
+        char *missing_libs;
+
         // Try to figure out whether libglvnd is already installed. We'll defer
         // to a separate program to do that.
 
-        LibglvndInstallCheckResult result = run_libglvnd_script(op, p);
+        LibglvndInstallCheckResult result = run_libglvnd_script(op, p, &missing_libs);
         if (result == LIBGLVND_CHECK_RESULT_INSTALLED) {
             // The libraries are already installed, so leave them alone.
             shouldInstall = NV_OPTIONAL_BOOL_FALSE;
@@ -3309,10 +3383,29 @@ int check_libglvnd_files(Options *op, Package *p)
                     "Abort installation."
                 };
 
-                partialAction = ui_multiple_choice(op, ANSWERS, 3, 2,
-                        "An incomplete installation of libglvnd was found. "
+                int default_choice;
+                const char *optional_only;
+
+                // If GLVND was partially installed, but none of the missing
+                // libraries are essential, default to allowing the installation
+                // to continue without installing libglvnd by. If any of the
+                // missing libraries in a partial libglvnd installation are
+                // essential, default to aborting the installation.
+                if (list_includes_essential_library(missing_libs)) {
+                    default_choice = 2; // Abort installation
+                    optional_only = "";
+                } else {
+                    default_choice = 0; // Don't install
+                    optional_only = "All of the essential libglvnd libraries "
+                                    "are present, but one or more optional "
+                                    "components are missing. ";
+                }
+
+                partialAction = ui_multiple_choice(op, ANSWERS, 3, default_choice,
+                        "An incomplete installation of libglvnd was found. %s"
                         "Do you want to install a full copy of libglvnd? "
-                        "This will overwrite any existing libglvnd libraries.");
+                        "This will overwrite any existing libglvnd libraries.",
+                        optional_only);
             }
             if (partialAction == 0) {
                 // Don't install

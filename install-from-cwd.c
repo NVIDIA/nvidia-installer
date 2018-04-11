@@ -196,7 +196,7 @@ int install_from_cwd(Options *op)
                 "not remove existing NVIDIA kernel modules not part of "
                 "an earlier NVIDIA driver installation.  Please ensure "
                 "that an NVIDIA kernel module matching this driver version "
-                "is installed seperately.");
+                "is installed separately.");
 
         /* no_kernel_module should imply no DKMS */
 
