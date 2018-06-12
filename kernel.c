@@ -573,7 +573,8 @@ int link_kernel_module(Options *op, Package *p, const char *build_directory,
 
 
 static int build_kernel_module_helper(Options *op, const char *dir,
-                                      const char *module, int num_instances)
+                                      const char *module, int num_instances,
+                                      ui_message_func *msg_fn)
 {
     int ret;
     char *instances = NULL, *cmd, *tmp;
@@ -599,7 +600,7 @@ static int build_kernel_module_helper(Options *op, const char *dir,
 
     if (ret != 0) {
         ui_status_end(op, "Error.");
-        ui_error(op, "Unable to build the %s kernel module.", module);
+        msg_fn(op, "Unable to build the %s kernel module.", module);
         /* XXX need more descriptive error message */
 
         return FALSE;
@@ -612,7 +613,7 @@ static int build_kernel_module_helper(Options *op, const char *dir,
 
 
 static int check_file(Options *op, const char *dir, const char *filename,
-                      const char *modname)
+                      const char *modname, ui_message_func *msg_fn)
 {
     int ret;
     char *path;
@@ -622,7 +623,7 @@ static int check_file(Options *op, const char *dir, const char *filename,
     nvfree(path);
 
     if (ret == -1) {
-        ui_error(op, "The NVIDIA %s module was not created.", modname);
+        msg_fn(op, "The NVIDIA %s module was not created.", modname);
     }
 
     return ret != -1;
@@ -674,7 +675,8 @@ int build_kernel_module(Options *op, Package *p)
     free(cmd);
 
     ret = build_kernel_module_helper(op, p->kernel_module_build_directory,
-                                     "NVIDIA", op->num_kernel_modules);
+                                     "NVIDIA", op->num_kernel_modules,
+                                     ui_error);
 
     if (!ret) {
         return FALSE;
@@ -683,14 +685,15 @@ int build_kernel_module(Options *op, Package *p)
     /* check that the frontend file actually exists */
     if (op->multiple_kernel_modules) {
         if (!check_file(op, p->kernel_module_build_directory,
-                        p->kernel_frontend_module_filename, "frontend")) {
+                        p->kernel_frontend_module_filename, "frontend",
+                        ui_error)) {
             return FALSE;
         }
     }
 
     /* check that the file actually exists */
     if (!check_file(op, p->kernel_module_build_directory,
-                    p->kernel_module_filename, "kernel")) {
+                    p->kernel_module_filename, "kernel", ui_error)) {
         return FALSE;
     }
 
@@ -702,18 +705,16 @@ int build_kernel_module(Options *op, Package *p)
 
     if (op->install_uvm) {
         ret = build_kernel_module_helper(op, p->uvm_module_build_directory,
-                                         "Unified Memory", 0);
+                                         "Unified Memory", 0, ui_log);
 
         ret = ret && check_file(op, p->uvm_module_build_directory,
-                                p->uvm_kernel_module_filename, "Unified Memory");
+                                p->uvm_kernel_module_filename, "Unified Memory",
+                                ui_log);
 
         if (!ret) {
-            ui_error(op, "The Unified Memory kernel module failed to build. "
-                     "This kernel module is required for the proper operation "
-                     "of CUDA. If you do not need to use CUDA, you can try to "
-                     "install this driver package again with the "
-                     "'--no-unified-memory' option.");
-            return FALSE;
+            ui_log(op, "The Unified Memory kernel module failed to build. "
+                       "Driver installation will proceed without this module.");
+            op->install_uvm = FALSE;
         }
     }
 
@@ -1597,10 +1598,7 @@ int test_kernel_module(Options *op, Package *p)
                                     ret);
             if (ret) {
                 ui_warn(op, "The NVIDIA Unified Memory module failed to load, "
-                        "and the load failure was ignored. This module is "
-                        "required in order for the CUDA driver to function; if "
-                        "the load failure cannot be resolved, then this system "
-                        "will be unable to run CUDA applications.");
+                        "and the load failure was ignored.");
             }
             goto test_exit;
         }
