@@ -612,6 +612,15 @@ int set_destinations(Options *op, Package *p)
     }
 
     for (i = 0; i < p->num_entries; i++) {
+        /* If a file type's destination was overridden, use the override */
+        if (op->file_type_destination_overrides[p->entries[i].type] != NULL) {
+            p->entries[i].dst = nvstrcat(
+                op->file_type_destination_overrides[p->entries[i].type], "/",
+                p->entries[i].name, NULL);
+            collapse_multiple_slashes(p->entries[i].dst);
+
+            continue;
+        }
 
         switch (p->entries[i].type) {
 

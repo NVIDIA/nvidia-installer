@@ -105,6 +105,7 @@ enum {
     GLVND_EGL_CONFIG_FILE_PATH_OPTION,
     GLVND_EGL_CLIENT_OPTION,
     EGL_EXTERNAL_PLATFORM_CONFIG_FILE_PATH_OPTION,
+    OVERRIDE_FILE_TYPE_DESTINATION_OPTION,
 };
 
 static const NVGetoptOption __options[] = {
@@ -667,6 +668,18 @@ static const NVGetoptOption __options[] = {
       "If the package includes an EGL external platform library, then install "
       "the EGL external platform library config file to this directory. "
       "Defaults to " DEFAULT_EGL_EXTERNAL_PLATFORM_JSON_PATH "."
+    },
+
+    { "override-file-type-destination",
+      OVERRIDE_FILE_TYPE_DESTINATION_OPTION, NVGETOPT_STRING_ARGUMENT, NULL,
+      "Override the default destination for a file type. This option takes an "
+      "argument in the form of '<FILE_TYPE>:<destination>', where <FILE_TYPE> "
+      "is a file type from the installer .manifest file, and <destination> is "
+      "an absolute path to the directory where files of that type should be "
+      "installed. This option may be given multiple times in order to override "
+      "the destinations for multiple file types. Use of this option takes "
+      "precedence over any other options that might otherwise influence the "
+      "destination of the specified file type."
     },
 
     /* Orphaned options: These options were in the long_options table in

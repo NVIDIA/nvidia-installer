@@ -43,6 +43,7 @@
 #include "sanity.h"
 #include "option_table.h"
 #include "msg.h"
+#include "manifest.h"
 
 static void print_version(void);
 static void print_help(const char* name, int is_uninstall, int advanced);
@@ -152,6 +153,34 @@ static Options *load_default_options(void)
 
 } /* load_default_options() */
 
+
+/* Parse the file type and destination out from the argument to the
+ * --override-file-type-destination command line option. Return TRUE if
+ * parsing was successful, or FALSE on a parse error. */
+static int assign_file_type_override(Options *op, char *optarg)
+{
+    PackageEntryFileCapabilities dummy;
+    PackageEntryFileType type;
+    char *split;
+
+    /* Terminate the string at the first ':' to get the file type, and
+     * advance to the character after the ':' to get the destination. */
+    split = strchr(optarg, ':');
+    if (split == NULL) {
+        return FALSE;
+    }
+    split[0] = '\0';
+    split++;
+
+    type = parse_manifest_file_type(optarg, &dummy);
+    if (type == FILE_TYPE_NONE) {
+        return FALSE;
+    }
+
+    op->file_type_destination_overrides[type] = nvstrdup(split);
+
+    return TRUE;
+}
 
 
 /*
@@ -459,6 +488,11 @@ static void parse_commandline(int argc, char *argv[], Options *op)
             break;
         case EGL_EXTERNAL_PLATFORM_CONFIG_FILE_PATH_OPTION:
             op->external_platform_json_path = strval;
+            break;
+        case OVERRIDE_FILE_TYPE_DESTINATION_OPTION:
+            if (!assign_file_type_override(op, strval)) {
+                goto fail;
+            }
             break;
         default:
             goto fail;
