@@ -78,7 +78,6 @@ static const struct {
      */
     { ENTRY(KERNEL_MODULE_SRC,          F, F, T, F, F, F, F, F, T, T, F) },
     { ENTRY(KERNEL_MODULE,              F, F, T, F, F, F, F, F, T, F, F) },
-    { ENTRY(OPENGL_HEADER,              F, F, T, T, F, F, T, F, T, F, F) },
     { ENTRY(CUDA_ICD,                   F, F, T, F, F, F, F, F, T, F, F) },
     { ENTRY(OPENGL_LIB,                 T, F, T, F, F, T, T, F, T, F, F) },
     { ENTRY(CUDA_LIB,                   T, F, T, T, F, T, F, F, T, F, F) },
@@ -194,10 +193,6 @@ void get_installable_file_type_list(
     for (i = 0; i < ARRAY_LEN(packageEntryFileTypeTable); i++) {
 
         PackageEntryFileType type = packageEntryFileTypeTable[i].type;
-
-        if ((type == FILE_TYPE_OPENGL_HEADER) && !op->opengl_headers) {
-            continue;
-        }
 
         if (((type == FILE_TYPE_KERNEL_MODULE_SRC) ||
              (type == FILE_TYPE_DKMS_CONF)) &&

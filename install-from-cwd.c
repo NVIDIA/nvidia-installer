@@ -222,10 +222,6 @@ int install_from_cwd(Options *op)
     
         if (!get_prefixes(op)) goto failed;
 
-        /* ask if we should install the OpenGL header files */
-
-        should_install_opengl_headers(op, p);
-
         /*
          * select the appropriate TLS class, modifying the package as
          * necessary.

@@ -54,12 +54,10 @@ static void print_help(const char* name, int is_uninstall, int advanced);
  * print_version() - print the current nvidia-installer version number
  */
 
-extern const char *pNV_ID;
-
 static void print_version(void)
 {
     nv_info_msg(NULL, "");
-    nv_info_msg(NULL, "%s", pNV_ID);
+    nv_info_msg(NULL, "%s", NV_ID_STRING);
     nv_info_msg(TAB, "The NVIDIA Software Installer for Unix/Linux.");
     nv_info_msg(NULL, "");
     nv_info_msg(TAB, "This program is used to install, upgrade and uninstall "
@@ -130,7 +128,6 @@ static Options *load_default_options(void)
     op->tmpdir = get_tmpdir(op);
 
     op->logging = TRUE; /* log by default */
-    op->opengl_headers = FALSE; /* do not install our GL headers by default */
     op->nvidia_modprobe = TRUE;
     op->run_nvidia_xconfig = FALSE;
     op->selinux_option = SELINUX_DEFAULT;
@@ -324,8 +321,6 @@ static void parse_commandline(int argc, char *argv[], Options *op)
             break;
         case TMPDIR_OPTION:
             op->tmpdir = strval; break;
-        case OPENGL_HEADERS_OPTION:
-            op->opengl_headers = TRUE; break;
         case NO_NVIDIA_MODPROBE_OPTION:
             op->nvidia_modprobe = FALSE; break;
 #if defined(NV_TLS_TEST)

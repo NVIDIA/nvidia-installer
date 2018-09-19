@@ -773,12 +773,6 @@ int set_destinations(Options *op, Package *p)
             path = p->entries[i].path;
             break;
 
-        case FILE_TYPE_OPENGL_HEADER:
-            prefix = op->opengl_prefix;
-            dir = op->opengl_incdir;
-            path = p->entries[i].path;
-            break;
-
         case FILE_TYPE_INSTALLER_BINARY:
             prefix = op->utility_prefix;
             dir = op->utility_bindir;
@@ -2176,16 +2170,18 @@ void process_dkms_conf(Options *op, Package *p)
     int i;
     char *tmpfile;
 
-    char *tokens[6] = { "__VERSION_STRING", "__DKMS_MODULES", "__JOBS",
-                        "__EXCLUDE_MODULES", "will be generated", NULL };
-    char *replacements[6] = { p->version, NULL, NULL,
-                              p->excluded_kernel_modules,
-                              "was generated", NULL };
+    char *tokens[] = { "__VERSION_STRING", "__DKMS_MODULES", "__JOBS",
+                             "__EXCLUDE_MODULES", "will be generated",
+                             "__IGNORE_CC_MISMATCH", NULL };
+    char *replacements[] = { p->version, NULL, NULL,
+                                   p->excluded_kernel_modules,
+                                   "was generated", NULL, NULL };
 
     int package_num_entries = p->num_entries;
 
     replacements[1] = nvstrdup("");
     replacements[2] = nvasprintf("%d", op->concurrency_level);
+    replacements[5] = op->ignore_cc_version_check ? "1" : "";
 
     /* Build the list of kernel modules to be installed */
     for (i = 0; i < p->num_kernel_modules; i++) {
@@ -2463,8 +2459,6 @@ void get_default_prefixes_and_paths(Options *op)
 
     if (!op->opengl_libdir)
         op->opengl_libdir = default_libdir;
-    if (!op->opengl_incdir)
-        op->opengl_incdir = DEFAULT_INCDIR;
 
     if (!op->x_prefix) {
         if (op->modular_xorg) {

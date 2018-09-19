@@ -99,7 +99,6 @@ typedef enum {
 typedef enum {
     FILE_TYPE_NONE,
     FILE_TYPE_KERNEL_MODULE_SRC,
-    FILE_TYPE_OPENGL_HEADER,
     FILE_TYPE_OPENGL_LIB,
     FILE_TYPE_DOCUMENTATION,
     FILE_TYPE_OPENGL_SYMLINK,
@@ -184,7 +183,6 @@ typedef struct __options {
     int logging;
     int no_precompiled_interface;
     int no_ncurses_color;
-    int opengl_headers;
     int nvidia_modprobe;
     int no_questions;
     int silent;
@@ -230,7 +228,6 @@ typedef struct __options {
 
     char *opengl_prefix;
     char *opengl_libdir;
-    char *opengl_incdir;
 
     char *x_prefix;
     char *x_libdir;
@@ -490,7 +487,6 @@ typedef struct __package {
 #define DEFAULT_AARCH64_TRIPLET_LIBDIR  "lib/aarch64-linux-gnu"
 #define DEFAULT_PPC64LE_TRIPLET_LIBDIR  "lib/powerpc64le-linux-gnu"
 #define DEFAULT_BINDIR                  "bin"
-#define DEFAULT_INCDIR                  "include"
 #define DEFAULT_X_MODULEDIR             "modules"
 #define DEFAULT_DOT_DESKTOPDIR          "share/applications"
 #define DEFAULT_DOCDIR                  "share/doc"

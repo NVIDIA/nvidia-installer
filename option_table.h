@@ -47,7 +47,6 @@ enum {
     LOG_FILE_NAME_OPTION,
     HELP_ARGS_ONLY_OPTION,
     TMPDIR_OPTION,
-    OPENGL_HEADERS_OPTION,
     NO_NVIDIA_MODPROBE_OPTION,
     INSTALLER_PREFIX_OPTION,
     FORCE_TLS_OPTION,
@@ -350,15 +349,6 @@ static const NVGetoptOption __options[] = {
 
     { "no-ncurses-color", 'c', NVGETOPT_OPTION_APPLIES_TO_NVIDIA_UNINSTALL,
       NULL, "Disable use of color in the ncurses user interface." },
-
-    { "opengl-headers", OPENGL_HEADERS_OPTION, 0, NULL,
-      "Normally, installation will not install NVIDIA's OpenGL "
-      "header files; the OpenGL header files packaged by the "
-      "Linux distribution or available from "
-      "http://www.opengl.org/registry/ should be preferred. "
-      "However, http://www.opengl.org/registry/ does not yet provide "
-      "a glx.h or gl.h.  Until that is resolved, NVIDIA's OpenGL "
-      "header files can still be chosen, through this installer option." },
 
     { "no-nvidia-modprobe", NO_NVIDIA_MODPROBE_OPTION, 0, NULL,
       "Skip installation of 'nvidia-modprobe', a setuid root utility which "

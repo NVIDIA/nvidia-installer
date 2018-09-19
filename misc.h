@@ -68,7 +68,6 @@ int check_precompiled_kernel_interface_tools(Options *op);
 char *extract_version_string(const char *str);
 int continue_after_error(Options *op, const char *fmt, ...) NV_ATTRIBUTE_PRINTF(2, 3);
 int do_install(Options *op, Package *p, CommandList *c);
-void should_install_opengl_headers(Options *op, Package *p);
 void should_install_compat32_files(Options *op, Package *p);
 void should_install_optional_modules(Options *op, Package *p,
                                      const KernelModuleInfo *optional_modules,
