@@ -360,26 +360,6 @@ static const NVGetoptOption __options[] = {
       "needed if other means of loading the NVIDIA kernel module and creating "
       "the NVIDIA device files are unavailable." },
 
-#if defined(NV_TLS_TEST)
-    { "force-tls", FORCE_TLS_OPTION, NVGETOPT_STRING_ARGUMENT, NULL,
-      "NVIDIA's OpenGL libraries are compiled with one of two "
-      "different thread local storage (TLS) mechanisms: 'classic tls' "
-      "which is used on systems with glibc 2.2 or older, and 'new tls' "
-      "which is used on systems with tls-enabled glibc 2.3 or newer.  "
-      "nvidia-installer will select the OpenGL libraries appropriate "
-      "for your system; however, you may use this option to force the "
-      "installer to install one library type or another.  Valid values "
-      "for &FORCE-TLS& are 'new' and 'classic'." },
-
-#if defined(NV_X86_64)
-    { "force-tls-compat32", FORCE_TLS_COMPAT32_OPTION,
-      NVGETOPT_STRING_ARGUMENT, NULL,
-      "This option forces the installer to install a specific "
-      "32bit compatibility OpenGL TLS library; further details "
-      "can be found in the description of the '--force-tls' option." },
-#endif /* NV_X86_64 */
-#endif
-
     { "kernel-name", 'k', NVGETOPT_STRING_ARGUMENT, NULL,
       "Build and install the NVIDIA kernel module for the "
       "non-running kernel specified by &KERNEL-NAME& (&KERNEL-NAME& "
@@ -689,6 +669,9 @@ static const NVGetoptOption __options[] = {
     { "no-runlevel-check", NO_RUNLEVEL_CHECK_OPTION, 0, NULL, NULL },
     { "install-vdpau-wrapper", INSTALL_VDPAU_WRAPPER_OPTION, NVGETOPT_IS_BOOLEAN, NULL, NULL },
     { "no-network", 'N', 0, NULL, NULL },
+    { "force-tls", FORCE_TLS_OPTION, NVGETOPT_STRING_ARGUMENT, NULL, NULL },
+    { "force-tls-compat32", FORCE_TLS_COMPAT32_OPTION, NVGETOPT_STRING_ARGUMENT,
+      NULL, NULL },
 
     { NULL, 0, 0, NULL, NULL },
 };

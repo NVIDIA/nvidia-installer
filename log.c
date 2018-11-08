@@ -42,16 +42,6 @@ static FILE *log_file_stream;
 
 #define STRSTR(x) ((x) ? (x) : "(not specified)")
 
-#define TLSSTR(x) ({ \
-    const char *__tls_str = NULL; \
-    switch (x) { \
-        case FORCE_CLASSIC_TLS: __tls_str = "classic"; break; \
-        case FORCE_NEW_TLS: __tls_str = "elf-tls"; break; \
-        default: __tls_str = "(not specified)"; \
-    } \
-    __tls_str; \
-})
-
 #define SELINUXSTR(x) ({ \
     const char *__selinux_str = NULL; \
     switch (x) { \

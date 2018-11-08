@@ -75,7 +75,6 @@ void should_install_optional_modules(Options *op, Package *p,
 void check_installed_files_from_package(Options *op, Package *p);
 int check_installed_file(Options*, const char*, const mode_t, const uint32,
                          ui_message_func *logwarn);
-int tls_test(Options *op, int compat_32_libs);
 int check_runtime_configuration(Options *op, Package *p);
 void collapse_multiple_slashes(char *s);
 int is_symbolic_link_to(const char *path, const char *dest);

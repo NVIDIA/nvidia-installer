@@ -107,7 +107,6 @@ typedef enum {
     FILE_TYPE_UTILITY_BINARY,
     FILE_TYPE_LIBGL_LA,
     FILE_TYPE_TLS_LIB,
-    FILE_TYPE_TLS_SYMLINK,
     FILE_TYPE_UTILITY_LIB,
     FILE_TYPE_DOT_DESKTOP,
     FILE_TYPE_UTILITY_LIB_SYMLINK,
@@ -186,10 +185,6 @@ typedef struct __options {
     int nvidia_modprobe;
     int no_questions;
     int silent;
-#if defined(NV_TLS_TEST)
-    int which_tls;
-    int which_tls_compat32;
-#endif /* NV_TLS_TEST */
     int sanity;
     int add_this_kernel;
     int no_backup;
@@ -294,12 +289,6 @@ typedef struct __options {
 } Options;
 
 typedef enum {
-    FILE_TLS_CLASS_NONE,
-    FILE_TLS_CLASS_NEW,
-    FILE_TLS_CLASS_CLASSIC,
-} PackageEntryFileTlsClass;
-
-typedef enum {
     FILE_COMPAT_ARCH_NONE,
     FILE_COMPAT_ARCH_NATIVE,
     FILE_COMPAT_ARCH_COMPAT32,
@@ -313,7 +302,6 @@ typedef enum {
 
 typedef struct {
     unsigned int has_arch       : 1;
-    unsigned int has_tls_class  : 1;
     unsigned int installable    : 1;
     unsigned int has_path       : 1;
     unsigned int is_symlink     : 1;
@@ -368,7 +356,6 @@ typedef struct __package_entry {
 
     PackageEntryFileCapabilities caps;
     PackageEntryFileType type;
-    PackageEntryFileTlsClass tls_class;
     PackageEntryFileCompatArch compat_arch;
     PackageEntryFileGLVND glvnd;
     int inherit_path_depth;
@@ -449,16 +436,9 @@ typedef struct __package {
 #define NV_LINE_LEN 1024
 #define NV_MIN_LINE_LEN 256
 
-#define TLS_LIB_TYPE_FORCED         0x0001
-#define TLS_LIB_NEW_TLS             0x0002
-#define TLS_LIB_CLASSIC_TLS         0x0004
-
 #define SELINUX_DEFAULT             0x0000
 #define SELINUX_FORCE_YES           0x0001
 #define SELINUX_FORCE_NO            0x0002
-
-#define FORCE_CLASSIC_TLS          (TLS_LIB_CLASSIC_TLS | TLS_LIB_TYPE_FORCED)
-#define FORCE_NEW_TLS              (TLS_LIB_NEW_TLS | TLS_LIB_TYPE_FORCED)
 
 #define PERM_MASK (S_IRWXU|S_IRWXG|S_IRWXO)
 
@@ -561,7 +541,6 @@ void add_package_entry(Package *p,
                        char *target,
                        char *dst,
                        PackageEntryFileType type,
-                       PackageEntryFileTlsClass tls_class,
                        PackageEntryFileCompatArch compat_arch,
                        PackageEntryFileGLVND glvnd,
                        mode_t mode);

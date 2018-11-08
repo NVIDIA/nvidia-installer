@@ -64,15 +64,6 @@ DIST_FILES += README
 DIST_FILES += dist-files.mk
 
 DIST_FILES += rtld_test_Linux-x86
-
-DIST_FILES += tls_test_Linux-x86
-DIST_FILES += tls_test_Linux-x86_64
-
-DIST_FILES += tls_test_dso_Linux-x86.so
-DIST_FILES += tls_test_dso_Linux-x86_64.so
-
-DIST_FILES += tls_test.c
-DIST_FILES += tls_test_dso.c
 DIST_FILES += rtld_test.c
 
 DIST_FILES += nvidia-installer.1.m4

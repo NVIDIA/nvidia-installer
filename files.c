@@ -396,91 +396,6 @@ char *write_temp_file(Options *op, const int len,
 } /* write_temp_file() */
 
 
-
-/*
- * select_tls_class() - determine which tls class should be installed
- * on the user's machine; if tls_test() fails, just install the
- * classic tls libraries.  If tls_test() passes, install both OpenGL
- * sets, but only the new tls libglx.
- */
-
-void select_tls_class(Options *op, Package *p)
-{
-#if defined(NV_TLS_TEST)
-    int i;
-
-    if (!tls_test(op, FALSE)) {
-        op->which_tls = (op->which_tls & TLS_LIB_TYPE_FORCED);
-        op->which_tls |= TLS_LIB_CLASSIC_TLS;
-
-        /*
-         * tls libraries will not run on this system; just install the
-         * classic OpenGL libraries: clear the FILE_TYPE of any
-         * FILE_TLS_CLASS_NEW package entries.
-         */
-
-        ui_log(op, "Installing classic TLS OpenGL libraries.");
-        
-        for (i = 0; i < p->num_entries; i++) {
-            if ((p->entries[i].tls_class == FILE_TLS_CLASS_NEW) &&
-                (p->entries[i].compat_arch == FILE_COMPAT_ARCH_NATIVE)) {
-                invalidate_package_entry(&(p->entries[i]));
-            }
-        }
-    } else {
-        op->which_tls = (op->which_tls & TLS_LIB_TYPE_FORCED);
-        op->which_tls |= TLS_LIB_NEW_TLS;
-
-        /*
-         * tls libraries will run on this system: install both the
-         * classic and new TLS libraries.
-         */
-
-        ui_log(op, "Installing both new and classic TLS OpenGL libraries.");
-    }
-
-#if defined(NV_X86_64)
-
-    /*
-     * If we are installing on amd64, then we need to perform a
-     * similar test for the 32bit compatibility libraries
-     */
-
-    if (!tls_test(op, TRUE)) {
-        op->which_tls_compat32 = (op->which_tls_compat32 & TLS_LIB_TYPE_FORCED);
-        op->which_tls_compat32 |= TLS_LIB_CLASSIC_TLS;
-
-        /*
-         * 32bit tls libraries will not run on this system; just
-         * install the classic OpenGL libraries: clear the FILE_TYPE
-         * of any tls_class==NEW && compat_arch==COMPAT32 package entries.
-         */
-
-        ui_log(op, "Installing classic TLS 32bit OpenGL libraries.");
-        
-        for (i = 0; i < p->num_entries; i++) {
-            if ((p->entries[i].tls_class == FILE_TLS_CLASS_NEW) &&
-                (p->entries[i].compat_arch == FILE_COMPAT_ARCH_COMPAT32)) {
-                invalidate_package_entry(&(p->entries[i]));
-            }
-        }
-    } else {
-        op->which_tls_compat32 = (op->which_tls_compat32 & TLS_LIB_TYPE_FORCED);
-        op->which_tls_compat32 |= TLS_LIB_NEW_TLS;
-
-        /*
-         * 32bit tls libraries will run on this system: install both
-         * the classic and new TLS libraries.
-         */
-
-        ui_log(op, "Installing both new and classic TLS 32bit "
-               "OpenGL libraries.");
-    }
-
-#endif /* NV_X86_64 */
-#endif /* NV_TLS_TEST */
-} /* select_tls_class() */
-
 /*
  * check_libGLX_indirect_target() - Helper function for
  * check_libGLX_indirect_links.
@@ -699,7 +614,6 @@ int set_destinations(Options *op, Package *p)
             break;
 
         case FILE_TYPE_TLS_LIB:
-        case FILE_TYPE_TLS_SYMLINK:
             if (p->entries[i].compat_arch == FILE_COMPAT_ARCH_COMPAT32) {
                 prefix = op->compat32_prefix;
                 dir = op->compat32_libdir;
@@ -1135,7 +1049,6 @@ static void add_kernel_module_helper(Options *op, Package *p,
                       NULL, /* target */
                       dst,
                       FILE_TYPE_KERNEL_MODULE,
-                      FILE_TLS_CLASS_NONE,
                       FILE_COMPAT_ARCH_NONE,
                       FILE_GLVND_DONT_CARE,
                       0644);
@@ -2068,7 +1981,6 @@ void process_libGL_la_files(Options *op, Package *p)
                                   NULL, /* target */
                                   NULL, /* dst */
                                   FILE_TYPE_LIBGL_LA,
-                                  p->entries[i].tls_class,
                                   p->entries[i].compat_arch,
                                   p->entries[i].glvnd,
                                   p->entries[i].mode);
@@ -2145,7 +2057,6 @@ void process_dot_desktop_files(Options *op, Package *p)
                                   NULL, /* target */
                                   NULL, /* dst */
                                   FILE_TYPE_DOT_DESKTOP,
-                                  p->entries[i].tls_class,
                                   p->entries[i].compat_arch,
                                   p->entries[i].glvnd,
                                   p->entries[i].mode);
@@ -2226,7 +2137,6 @@ void process_dkms_conf(Options *op, Package *p)
                                   NULL, /* target */
                                   NULL, /* dst */
                                   FILE_TYPE_DKMS_CONF,
-                                  p->entries[i].tls_class,
                                   p->entries[i].compat_arch,
                                   p->entries[i].glvnd,
                                   p->entries[i].mode);
@@ -2277,7 +2187,6 @@ void process_vulkan_icd_file(Options *op, Package *p)
                           NULL /* target */,
                           NULL /* dst */,
                           FILE_TYPE_VULKAN_ICD_JSON,
-                          vkIcdJsonEntry->tls_class,
                           vkIcdJsonEntry->compat_arch,
                           vkIcdJsonEntry->glvnd,
                           vkIcdJsonEntry->mode);
@@ -3160,7 +3069,6 @@ void add_libgl_abi_symlink(Options *op, Package *p)
                           target,
                           nvstrcat(usrlib, libgl, NULL),
                           FILE_TYPE_OPENGL_SYMLINK,
-                          FILE_TLS_CLASS_NONE,
                           FILE_COMPAT_ARCH_NATIVE,
                           FILE_GLVND_DONT_CARE,
                           0000);

@@ -115,8 +115,6 @@ is now:
     - search in the usr/src/nv/precompiled directory of the .run file,
       if no match found, then
 
-    - search on the ftp site, if no match found, then
-
     - give up and just build the kernel module yourself
 
 

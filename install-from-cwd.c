@@ -96,7 +96,7 @@ int install_from_cwd(Options *op)
     HookScriptStatus res;
 
     static const char* edit_your_xf86config =
-        "Please update your XF86Config or xorg.conf file as "
+        "Please update your xorg.conf file as "
         "appropriate; see the file /usr/share/doc/"
         "NVIDIA_GLX-1.0/README.txt for details.";
 
@@ -228,13 +228,6 @@ int install_from_cwd(Options *op)
         /* ask for the XFree86 and OpenGL installation prefixes. */
     
         if (!get_prefixes(op)) goto failed;
-
-        /*
-         * select the appropriate TLS class, modifying the package as
-         * necessary.
-         */
-    
-        select_tls_class(op, p);
 
         /*
          * if the package contains any libGL.la or .desktop files,
@@ -923,24 +916,6 @@ static Package *parse_manifest (Options *op)
             op->compat32_files_packaged = TRUE;
         }
 
-        /* some libs/symlinks have a class field */
-
-        entry.tls_class = FILE_TLS_CLASS_NONE;
-
-        if (entry.caps.has_tls_class) {
-            nvfree(flag);
-            flag = read_next_word(c, &c);
-            if (!flag) goto entry_done;
-
-            if (strcmp(flag, "CLASSIC") == 0)
-                entry.tls_class = FILE_TLS_CLASS_CLASSIC;
-            else if (strcmp(flag, "NEW") == 0)
-                entry.tls_class = FILE_TLS_CLASS_NEW;
-            else {
-                goto entry_done;
-            }
-        }
-
         /* some file types have a path field, or inherit their paths */
 
         if (entry.caps.has_path) {
@@ -1027,7 +1002,6 @@ static Package *parse_manifest (Options *op)
                           entry.target,
                           entry.dst,
                           entry.type,
-                          entry.tls_class,
                           entry.compat_arch,
                           entry.glvnd,
                           entry.mode);
@@ -1089,7 +1063,6 @@ void add_package_entry(Package *p,
                        char *target,
                        char *dst,
                        PackageEntryFileType type,
-                       PackageEntryFileTlsClass tls_class,
                        PackageEntryFileCompatArch compat_arch,
                        PackageEntryFileGLVND glvnd,
                        mode_t mode)
@@ -1110,7 +1083,6 @@ void add_package_entry(Package *p,
     p->entries[n].target      = target;
     p->entries[n].dst         = dst;
     p->entries[n].type        = type;
-    p->entries[n].tls_class   = tls_class;
     p->entries[n].mode        = mode;
     p->entries[n].caps        = get_file_type_capabilities(type);
     p->entries[n].compat_arch = compat_arch;
@@ -1476,7 +1448,6 @@ generate_done:
                           NULL, /* target */
                           NULL, /* dst */
                           FILE_TYPE_MODULE_SIGNING_KEY,
-                          FILE_TLS_CLASS_NONE,
                           FILE_COMPAT_ARCH_NONE,
                           FILE_GLVND_DONT_CARE,
                           0444);
@@ -1509,7 +1480,6 @@ generate_done:
                               NULL, /* target */
                               NULL, /* dst */
                               FILE_TYPE_MODULE_SIGNING_KEY,
-                              FILE_TLS_CLASS_NONE,
                               FILE_COMPAT_ARCH_NONE,
                               FILE_GLVND_DONT_CARE,
                               0400);

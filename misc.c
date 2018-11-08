@@ -503,18 +503,12 @@ int find_system_utils(Options *op)
         }
     }
 
-    /* If no program called `X` is found; try searching for known X servers */
+    /* If no program called `X` is found; try searching for Xorg */
     if (op->utils[XSERVER] == NULL) {
-        static const char* xservers[] = { "Xorg", "XFree86" };
-        int i;
-
-        for (i = 0; i < ARRAY_LEN(xservers); i++) {
-            op->utils[XSERVER] = find_system_util(xservers[i]);
-            if (op->utils[XSERVER]) {
-                ui_expert(op, "found `%s` : `%s`",
-                          xservers[i], op->utils[XSERVER]);
-                break;
-            }
+        op->utils[XSERVER] = find_system_util("Xorg");
+        if (op->utils[XSERVER]) {
+            ui_expert(op, "found `%s` : `%s`",
+                      "Xorg", op->utils[XSERVER]);
         }
     }
 
@@ -1398,180 +1392,6 @@ int check_installed_file(Options *op, const char *filename,
 
 
 
-#if defined(NV_TLS_TEST)
-/*
- * tls_test() - Starting with glibc 2.3, there is a new thread local
- * storage mechanism.  To accomodate this, NVIDIA's OpenGL libraries
- * are built both the "classic" way, and the new way.  To determine
- * which set of OpenGL libraries to install, execute the test program
- * stored in tls_test_array.  If the program returns 0 we should
- * install the new tls libraries; if it returns anything else, we
- * should install the "classic" libraries.
- *
- * So as to avoid any risk of not being able to find the tls_test
- * binary at run time, the test program is stored as static data
- * inside the installer binary (in the same way that the user
- * interface shared libraries are)... see
- * user_interface.c:extract_user_interface() for details.
- *
- * Return TRUE if the new tls libraries should be installed; FALSE if
- * the old libraries should be used.
- */
-
-/* pull in the array and size from g_tls_test.c */
-
-extern const unsigned char tls_test_array[];
-extern const int tls_test_array_size;
-
-/* pull in the array and size from g_tls_test_dso.c */
-
-extern const unsigned char tls_test_dso_array[];
-extern const int tls_test_dso_array_size;
-
-
-
-#if defined(NV_X86_64)
-
-/* pull in the array and size from g_tls_test_32.c */
-
-extern const unsigned char tls_test_array_32[];
-extern const int tls_test_array_32_size;
-
-/* pull in the array and size from g_tls_test_dso_32.c */
-
-extern const unsigned char tls_test_dso_array_32[];
-extern const int tls_test_dso_array_32_size;
-
-#endif /* NV_X86_64 */
-
-
-/* forward prototype */
-
-static int tls_test_internal(Options *op, int which_tls,
-                             const unsigned char *test_array,
-                             const int test_array_size,
-                             const unsigned char *dso_test_array,
-                             const int dso_test_array_size);
-
-
-
-int tls_test(Options *op, int compat_32_libs)
-{
-    if (compat_32_libs) {
-        
-#if defined(NV_X86_64)
-        return tls_test_internal(op, op->which_tls_compat32,
-                                 tls_test_array_32,
-                                 tls_test_array_32_size,
-                                 tls_test_dso_array_32,
-                                 tls_test_dso_array_32_size);
-#else
-        return FALSE;
-#endif /* NV_X86_64 */        
-        
-    } else {
-        return tls_test_internal(op, op->which_tls,
-                                 tls_test_array,
-                                 tls_test_array_size,
-                                 tls_test_dso_array,
-                                 tls_test_dso_array_size);
-    }
-} /* tls_test */
-
-
-
-/*
- * tls_test_internal() - this is the routine that does all the work to
- * write the tests to file and execute them; the caller (tls_test())
- * just selects which array data is used as the test.
- */
-
-static int tls_test_internal(Options *op, int which_tls,
-                             const unsigned char *test_array,
-                             const int test_array_size,
-                             const unsigned char *test_dso_array,
-                             const int test_dso_array_size)
-{
-    int ret = FALSE;
-    char *tmpfile = NULL, *dso_tmpfile = NULL, *cmd = NULL;
-    
-    /* allow commandline options to bypass this test */
-    
-    if (which_tls == FORCE_NEW_TLS) return TRUE;
-    if (which_tls == FORCE_CLASSIC_TLS) return FALSE;
-    
-    /* check that we have the test program */
-
-    if ((test_array == NULL) ||
-        (test_array_size == 0) ||
-        (test_dso_array == NULL) ||
-        (test_dso_array_size == 0)) {
-        ui_warn(op, "The thread local storage test program is not "
-                "present; assuming classic tls.");
-        return FALSE;
-    }
-    
-    /* write the tls_test data to tmp files */
-    
-    tmpfile = write_temp_file(op, test_array_size, test_array,
-                              S_IRUSR|S_IWUSR|S_IXUSR);
-    
-    if (!tmpfile) {
-        ui_warn(op, "Unable to create temporary file for thread local "
-                "storage test program (%s); assuming classic tls.",
-                strerror(errno));
-        goto done;
-    }
-
-    dso_tmpfile = write_temp_file(op, test_dso_array_size,
-                                  test_dso_array,
-                                  S_IRUSR|S_IWUSR|S_IXUSR);
-    if (!dso_tmpfile) {
-        ui_warn(op, "Unable to create temporary file for thread local "
-                "storage test program (%s); assuming classic tls.",
-                strerror(errno));
-        goto done;
-    }
-    
-    if (!set_security_context(op, dso_tmpfile, op->selinux_chcon_type)) {
-        /* We are on a system with SELinux and the chcon command failed.
-         * Assume that the system is recent enough to have the new TLS
-         */
-        ui_warn(op, "Unable to set the security context on file %s; "
-                    "assuming new tls.",
-                     dso_tmpfile);
-        ret = TRUE;
-        goto done;
-    }
-
-    /* run the test */
-
-    cmd = nvstrcat(tmpfile, " ", dso_tmpfile, NULL);
-    
-    ret = run_command(op, cmd, NULL, FALSE, 0, TRUE);
-    
-    ret = ((ret == 0) ? TRUE : FALSE);
-
- done:
-
-    if (tmpfile) {
-        unlink(tmpfile);
-        nvfree(tmpfile);
-    }
-
-    if (dso_tmpfile) {
-        unlink(dso_tmpfile);
-        nvfree(dso_tmpfile);
-    }
-
-    if (cmd) nvfree(cmd);
-
-    return ret;
-
-} /* test_tls_internal() */
-#endif /* defined(NV_TLS_TEST) */
-
-
 /*
  * check_runtime_configuration() - In the past, nvidia-installer has
  * frequently failed to backup/move all conflicting files prior to
@@ -1602,25 +1422,16 @@ extern const int rtld_test_array_32_size;
 /* forward prototype */
 
 static int rtld_test_internal(Options *op, Package *p,
-                              int which_tls,
                               const unsigned char *test_array,
                               const int test_array_size,
                               int compat_32_libs);
 
 int check_runtime_configuration(Options *op, Package *p)
 {
-    int ret = TRUE, which_tls, which_tls_compat32;
+    int ret = TRUE;
     char *tmpdir = NULL;
     char old_cwd[PATH_MAX];
     int chdir_success = FALSE;
-
-#if defined(NV_TLS_TEST)
-    which_tls = op->which_tls;
-    which_tls_compat32 = op->which_tls_compat32;
-#else
-    /* Platforms that don't need the TLS test only support "new" ELF TLS. */
-    which_tls = which_tls_compat32 = TLS_LIB_NEW_TLS;
-#endif /* NV_TLS_TEST */
 
     ui_status_begin(op, "Running runtime sanity check:", "Checking");
 
@@ -1636,14 +1447,14 @@ int check_runtime_configuration(Options *op, Package *p)
     }
 
 #if defined(NV_X86_64)
-    ret = rtld_test_internal(op, p, which_tls_compat32,
+    ret = rtld_test_internal(op, p,
                              rtld_test_array_32,
                              rtld_test_array_32_size,
                              TRUE);
 #endif /* NV_X86_64 */
 
     if (ret == TRUE) {
-        ret = rtld_test_internal(op, p, which_tls,
+        ret = rtld_test_internal(op, p,
                                  rtld_test_array,
                                  rtld_test_array_size,
                                  FALSE);
@@ -1723,7 +1534,6 @@ int is_symbolic_link_to(const char *path, const char *dest)
  */
 
 static int rtld_test_internal(Options *op, Package *p,
-                              int which_tls,
                               const unsigned char *test_array,
                               const int test_array_size,
                               int compat_32_libs)
@@ -1771,9 +1581,6 @@ static int rtld_test_internal(Options *op, Package *p,
         if ((p->entries[i].type != FILE_TYPE_OPENGL_LIB) &&
             (p->entries[i].type != FILE_TYPE_TLS_LIB)) {
             continue;
-        } else if ((which_tls & TLS_LIB_TYPE_FORCED) &&
-                   (p->entries[i].type == FILE_TYPE_TLS_LIB)) {
-            continue;
 #if defined(NV_X86_64)
         } else if ((p->entries[i].compat_arch == FILE_COMPAT_ARCH_NATIVE)
                    && compat_32_libs) {
@@ -1782,12 +1589,6 @@ static int rtld_test_internal(Options *op, Package *p,
                    && !compat_32_libs) {
             continue;
 #endif /* NV_X86_64 */
-        } else if ((which_tls == TLS_LIB_NEW_TLS) &&
-                   (p->entries[i].tls_class == FILE_TLS_CLASS_CLASSIC)) {
-            continue;
-        } else if ((which_tls == TLS_LIB_CLASSIC_TLS) &&
-                   (p->entries[i].tls_class == FILE_TLS_CLASS_NEW)) {
-            continue;
         }
 
         name = nvstrdup(p->entries[i].name);
@@ -1934,7 +1735,8 @@ static int rtld_test_internal(Options *op, Package *p,
  * server version.
  */
 
-static int get_xserver_information(const char *versionString,
+static int get_xserver_information(Options *op,
+                                   const char *versionString,
                                    int *isModular,
                                    int *supportsOutputClassSection)
 {
@@ -1947,8 +1749,8 @@ static int get_xserver_information(const char *versionString,
     /* check if this is an XFree86 X server */
 
     if (strstr(versionString, "XFree86 Version")) {
-        *isModular = FALSE;
-        return TRUE;
+        ui_error(op, "XFree86 is not supported.");
+        return FALSE;
     }
 
 
@@ -2035,7 +1837,7 @@ void query_xorg_version(Options *op)
      * modular
      */
 
-    ret = get_xserver_information(data, &op->modular_xorg,
+    ret = get_xserver_information(op, data, &op->modular_xorg,
                                   &op->xorg_supports_output_class);
 
     /* fall through */

@@ -1,7 +1,7 @@
 dnl This file is to be preprocessed by m4.
 changequote([[[, ]]])dnl
 define(__OPTIONS__, [[[include([[[options.1.inc]]])dnl]]])dnl
-.\" Copyright (C) 2005-2010 NVIDIA Corporation.
+.\" Copyright (C) 2005-2018 NVIDIA Corporation.
 .\"
 __HEADER__
 .\" Define the URL macro and then load the URL package if it exists.
@@ -59,16 +59,6 @@ In the 'uninstall' mode of operation, all driver files that were installed on th
 The uninstall process should restore your filesystem to its state prior to installation.
 If you install one NVIDIA __INSTALLER_OS__ graphics driver while another is already installed, this uninstall step is automatically performed on the old driver at the beginning of installation of the new driver.
 .PP
-You can also use
-.B nvidia\-installer
-to automatically update to newer drivers.
-.PP
-You can query the latest driver available on NVIDIA's website with the
-.B \-\-latest
-option, or request that the latest driver, if newer than your current driver, be automatically downloaded and installed by specifying the
-.B \-\-update
-commandline option.
-.PP
 \fBnvidia\-installer\fR's backend is separate from its user interface; the installer will use an ncurses-based user interface if it can find the correct ncurses library, otherwise, it will fall back to a simple commandline user interface.
 To disable use of the ncurses user interface, use the option
 .B \-\-ui=none.
@@ -80,7 +70,7 @@ The source code to
 is released under the GPL and available here:
 .sp
 .ti +5
-.URL "ftp://download.nvidia.com/XFree86/nvidia\-installer/"
+.URL "https://download.nvidia.com/XFree86/nvidia\-installer/"
 .sp
 Patches are welcome.
 dnl Call gen-manpage-opts to generate this section.
@@ -134,18 +124,6 @@ or
 will be printed in a message informing the user of the presence/availability of the alternate driver installation, and asking the user whether to continue with the installation.
 .SH EXAMPLES
 .TP
-.B nvidia\-installer \-\-latest
-Connect to NVIDIA's FTP site, and report the latest driver version and the URL to the latest driver file.
-.TP
-.B nvidia\-installer \-\-update
-Connect to NVIDIA's FTP site.
-If a newer version of the driver is available, download and install it.
-Use
-.B \-\-force\-update
-to install the most recent driver even if
-.B \-\-nvidia\-installer
-detects that it is installed already.
-.TP
 .B nvidia\-installer \-\-uninstall
 Remove the NVIDIA driver and restore files that were overwritten during the install process.
 .\" .SH FILES
@@ -159,4 +137,4 @@ NVIDIA Corporation
 .BR nvidia-settings (1),
 .I /usr/share/doc/NVIDIA_GLX-1.0/README.txt
 .SH COPYRIGHT
-Copyright \(co 2005-2010 NVIDIA Corporation.
+Copyright \(co 2005-2018 NVIDIA Corporation.

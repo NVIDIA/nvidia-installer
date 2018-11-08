@@ -56,13 +56,6 @@ NVIDIA_INSTALLER_PROGRAM_NAME = "nvidia-installer"
 
 NVIDIA_INSTALLER_VERSION := $(NVIDIA_VERSION)
 
-# We only need to run the TLS test on Linux-x86 and Linux-x86_64
-ifeq ($(findstring Linux-x86,$(TARGET_OS)-$(TARGET_ARCH)),)
-  NEED_TLS_TEST =
-else
-  NEED_TLS_TEST = 1
-endif
-
 NCURSES_UI_C       = ncurses-ui.c
 NCURSES_UI_O       = $(call BUILD_OBJECT_LIST,$(NCURSES_UI_C))
 NCURSES_UI_SO      = $(OUTPUTDIR)/nvidia-installer-ncurses-ui.so
@@ -70,28 +63,6 @@ NCURSES_UI_SO_C    = $(OUTPUTDIR)/g_$(notdir $(NCURSES_UI_SO:.so=.c))
 NCURSES6_UI_O      = $(OUTPUTDIR)/ncurses6-ui.o
 NCURSES6_UI_SO     = $(OUTPUTDIR)/nvidia-installer-ncurses6-ui.so
 NCURSES6_UI_SO_C   = $(OUTPUTDIR)/g_$(notdir $(NCURSES6_UI_SO:.so=.c))
-
-ifneq ($(NEED_TLS_TEST),)
-  TLS_TEST_C         = $(OUTPUTDIR)/g_tls_test.c
-  TLS_TEST_DSO_C     = $(OUTPUTDIR)/g_tls_test_dso.c
-  TLS_TEST           = tls_test_$(TARGET_OS)-$(TARGET_ARCH)
-  TLS_TEST_DSO_SO    = tls_test_dso_$(TARGET_OS)-$(TARGET_ARCH).so
-
-  TLS_TEST_32_C      = $(OUTPUTDIR)/g_tls_test_32.c
-  TLS_TEST_DSO_32_C  = $(OUTPUTDIR)/g_tls_test_dso_32.c
-  TLS_TEST_32        = tls_test_$(TARGET_OS)-x86
-  TLS_TEST_DSO_SO_32 = tls_test_dso_$(TARGET_OS)-x86.so
-else
-  TLS_TEST_C         =
-  TLS_TEST_DSO_C     =
-  TLS_TEST           =
-  TLS_TEST_DSO_SO    =
-
-  TLS_TEST_32_C      =
-  TLS_TEST_DSO_32_C  =
-  TLS_TEST_32        =
-  TLS_TEST_DSO_SO_32 =
-endif
 
 RTLD_TEST_C        = $(OUTPUTDIR)/g_rtld_test.c
 RTLD_TEST          = $(OUTPUTDIR)/rtld_test
@@ -114,14 +85,13 @@ OPTIONS_1_INC      = $(OUTPUTDIR)/options.1.inc
 ifeq ($(TARGET_OS)-$(TARGET_ARCH), Linux-x86_64)
   TLS_MODEL = initial-exec
   PIC = -fPIC
-  # Only Linux-x86_64 needs the tls_test_32 files
-  COMPAT_32_SRC = $(TLS_TEST_32_C) $(TLS_TEST_DSO_32_C) \
-    $(RTLD_TEST_32_C)
+  # Only Linux-x86_64 needs the rtld_test_32 file
+  COMPAT_32_SRC = $(RTLD_TEST_32_C)
 else
   # So far all other platforms use local-exec
   TLS_MODEL = local-exec
   PIC =
-  # Non-Linux-x86_64 platforms do not include the tls_test_32 files
+  # Non-Linux-x86_64 platforms do not include the rtld_test_32 file
   COMPAT_32_SRC =
 endif
 
@@ -148,8 +118,7 @@ NCURSES_UI_SO_SRC = $(NCURSES_UI_SO_C)
 NCURSES_UI_SO_SRC += $(if $(BUILD_NCURSES6),$(NCURSES6_UI_SO_C),)
 CFLAGS += $(if $(BUILD_NCURSES6),-DNV_INSTALLER_NCURSES6,)
 
-INSTALLER_SRC = $(SRC) $(NCURSES_UI_SO_SRC) $(TLS_TEST_C) $(TLS_TEST_DSO_C) \
-	$(RTLD_TEST_C) $(COMPAT_32_SRC)
+INSTALLER_SRC = $(SRC) $(NCURSES_UI_SO_SRC) $(RTLD_TEST_C) $(COMPAT_32_SRC)
 
 INSTALLER_OBJS = $(call BUILD_OBJECT_LIST,$(INSTALLER_SRC))
 
@@ -157,7 +126,6 @@ common_cflags  = -I.
 common_cflags += -imacros $(CONFIG_H)
 common_cflags += -I $(OUTPUTDIR)
 common_cflags += -I $(COMMON_UTILS_DIR)
-common_cflags += $(if $(NEED_TLS_TEST),-DNV_TLS_TEST)
 
 CFLAGS += $(common_cflags)
 
@@ -249,22 +217,6 @@ $(NCURSES_UI_SO_C): $(GEN_UI_ARRAY) $(NCURSES_UI_SO)
 $(NCURSES6_UI_SO_C): $(GEN_UI_ARRAY) $(NCURSES6_UI_SO)
 	$(call quiet_cmd,GEN_UI_ARRAY) $(NCURSES6_UI_SO) ncurses6_ui_array > $@
 
-ifneq ($(NEED_TLS_TEST),)
-  $(TLS_TEST_C): $(GEN_UI_ARRAY) $(TLS_TEST)
-	$(call quiet_cmd,GEN_UI_ARRAY) $(TLS_TEST) tls_test_array > $@
-
-  $(TLS_TEST_DSO_C): $(GEN_UI_ARRAY) $(TLS_TEST_DSO_SO)
-	$(call quiet_cmd,GEN_UI_ARRAY) \
-	  $(TLS_TEST_DSO_SO) tls_test_dso_array > $@
-
-  $(TLS_TEST_32_C): $(GEN_UI_ARRAY) $(TLS_TEST_32)
-	$(call quiet_cmd,GEN_UI_ARRAY) $(TLS_TEST_32) tls_test_array_32 > $@
-
-  $(TLS_TEST_DSO_32_C): $(GEN_UI_ARRAY) $(TLS_TEST_DSO_SO_32)
-	$(call quiet_cmd,GEN_UI_ARRAY) \
-	  $(TLS_TEST_DSO_SO_32) tls_test_dso_array_32 > $@
-endif
-
 $(RTLD_TEST_C): $(GEN_UI_ARRAY) $(RTLD_TEST)
 	$(call quiet_cmd,GEN_UI_ARRAY) $(RTLD_TEST) rtld_test_array > $@
 
@@ -306,28 +258,6 @@ $(call BUILD_MAKESELF_OBJECT_LIST,$(MAKESELF_HELP_SCRIPT_SRC)): $(CONFIG_H)
 clean clobber:
 	rm -rf $(OUTPUTDIR)
 
-
-##############################################################################
-# rule to rebuild tls_test and tls_test_dso; a precompiled tls_test
-# and tls_test_dso is distributed with nvidia_installer because they
-# require a recent toolchain to build.
-##############################################################################
-
-rebuild_tls_test: tls_test.c
-	gcc -Wall -O2 -fomit-frame-pointer -o $(TLS_TEST) -ldl $<
-	strip $(TLS_TEST)
-
-rebuild_tls_test_dso: tls_test_dso.c
-	gcc -Wall -O2 $(PIC) -fomit-frame-pointer -c $< \
-		-ftls-model=$(TLS_MODEL)
-	gcc -o $(TLS_TEST_DSO_SO) -shared tls_test_dso.o
-	strip $(TLS_TEST_DSO_SO)
-
-# dummy rule to override implicit rule that builds tls_test from
-# tls_test.c
-
-tls_test: tls_test.c
-	touch $@
 
 # rule to build a native rtld_test; a precompiled Linux-x86 rtld_test is
 # distributed with nvidia-installer to simplify Linux-x86_64 builds.

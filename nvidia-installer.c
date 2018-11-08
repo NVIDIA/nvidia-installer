@@ -323,30 +323,16 @@ static void parse_commandline(int argc, char *argv[], Options *op)
             op->tmpdir = strval; break;
         case NO_NVIDIA_MODPROBE_OPTION:
             op->nvidia_modprobe = FALSE; break;
-#if defined(NV_TLS_TEST)
         case FORCE_TLS_OPTION:
-            if (strcasecmp(strval, "new") == 0)
-                op->which_tls = FORCE_NEW_TLS;
-            else if (strcasecmp(strval, "classic") == 0)
-                op->which_tls = FORCE_CLASSIC_TLS;
-            else {
-                nv_error_msg("Invalid parameter for '--force-tls'");
-                goto fail;
-            }
+            /* This option is no longer used; ignore it. */
+            nv_warning_msg("The '--force-tls' option is deprecated:  "
+                           "nvidia-installer will ignore this option.");
             break;
-#if defined(NV_X86_64)
         case FORCE_TLS_COMPAT32_OPTION:
-            if (strcasecmp(strval, "new") == 0)
-                op->which_tls_compat32 = FORCE_NEW_TLS;
-            else if (strcasecmp(strval, "classic") == 0)
-                op->which_tls_compat32 = FORCE_CLASSIC_TLS;
-            else {
-                nv_error_msg("Invalid parameter for '--force-tls-compat32'");
-                goto fail;
-            }
+            /* This option is no longer used; ignore it. */
+            nv_warning_msg("The '--force-tls-compat32' option is deprecated:  "
+                           "nvidia-installer will ignore this option.");
             break;
-#endif /* NV_X86_64 */
-#endif /* NV_TLS_TEST */
         case SANITY_OPTION:
             op->sanity = TRUE;
             break;
