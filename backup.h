@@ -32,7 +32,7 @@ int do_backup                   (Options*, const char*);
 int log_install_file            (Options*, const char*);
 int log_create_symlink          (Options*, const char*, const char*);
 int check_for_existing_driver   (Options*, Package*);
-int uninstall_existing_driver   (Options*, const int);
+int uninstall_existing_driver   (Options*, const int, const int);
 int run_existing_uninstaller    (Options*);
 int report_driver_information   (Options*);
 

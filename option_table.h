@@ -105,6 +105,7 @@ enum {
     GLVND_EGL_CLIENT_OPTION,
     EGL_EXTERNAL_PLATFORM_CONFIG_FILE_PATH_OPTION,
     OVERRIDE_FILE_TYPE_DESTINATION_OPTION,
+    SKIP_DEPMOD_OPTION,
 };
 
 static const NVGetoptOption __options[] = {
@@ -650,6 +651,13 @@ static const NVGetoptOption __options[] = {
       "the destinations for multiple file types. Use of this option takes "
       "precedence over any other options that might otherwise influence the "
       "destination of the specified file type."
+    },
+
+    { "skip-depmod",
+      SKIP_DEPMOD_OPTION, NVGETOPT_OPTION_APPLIES_TO_NVIDIA_UNINSTALL, NULL,
+      "Don't run the depmod(1) utility after modifying kernel modules.  This "
+      "should only be used in cases where depmod(1) will be run separately after "
+      "running nvidia-installer."
     },
 
     /* Orphaned options: These options were in the long_options table in

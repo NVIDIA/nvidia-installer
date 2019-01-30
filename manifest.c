@@ -97,10 +97,8 @@ static const struct {
     { ENTRY(UTILITY_BIN_SYMLINK,        F, F, F, T, F, F, F, T, F, F) },
     { ENTRY(DOT_DESKTOP,                F, T, T, F, F, F, T, T, F, F) },
     { ENTRY(XMODULE_SHARED_LIB,         F, T, T, F, T, F, F, T, F, F) },
-    { ENTRY(XMODULE_SYMLINK,            F, F, T, T, F, F, F, T, F, F) },
     { ENTRY(GLX_MODULE_SHARED_LIB,      F, T, T, F, T, T, F, T, F, F) },
     { ENTRY(GLX_MODULE_SYMLINK,         F, F, T, T, F, T, F, T, F, F) },
-    { ENTRY(XMODULE_NEWSYM,             F, F, T, T, F, F, F, T, F, F) },
     { ENTRY(VDPAU_LIB,                  T, T, T, F, T, F, F, T, F, F) },
     { ENTRY(VDPAU_SYMLINK,              T, F, T, T, F, F, F, T, F, F) },
     { ENTRY(NVCUVID_LIB,                T, T, F, F, T, F, F, T, F, F) },
@@ -217,9 +215,7 @@ void get_installable_file_type_list(
 
 /*
  * Add symlink file types to the given file list.  This is used when
- * building a list of existing files to remove.  The NEWSYM type
- * requires special handling: while it is a symlink, we do not remove
- * it from the filesystem if it already exists.
+ * building a list of existing files to remove.
  */
 void add_symlinks_to_file_type_list(PackageEntryFileTypeList *file_type_list)
 {
@@ -230,10 +226,6 @@ void add_symlinks_to_file_type_list(PackageEntryFileTypeList *file_type_list)
         PackageEntryFileType type = packageEntryFileTypeTable[i].type;
 
         if (!packageEntryFileTypeTable[i].caps.is_symlink) {
-            continue;
-        }
-
-        if (type == FILE_TYPE_XMODULE_NEWSYM) {
             continue;
         }
 

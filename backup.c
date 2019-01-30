@@ -115,7 +115,8 @@ static void free_backup_info(BackupInfo *b);
 
 static int check_backup_log_entries(Options *op, BackupInfo *b);
 
-static int do_uninstall(Options *op, const char *version);
+static int do_uninstall(Options *op, const char *version,
+                        const int skip_depmod);
 
 static int sanity_check_backup_log_entries(Options *op, BackupInfo *b);
 
@@ -627,7 +628,8 @@ static int rmdir_recursive(Options *op)
  * driver, by parsing the BACKUP_LOG file.
  */
 
-static int do_uninstall(Options *op, const char *version)
+static int do_uninstall(Options *op, const char *version,
+                        const int skip_depmod)
 {
     BackupLogEntry *e;
     BackupInfo *b;
@@ -836,14 +838,15 @@ static int do_uninstall(Options *op, const char *version)
         /* Update modules.dep and the ldconfig(8) cache to remove entries for
          * any DSOs and kernel modules that we just uninstalled. */
 
-        char *cmd;
-        int status;
+        int status = 0;
 
-        ui_log(op, "Running depmod and ldconfig:");
+        ui_log(op, "Running %sldconfig:", op->skip_depmod ? "" : "depmod and ");
 
-        cmd = nvstrcat(op->utils[DEPMOD], " -a ", op->kernel_name, NULL);
-        status = run_command(op, cmd, NULL, FALSE, 0, FALSE);
-        nvfree(cmd);
+        if (!op->skip_depmod) {
+            char *cmd = nvstrcat(op->utils[DEPMOD], " -a ", op->kernel_name, NULL);
+            status |= run_command(op, cmd, NULL, FALSE, 0, FALSE);
+            nvfree(cmd);
+        }
 
         status |= run_command(op, op->utils[LDCONFIG], NULL, FALSE, 0, FALSE);
 
@@ -1367,7 +1370,8 @@ int check_for_existing_driver(Options *op, Package *p)
  * stop (so it always returns TRUE).
  */
 
-int uninstall_existing_driver(Options *op, const int interactive)
+int uninstall_existing_driver(Options *op, const int interactive,
+                              const int skip_depmod)
 {
     int ret;
     char *descr = NULL;
@@ -1393,7 +1397,7 @@ int uninstall_existing_driver(Options *op, const int interactive)
         run_nvidia_xconfig(op, TRUE, msg, FALSE);
     }
 
-    ret = do_uninstall(op, version);
+    ret = do_uninstall(op, version, skip_depmod);
 
     if (ret) {
         if (interactive) {
@@ -1414,6 +1418,23 @@ int uninstall_existing_driver(Options *op, const int interactive)
 
 } /* uninstall_existing_driver() */
 
+/*
+ * Determine if the nvidia-uninstall executable at the path in 'uninstaller'
+ * supports the '--skip-depmod' option.  To do this, we simply examine the help
+ * text for the presence of the option.
+ */
+static int check_skip_depmod_support(Options *op, const char *uninstaller)
+{
+    char *cmd = nvstrcat(uninstaller, " -A | ", op->utils[GREP],
+                         " -q '^ \\+--skip-depmod$'", NULL);
+
+    int ret = run_command(op, cmd, NULL, FALSE, 0, FALSE);
+
+    nvfree(cmd);
+
+    /* exit status is 0 in case of success, so invert here */
+    return !ret;
+}
 
 
 /*
@@ -1424,13 +1445,26 @@ int run_existing_uninstaller(Options *op)
 {
     char *uninstaller = find_system_util("nvidia-uninstall");
 
+    /*
+     * This function is run as part of installation.  If we're about to install
+     * kernel modules and run depmod afterwards, we don't need to run depmod
+     * as part of uninstallation.
+     */
+    int skip_depmod = !op->no_kernel_module;
+
     if (uninstaller) {
-        /* Run the uninstaller non-interactively, and explicitly log to the
-         * uninstall log location: older installers may not do so implicitly. */
-        char *uninstall_cmd = nvstrcat(uninstaller, " -s --log-file-name="
-                                       DEFAULT_UNINSTALL_LOG_FILE_NAME, NULL);
+        char *uninstall_cmd = NULL;
         char *data = NULL;
         int ret;
+
+        skip_depmod = skip_depmod && check_skip_depmod_support(op, uninstaller);
+
+        /* Run the uninstaller non-interactively, and explicitly log to the
+         * uninstall log location: older installers may not do so implicitly. */
+        uninstall_cmd = nvstrcat(uninstaller, " -s --log-file-name="
+                                 DEFAULT_UNINSTALL_LOG_FILE_NAME,
+                                 skip_depmod ? " --skip-depmod" : NULL,
+                                 NULL);
 
         ui_log(op, "Uninstalling the previous installation with %s.",
                uninstaller);
@@ -1442,6 +1476,7 @@ int run_existing_uninstaller(Options *op)
         /* if nvidia-uninstall succeeded, return early; otherwise, fall back to
          * uninstalling via the backup log file. */
         if (ret == 0) {
+            nvfree(uninstaller);
             nvfree(data);
             return TRUE;
         } else {
@@ -1456,7 +1491,8 @@ int run_existing_uninstaller(Options *op)
         nvfree(uninstaller);
     }
 
-    return uninstall_existing_driver(op, FALSE);
+    return uninstall_existing_driver(op, FALSE /* interactive */,
+                                     skip_depmod);
 }
 
 

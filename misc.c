@@ -1187,11 +1187,7 @@ void check_installed_files_from_package(Options *op, Package *p)
         percent = (float) i / (float) p->num_entries;
         ui_status_update(op, percent, "%s", p->entries[i].dst);
         
-        if (p->entries[i].caps.is_symlink &&
-            /* Don't bother checking FILE_TYPE_NEWSYMs because we may not have
-             * installed them. */
-            p->entries[i].type != FILE_TYPE_XMODULE_NEWSYM) {
-
+        if (p->entries[i].caps.is_symlink) {
             if (!check_symlink(op, p->entries[i].target,
                                p->entries[i].dst,
                                p->description)) {

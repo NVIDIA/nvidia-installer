@@ -111,8 +111,6 @@ typedef enum {
     FILE_TYPE_DOT_DESKTOP,
     FILE_TYPE_UTILITY_LIB_SYMLINK,
     FILE_TYPE_XMODULE_SHARED_LIB,
-    FILE_TYPE_XMODULE_SYMLINK,
-    FILE_TYPE_XMODULE_NEWSYM, /* Create a symlink if the file doesn't exist */
     FILE_TYPE_MANPAGE,
     FILE_TYPE_EXPLICIT_PATH,
     FILE_TYPE_CUDA_LIB,
@@ -214,6 +212,7 @@ typedef struct __options {
     int skip_module_load;
     int glvnd_glx_client;
     int glvnd_egl_client;
+    int skip_depmod;
 
     NVOptionalBool install_libglx_indirect;
     NVOptionalBool install_libglvnd_libraries;

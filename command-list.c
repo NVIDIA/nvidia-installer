@@ -365,19 +365,6 @@ CommandList *build_command_list(Options *op, Package *p)
     
     for (i = 0; i < p->num_entries; i++) {
         if (p->entries[i].caps.is_symlink) {
-            /* if it's a NEWSYM and the file already exists, don't add a command
-             * for it */
-            if (p->entries[i].type == FILE_TYPE_XMODULE_NEWSYM) {
-                struct stat buf;
-                if(!stat(p->entries[i].dst, &buf) || errno != ENOENT) {
-                    ui_expert(op, "Not creating a symlink from %s to %s "
-                                  "because a file already exists at that path "
-                                  "or the path is inaccessible.",
-                                  p->entries[i].dst, p->entries[i].target);
-                    continue;
-                }
-            }
-
             add_command(c, SYMLINK_CMD, p->entries[i].dst,
                         p->entries[i].target);
         }
@@ -421,7 +408,7 @@ CommandList *build_command_list(Options *op, Package *p)
      * <Nigel.Spowage@energis.com>
      */
     
-    if (!op->no_kernel_module) {
+    if (!op->no_kernel_module && !op->skip_depmod) {
         tmp = nvstrcat(op->utils[DEPMOD], " -a ", op->kernel_name, NULL);
         add_command(c, RUN_CMD, tmp);
         nvfree(tmp);

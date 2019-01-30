@@ -145,6 +145,7 @@ static Options *load_default_options(void)
     op->install_libglx_indirect = NV_OPTIONAL_BOOL_DEFAULT;
     op->install_libglvnd_libraries = NV_OPTIONAL_BOOL_DEFAULT;
     op->external_platform_json_path = DEFAULT_EGL_EXTERNAL_PLATFORM_JSON_PATH;
+    op->skip_depmod = FALSE;
 
     return op;
 
@@ -475,6 +476,9 @@ static void parse_commandline(int argc, char *argv[], Options *op)
                 goto fail;
             }
             break;
+        case SKIP_DEPMOD_OPTION:
+            op->skip_depmod = TRUE;
+            break;
         default:
             goto fail;
         }
@@ -622,7 +626,8 @@ int main(int argc, char *argv[])
     /* uninstall */
 
     else if (op->uninstall) {
-        ret = uninstall_existing_driver(op, TRUE);
+        ret = uninstall_existing_driver(op, TRUE /* interactive */,
+                                        op->skip_depmod);
     }
 
     /* add this kernel */

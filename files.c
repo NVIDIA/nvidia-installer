@@ -605,9 +605,7 @@ int set_destinations(Options *op, Package *p)
             
         case FILE_TYPE_XMODULE_SHARED_LIB:
         case FILE_TYPE_GLX_MODULE_SHARED_LIB:
-        case FILE_TYPE_XMODULE_SYMLINK:
         case FILE_TYPE_GLX_MODULE_SYMLINK:
-        case FILE_TYPE_XMODULE_NEWSYM:
             prefix = op->x_module_path;
             dir = "";
             path = p->entries[i].path;
