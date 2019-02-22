@@ -124,6 +124,13 @@ int install_from_cwd(Options *op)
 
     if (!check_for_running_x(op)) goto failed;
 
+    /* run the distro pre unload hook */
+    res = run_distro_hook(op, "pre-unload");
+    if (res == HOOK_SCRIPT_FAIL) {
+        ui_error(op, "Pre-unload hook script failed");
+        goto failed;
+    }
+
     /* make sure the kernel module is unloaded */
     
     if (!check_for_unloaded_kernel_module(op)) goto failed;
