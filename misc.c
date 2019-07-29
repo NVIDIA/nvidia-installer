@@ -285,6 +285,16 @@ int run_command(Options *op, const char *cmd, char **data, int output,
     }
 
     /*
+     * Clear LANG and LC_ALL before running the command, to make sure
+     * command output that might need to be parsed doesn't vary based
+     * on system locale settings.
+     */
+
+    unsetenv("LANG");
+    unsetenv("LC_ALL");
+
+
+    /*
      * Open a process by creating a pipe, forking, and invoking the
      * command.
      */
