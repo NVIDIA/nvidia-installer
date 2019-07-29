@@ -261,6 +261,16 @@ InstallerUI ui_dispatch_table = {
 
 
 
+/* internal variables */
+
+/* Save the return value of initscr() here instead of using stdscr directly.
+ * This avoids problems if libncurses.so doesn't expose stdscr, as was the
+ * case in http://bugzilla.suse.com/show_bug.cgi?id=1132282 */
+static WINDOW *nv_stdscr;
+
+
+
+
 /*
  * nv_ncurses_detect() - initialize ncurses; return FALSE if
  * initialization fails
@@ -270,14 +280,14 @@ static int nv_ncurses_detect(Options *op)
 {
     int x, y;
 
-    if (!initscr()) return FALSE;
-    
+    if (!(nv_stdscr = initscr())) return FALSE;
+
     /*
      * query the current size of the window, and don't try to use the
      * ncurses ui if it's too small.
      */
 
-    getmaxyx(stdscr, y, x);
+    getmaxyx(nv_stdscr, y, x);
 
     if ((x < NV_NCURSES_MIN_WIDTH) || (y < NV_NCURSES_MIN_HEIGHT)) {
         endwin();
@@ -326,13 +336,13 @@ static int nv_ncurses_init(Options *op, FormatTextRows format_text_rows)
         }
     }
     
-    clear();              /* clear the screen */
-    noecho();             /* don't echo input to the screen */
-    cbreak();             /* disable line buffering and control characters */
-    curs_set(0);          /* make the cursor invisible */
-    keypad(stdscr, TRUE); /* enable keypad, function keys, arrow keys, etc */
+    wclear(nv_stdscr);       /* clear the screen */
+    noecho();                /* don't echo input to the screen */
+    cbreak();                /* disable line buffering and control characters */
+    curs_set(0);             /* make the cursor invisible */
+    keypad(nv_stdscr, TRUE); /* enable keypad, function keys, arrow keys, etc */
     
-    getmaxyx(stdscr, d->height, d->width); /* get current window dimensions */
+    getmaxyx(nv_stdscr, d->height, d->width); /* get current window dimensions */
     
     /* create the regions */
     
@@ -355,7 +365,7 @@ static int nv_ncurses_init(Options *op, FormatTextRows format_text_rows)
     nv_ncurses_set_footer(d, NV_NCURSES_DEFAULT_FOOTER_LEFT,
                           NV_NCURSES_DEFAULT_FOOTER_RIGHT);
     
-    refresh();
+    wrefresh(nv_stdscr);
     
     return TRUE;
     
@@ -374,7 +384,7 @@ static void nv_ncurses_set_title(Options *op, const char *title)
 
     nv_ncurses_set_header(d, title);
 
-    refresh();
+    wrefresh(nv_stdscr);
 
 } /* nv_ncurses_set_title() */
 
@@ -497,21 +507,26 @@ static char *nv_ncurses_get_input(Options *op,
         
         if (redraw) {
             for (i = 0; i < input_len; i++) {
-                mvaddch(input_y, input_x + i, BUF_CHAR(buf[i + x]) | color);
+                mvwaddch(nv_stdscr, input_y, input_x + i,
+                         BUF_CHAR(buf[i + x]) | color);
             }
         
             /* if we're scrolling, display an arrow */
 
             if (x > 0) {
-                mvaddch(input_y, input_x - 1, '<' | d->message->attr);
+                mvwaddch(nv_stdscr, input_y, input_x - 1,
+                         '<' | d->message->attr);
             } else {
-                mvaddch(input_y, input_x - 1, ' ' | d->message->attr);
+                mvwaddch(nv_stdscr, input_y, input_x - 1,
+                         ' ' | d->message->attr);
             }
         
             if (buf_len > (input_len - 1 + x)) {
-                mvaddch(input_y, input_x + input_len, '>' | d->message->attr);
+                mvwaddch(nv_stdscr, input_y, input_x + input_len,
+                         '>' | d->message->attr);
             } else {
-                mvaddch(input_y, input_x + input_len, ' ' | d->message->attr);
+                mvwaddch(nv_stdscr, input_y, input_x + input_len,
+                         ' ' | d->message->attr);
             }
             
             redraw = FALSE;
@@ -519,13 +534,13 @@ static char *nv_ncurses_get_input(Options *op,
 
         /* position the cursor */
 
-        move(input_y, input_x - x + c);
-        refresh();
+        wmove(nv_stdscr, input_y, input_x - x + c);
+        wrefresh(nv_stdscr);
         
         /* wait for input */
 
         if (nv_ncurses_check_resize(d, FALSE)) goto draw_get_input;
-        ch = getch();
+        ch = wgetch(nv_stdscr);
 
         switch (ch) {
             
@@ -595,7 +610,7 @@ static char *nv_ncurses_get_input(Options *op,
         if (op->debug) {
             mvprintw(d->message->y, d->message->x,
                      "c: %3d  ch: %04o (%d)", c, ch, ch);
-            clrtoeol();
+            wclrtoeol(nv_stdscr);
             redraw = TRUE;
         }
         
@@ -607,7 +622,7 @@ static char *nv_ncurses_get_input(Options *op,
     d->message = NULL;
     
     curs_set(0); /* make the cursor invisible */
-    refresh();
+    wrefresh(nv_stdscr);
     
     free(tmp);
     tmp = strdup(buf);
@@ -682,7 +697,7 @@ static void nv_ncurses_message(Options *op, int level, const char *msg)
 
     nv_ncurses_draw_button(d, d->message, x, y, w, h, "OK",
                            TRUE, FALSE);
-    refresh();
+    wrefresh(nv_stdscr);
     
     /* wait for enter */
 
@@ -690,7 +705,7 @@ static void nv_ncurses_message(Options *op, int level, const char *msg)
         /* if a resize occurred, jump back to the top and redraw */
         
         if (nv_ncurses_check_resize(d, FALSE)) goto draw_message;
-        ch = getch();
+        ch = wgetch(nv_stdscr);
 
         switch (ch) {
         case NV_NCURSES_CTRL('L'):
@@ -704,19 +719,19 @@ static void nv_ncurses_message(Options *op, int level, const char *msg)
 
     nv_ncurses_erase_button(d->message, x, y, w, h);
     nv_ncurses_draw_button(d, d->message, x, y, w, h, "OK", TRUE, TRUE);
-    refresh();
+    wrefresh(nv_stdscr);
     usleep(NV_NCURSES_BUTTON_PRESS_TIME);
 
     nv_ncurses_erase_button(d->message, x, y, w, h);
     nv_ncurses_draw_button(d, d->message, x, y, w, h, "OK", TRUE, FALSE);
-    refresh();
+    wrefresh(nv_stdscr);
     usleep(NV_NCURSES_BUTTON_PRESS_TIME);
 
     /* free the message region */
 
     nv_ncurses_destroy_region(d->message);
     d->message = NULL;
-    refresh();
+    wrefresh(nv_stdscr);
 
 } /* nv_ncurses_message() */
 
@@ -830,7 +845,7 @@ static void nv_ncurses_status_begin(Options *op,
     nv_ncurses_do_progress_bar_message(d, msg, d->message->h - 3,
                                        d->message->w);
 
-    refresh();
+    wrefresh(nv_stdscr);
 
 } /* nv_ncurses_status_begin() */
 
@@ -861,9 +876,9 @@ static void nv_ncurses_status_update(Options *op, const float percent,
 
     /* temporarily set getch() to non-blocking mode */
 
-    nodelay(stdscr, TRUE);
+    nodelay(nv_stdscr, TRUE);
 
-    while ((ch = getch()) != ERR) {
+    while ((ch = wgetch(nv_stdscr)) != ERR) {
         /*
          * if the user explicitely requested that the screen be
          * redrawn by pressing CTRL-L, then also redraw the entire
@@ -878,7 +893,7 @@ static void nv_ncurses_status_update(Options *op, const float percent,
 
     /* set getch() back to blocking mode */
 
-    nodelay(stdscr, FALSE);
+    nodelay(nv_stdscr, FALSE);
 
     /* compute the percentage */
 
@@ -898,32 +913,32 @@ static void nv_ncurses_status_update(Options *op, const float percent,
 
     if (d->use_color) {
         for (i = 1; i <= n; i++) {
-            mvaddch(d->message->y + h - 2, d->message->x + i,
+            mvwaddch(nv_stdscr, d->message->y + h - 2, d->message->x + i,
                     choose_char(i, p, v,' ') |
                     A_REVERSE | NV_NCURSES_INPUT_COLOR);
         }
 
         for (i = 0; i < 4; i++) {
             if (p[i] >= (n+1)) {
-                mvaddch(d->message->y + h - 2, d->message->x + p[i],
+                mvwaddch(nv_stdscr, d->message->y + h - 2, d->message->x + p[i],
                         (v[i] ? v[i] : ' ') | NV_NCURSES_INPUT_COLOR);
             }
         }
     } else {
         for (i = 2; i < n; i++) {
-            mvaddch(d->message->y + h - 2, d->message->x + i,
+            mvwaddch(nv_stdscr, d->message->y + h - 2, d->message->x + i,
                     choose_char(i, p, v, ' ') | A_REVERSE);
         }
         
         for (i = 0; i < 4; i++) {
             if (p[i] >= n) {
-                mvaddch(d->message->y + h - 2, d->message->x + p[i],
+                mvwaddch(nv_stdscr, d->message->y + h - 2, d->message->x + p[i],
                         v[i] ? v[i] : '-');
             }
         }
     }
 
-    refresh();
+    wrefresh(nv_stdscr);
     
 } /* nv_ncurses_status_update() */
 
@@ -966,18 +981,18 @@ static void nv_ncurses_status_end(Options *op, const char *msg)
 
     if (d->use_color) {
         for (i = 1; i < (n+1); i++) {
-            mvaddch(d->message->y + h - 2, d->message->x + i,
+            mvwaddch(nv_stdscr, d->message->y + h - 2, d->message->x + i,
                     choose_char(i, p, v, ' ') |
                     A_REVERSE | NV_NCURSES_INPUT_COLOR);
         }
     } else {
         for (i = 2; i < (n); i++) {
-            mvaddch(d->message->y + h - 2, d->message->x + i,
+            mvwaddch(nv_stdscr, d->message->y + h - 2, d->message->x + i,
                     choose_char(i, p, v, ' ') | A_REVERSE);
         }
     }
     
-    refresh();
+    wrefresh(nv_stdscr);
 
     free(d->progress_title);
     d->progress_title = NULL;
@@ -1008,8 +1023,8 @@ static void nv_ncurses_close(Options *op)
         free(d);
     }
     
-    clear();
-    refresh();
+    wclear(nv_stdscr);
+    wrefresh(nv_stdscr);
     
     endwin();  /* End curses mode */
     
@@ -1045,11 +1060,11 @@ static void nv_ncurses_set_header(DataStruct *d, const char *title)
     x = (d->header->w - strlen(d->title)) / 2;
     y = 0;
 
-    attrset(d->header->attr);
+    wattrset(nv_stdscr, d->header->attr);
     
     nv_ncurses_clear_region(d->header);
-    mvaddstr(d->header->y + y, d->header->x + x, (char *) d->title);
-    attrset(A_NORMAL);
+    mvwaddstr(nv_stdscr, d->header->y + y, d->header->x + x, (char *) d->title);
+    wattrset(nv_stdscr, A_NORMAL);
     
 } /* nv_ncurses_set_header() */
 
@@ -1076,22 +1091,24 @@ static void nv_ncurses_set_footer(DataStruct *d, const char *left,
     d->footer_left = tmp0;
     d->footer_right = tmp1;
 
-    attrset(d->footer->attr);
+    wattrset(nv_stdscr, d->footer->attr);
     
     nv_ncurses_clear_region(d->footer);
     
     if (d->footer_left) {
         y = 0;
         x = 1;
-        mvaddstr(d->footer->y + y, d->footer->x + x, d->footer_left);
+        mvwaddstr(nv_stdscr, d->footer->y + y, d->footer->x + x,
+                  d->footer_left);
     }
     if (d->footer_right) {
         y = 0;
         x = d->footer->w - strlen(d->footer_right) - 1;
-        mvaddstr(d->footer->y + y, d->footer->x + x, d->footer_right);
+        mvwaddstr(nv_stdscr, d->footer->y + y, d->footer->x + x,
+                  d->footer_right);
     }
 
-    attrset(A_NORMAL);
+    wattrset(nv_stdscr, A_NORMAL);
     
 } /* nv_ncurses_set_footer() */
 
@@ -1136,9 +1153,9 @@ static RegionStruct *nv_ncurses_create_region(DataStruct *d,
 
     /* clear the region */
 
-    attrset(region->attr);
+    wattrset(nv_stdscr, region->attr);
     nv_ncurses_clear_region(region);
-    attrset(A_NORMAL);
+    wattrset(nv_stdscr, A_NORMAL);
     
     return region;
 
@@ -1158,7 +1175,7 @@ static void nv_ncurses_clear_region(RegionStruct *region)
     int i;
 
     for (i = region->y; i < (region->y + region->h); i++) {
-        mvaddstr(i, region->x, region->line);
+        mvwaddstr(nv_stdscr, i, region->x, region->line);
     }
 } /* nv_ncurses_clear_region() */
 
@@ -1174,7 +1191,7 @@ static void nv_ncurses_destroy_region(RegionStruct *region)
 {
     if (!region) return;
 
-    attrset(A_NORMAL);
+    wattrset(nv_stdscr, A_NORMAL);
     nv_ncurses_clear_region(region);
     free(region->line);
     free(region);
@@ -1225,15 +1242,15 @@ static void nv_ncurses_draw_button(DataStruct *d, RegionStruct *region,
         
     for (j = y; j < (y + h); j++) {
         for (i = x; i < (x + w); i++) {
-            mvaddch(region->y + j, region->x + i, ' ' | attr);
+            mvwaddch(nv_stdscr, region->y + j, region->x + i, ' ' | attr);
         }
     }
     
     if (hilite) attr |= A_REVERSE;
     
-    attron(attr);
-    mvaddstr(region->y + y + h/2, region->x + x + n, str);
-    attroff(attr);
+    wattron(nv_stdscr, attr);
+    mvwaddstr(nv_stdscr, region->y + y + h/2, region->x + x + n, str);
+    wattroff(nv_stdscr, attr);
 
 } /* nv_ncurses_draw_button() */
 
@@ -1252,7 +1269,8 @@ static void nv_ncurses_erase_button(RegionStruct *region,
     
     for (j = y; j <= (y + h); j++) {
         for (i = x; i <= (x + w); i++) {
-            mvaddch(region->y + j, region->x + i, ' ' | region->attr);
+            mvwaddch(nv_stdscr, region->y + j, region->x + i,
+                     ' ' | region->attr);
         }
     }
     
@@ -1339,12 +1357,12 @@ static void nv_ncurses_do_progress_bar_region(DataStruct *d)
     n = d->message->w - 2;
     h = d->message->h;
     
-    attrset(d->message->attr);
+    wattrset(nv_stdscr, d->message->attr);
 
     /* draw the horizontal separator */
 
     for (i = 1; i <= n; i++) {
-        mvaddch(d->message->y + h - 4, d->message->x + i,
+        mvwaddch(nv_stdscr, d->message->y + h - 4, d->message->x + i,
                 NV_NCURSES_HLINE | d->message->attr);
     }
 
@@ -1356,15 +1374,15 @@ static void nv_ncurses_do_progress_bar_region(DataStruct *d)
 
     if (d->use_color) {
         for (i = 1; i <= n; i++) {
-            mvaddch(d->message->y + h - 2, d->message->x + i,
+            mvwaddch(nv_stdscr, d->message->y + h - 2, d->message->x + i,
                     choose_char(i, p, v, ' ') | NV_NCURSES_INPUT_COLOR);
         }
     } else {
-        mvaddch(d->message->y + h - 2, d->message->x + 1, '[');
+        mvwaddch(nv_stdscr, d->message->y + h - 2, d->message->x + 1, '[');
         for (i = 2; i < n; i++)
-            mvaddch(d->message->y + h - 2, d->message->x + i,
+            mvwaddch(nv_stdscr, d->message->y + h - 2, d->message->x + i,
                     choose_char(i, p, v, '-'));
-        mvaddch(d->message->y + h - 2, d->message->x + n, ']');
+        mvwaddch(nv_stdscr, d->message->y + h - 2, d->message->x + n, ']');
     }
 
 } /* nv_ncurses_do_progress_bar_region() */
@@ -1384,8 +1402,8 @@ static void nv_ncurses_do_progress_bar_message(DataStruct *d, const char *str,
 
     /* clear the message line */
 
-    attrset(d->message->attr);
-    mvaddstr(d->message->y + y, d->message->x, d->message->line);
+    wattrset(nv_stdscr, d->message->attr);
+    mvwaddstr(nv_stdscr, d->message->y + y, d->message->x, d->message->line);
 
     /* write the message string */
     
@@ -1393,7 +1411,7 @@ static void nv_ncurses_do_progress_bar_message(DataStruct *d, const char *str,
         tmp = malloc(w + 1);
         strncpy(tmp, str, w);
         tmp[w] = '\0';
-        mvaddstr(d->message->y + y, d->message->x + 1, tmp);
+        mvwaddstr(nv_stdscr, d->message->y + y, d->message->x + 1, tmp);
         free(tmp);
     }
     
@@ -1480,12 +1498,14 @@ static void nv_ncurses_pager_update(DataStruct *d, PagerStruct *p)
 
     /* draw the text */
 
-    attrset(p->region->attr);
+    wattrset(nv_stdscr, p->region->attr);
 
     for (i = p->cur; i < maxy; i++) {
-        mvaddstr(p->region->y + i - p->cur, p->region->x, p->region->line);
+        mvwaddstr(nv_stdscr, p->region->y + i - p->cur, p->region->x,
+                  p->region->line);
         if (p->t->t[i]) {
-            mvaddstr(p->region->y + i - p->cur, p->region->x, p->t->t[i]);
+            mvwaddstr(nv_stdscr, p->region->y + i - p->cur, p->region->x,
+                      p->t->t[i]);
         }
     }
 
@@ -1528,7 +1548,7 @@ static void nv_ncurses_pager_handle_events(DataStruct *d,
         if (p->cur > 0) {
             p->cur--;
             nv_ncurses_pager_update(d, p);
-            refresh();
+            wrefresh(nv_stdscr);
         }
         break;
 
@@ -1536,7 +1556,7 @@ static void nv_ncurses_pager_handle_events(DataStruct *d,
         if (p->cur < n) {
             p->cur++;
             nv_ncurses_pager_update(d, p);
-            refresh();
+            wrefresh(nv_stdscr);
         }
         break;
 
@@ -1545,7 +1565,7 @@ static void nv_ncurses_pager_handle_events(DataStruct *d,
             p->cur -= p->page;
             if (p->cur < 0) p->cur = 0;
             nv_ncurses_pager_update(d, p);
-            refresh();
+            wrefresh(nv_stdscr);
         }
         break;
 
@@ -1554,7 +1574,7 @@ static void nv_ncurses_pager_handle_events(DataStruct *d,
             p->cur += p->page;
             if (p->cur > n) p->cur = n;
             nv_ncurses_pager_update(d, p);
-            refresh();
+            wrefresh(nv_stdscr);
         }
         break;
     }
@@ -1657,7 +1677,7 @@ static int nv_ncurses_paged_prompt(Options *op, const char *question,
                                     pager_title, cur);
     }
 
-    refresh();
+    wrefresh(nv_stdscr);
 
     /* process key strokes */
 
@@ -1670,7 +1690,7 @@ static int nv_ncurses_paged_prompt(Options *op, const char *question,
                 goto print_message;
         }
 
-        ch = getch();
+        ch = wgetch(nv_stdscr);
 
         switch (ch) {
             case NV_NCURSES_TAB:
@@ -1678,14 +1698,14 @@ static int nv_ncurses_paged_prompt(Options *op, const char *question,
                 button = (button + 1) % num_buttons;
                 draw_buttons(d, buttons, num_buttons, button, button_w,
                              buttons_x, button_y);
-                refresh();
+                wrefresh(nv_stdscr);
                 break;
 
             case KEY_LEFT:
                 button = (button + num_buttons - 1) % num_buttons;
                 draw_buttons(d, buttons, num_buttons, button, button_w,
                              buttons_x, button_y);
-                refresh();
+                wrefresh(nv_stdscr);
                 break;
 
             case NV_NCURSES_CTRL('L'):
@@ -1711,14 +1731,14 @@ static int nv_ncurses_paged_prompt(Options *op, const char *question,
                             button_w, 1);
     nv_ncurses_draw_button(d, d->message, buttons_x[button], button_y,
                            button_w, 1, buttons[button], TRUE, TRUE);
-    refresh();
+    wrefresh(nv_stdscr);
     usleep(NV_NCURSES_BUTTON_PRESS_TIME);
 
     nv_ncurses_erase_button(d->message, buttons_x[button], button_y,
                             button_w, 1);
     nv_ncurses_draw_button(d, d->message, buttons_x[button], button_y,
                            button_w, 1, buttons[button], TRUE, FALSE);
-    refresh();
+    wrefresh(nv_stdscr);
     usleep(NV_NCURSES_BUTTON_PRESS_TIME);
 
     /* restore the footer */
@@ -1737,7 +1757,7 @@ static int nv_ncurses_paged_prompt(Options *op, const char *question,
     nv_ncurses_destroy_region(d->message);
     d->message = NULL;
 
-    refresh();
+    wrefresh(nv_stdscr);
 
     return button;
 }
@@ -1951,13 +1971,13 @@ static int nv_ncurses_format_print(DataStruct *d, RegionStruct *region,
     
     n = NV_MIN(t->n, h);
     
-    attrset(region->attr);
+    wattrset(nv_stdscr, region->attr);
 
     for (i = 0; i < n; i++) {
-        mvaddstr(region->y + y + i, region->x + x, t->t[i]);
+        mvwaddstr(nv_stdscr, region->y + y + i, region->x + x, t->t[i]);
     }
     
-    attrset(A_NORMAL);
+    wattrset(nv_stdscr, A_NORMAL);
     return n;
 
 } /* nv_ncurses_format_printw() */
@@ -1979,7 +1999,7 @@ static int nv_ncurses_check_resize(DataStruct *d, bool force)
 {
     int x, y;
 
-    getmaxyx(stdscr, y, x);
+    getmaxyx(nv_stdscr, y, x);
 
     if (!force) {
         if ((x == d->width) && (y == d->height)) {
@@ -1995,7 +2015,7 @@ static int nv_ncurses_check_resize(DataStruct *d, bool force)
     nv_ncurses_destroy_region(d->header);
     nv_ncurses_destroy_region(d->footer);
 
-    clear();
+    wclear(nv_stdscr);
     
     /* update our cached copy of the dimensions */
 
