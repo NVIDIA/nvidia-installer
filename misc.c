@@ -716,7 +716,6 @@ int check_development_tools(Options *op, Package *p)
 {
 
     int i, ret;
-    char *cmd, *result;
 
     op->utils[CC] = getenv("CC");
 
@@ -755,20 +754,10 @@ int check_development_tools(Options *op, Package *p)
 
     ui_log(op, "Performing CC sanity check with CC=\"%s\".", op->utils[CC]);
 
-    cmd = nvstrcat("sh ", p->kernel_module_build_directory,
-                   "/conftest.sh ", op->utils[CC], " ", op->utils[CC], " ",
-                   "DUMMY_SOURCE DUMMY_OUTPUT ",
-                   "cc_sanity_check just_msg", NULL);
+    ret = conftest_sanity_check(op, p->kernel_module_build_directory,
+                                "CC", "cc_sanity_check");
 
-    ret = run_command(op, cmd, &result, FALSE, 0, TRUE);
-
-    nvfree(cmd);
-
-    if (ret == 0) return TRUE;
-
-    ui_error(op, "The CC sanity check failed:\n\n%s\n", result);
-
-    nvfree(result);
+    if (ret) return TRUE;
 
     return FALSE;
 

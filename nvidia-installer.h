@@ -210,8 +210,6 @@ typedef struct __options {
     int x_files_packaged;
     int concurrency_level;
     int skip_module_load;
-    int glvnd_glx_client;
-    int glvnd_egl_client;
     int skip_depmod;
 
     NVOptionalBool install_libglx_indirect;
@@ -293,12 +291,6 @@ typedef enum {
     FILE_COMPAT_ARCH_COMPAT32,
 } PackageEntryFileCompatArch;
 
-typedef enum {
-    FILE_GLVND_DONT_CARE,
-    FILE_GLVND_GLVND_ONLY,
-    FILE_GLVND_NON_GLVND_ONLY,
-} PackageEntryFileGLVND;
-
 typedef struct {
     unsigned int has_arch       : 1;
     unsigned int installable    : 1;
@@ -309,7 +301,6 @@ typedef struct {
     unsigned int is_temporary   : 1;
     unsigned int is_conflicting : 1;
     unsigned int inherit_path   : 1;
-    unsigned int glvnd_select   : 1;
 } PackageEntryFileCapabilities;
 
 /*
@@ -356,7 +347,6 @@ typedef struct __package_entry {
     PackageEntryFileCapabilities caps;
     PackageEntryFileType type;
     PackageEntryFileCompatArch compat_arch;
-    PackageEntryFileGLVND glvnd;
     int inherit_path_depth;
 
     mode_t mode;
@@ -541,7 +531,6 @@ void add_package_entry(Package *p,
                        char *dst,
                        PackageEntryFileType type,
                        PackageEntryFileCompatArch compat_arch,
-                       PackageEntryFileGLVND glvnd,
                        mode_t mode);
 /* XXX */
 

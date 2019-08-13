@@ -769,8 +769,9 @@ int set_destinations(Options *op, Package *p)
             /*
              * Defined by the Vulkan Linux ICD loader specification.
              */
-            prefix = "/etc/vulkan/icd.d/";
-            dir = path = "";
+            prefix = "/etc/vulkan/";
+            path = p->entries[i].path;
+            dir = "";
             break;
 
         case FILE_TYPE_GLVND_EGL_ICD_JSON:
@@ -1048,7 +1049,6 @@ static void add_kernel_module_helper(Options *op, Package *p,
                       dst,
                       FILE_TYPE_KERNEL_MODULE,
                       FILE_COMPAT_ARCH_NONE,
-                      FILE_GLVND_DONT_CARE,
                       0644);
 }
 
@@ -1980,7 +1980,6 @@ void process_libGL_la_files(Options *op, Package *p)
                                   NULL, /* dst */
                                   FILE_TYPE_LIBGL_LA,
                                   p->entries[i].compat_arch,
-                                  p->entries[i].glvnd,
                                   p->entries[i].mode);
             }
 
@@ -2056,7 +2055,6 @@ void process_dot_desktop_files(Options *op, Package *p)
                                   NULL, /* dst */
                                   FILE_TYPE_DOT_DESKTOP,
                                   p->entries[i].compat_arch,
-                                  p->entries[i].glvnd,
                                   p->entries[i].mode);
             }
         }
@@ -2136,7 +2134,6 @@ void process_dkms_conf(Options *op, Package *p)
                                   NULL, /* dst */
                                   FILE_TYPE_DKMS_CONF,
                                   p->entries[i].compat_arch,
-                                  p->entries[i].glvnd,
                                   p->entries[i].mode);
             }
         }
@@ -2145,50 +2142,6 @@ void process_dkms_conf(Options *op, Package *p)
     nvfree(replacements[2]);
     nvfree(replacements[1]);
 
-}
-
-void process_vulkan_icd_file(Options *op, Package *p)
-{
-    int i;
-    char *tmpfile;
-
-    PackageEntry *vkIcdJsonEntry = NULL;
-
-    char *tokens[2] = { "__NV_VK_ICD__", NULL };
-    char *replacements[2] = { NULL, NULL };
-
-    for (i = 0; i < p->num_entries; i++) {
-        if (p->entries[i].type == FILE_TYPE_VULKAN_ICD_JSON) {
-            vkIcdJsonEntry = &p->entries[i];
-        }
-    }
-
-    if (!vkIcdJsonEntry) {
-        return;
-    }
-
-    invalidate_package_entry(vkIcdJsonEntry);
-
-    if (op->glvnd_glx_client) {
-        replacements[0] = "libGLX_nvidia.so.0";
-    } else {
-        replacements[0] = "libGL.so.1";
-    }
-
-    tmpfile = process_template_file(op, vkIcdJsonEntry, tokens, replacements);
-
-    if (tmpfile) {
-        add_package_entry(p,
-                          tmpfile,
-                          vkIcdJsonEntry->path,
-                          "nvidia_icd.json",
-                          NULL /* target */,
-                          NULL /* dst */,
-                          FILE_TYPE_VULKAN_ICD_JSON,
-                          vkIcdJsonEntry->compat_arch,
-                          vkIcdJsonEntry->glvnd,
-                          vkIcdJsonEntry->mode);
-    }
 }
 
 /*
@@ -3068,7 +3021,6 @@ void add_libgl_abi_symlink(Options *op, Package *p)
                           nvstrcat(usrlib, libgl, NULL),
                           FILE_TYPE_OPENGL_SYMLINK,
                           FILE_COMPAT_ARCH_NATIVE,
-                          FILE_GLVND_DONT_CARE,
                           0000);
     } else {
         nvfree(libgl);
@@ -3343,7 +3295,10 @@ int check_libglvnd_files(Options *op, Package *p)
         for (i = 0; i < p->num_entries; i++) {
             if (p->entries[i].type == FILE_TYPE_GLVND_LIB ||
                 p->entries[i].type == FILE_TYPE_GLVND_SYMLINK ||
-                p->entries[i].glvnd == FILE_GLVND_GLVND_ONLY) {
+                p->entries[i].type == FILE_TYPE_GLX_CLIENT_LIB ||
+                p->entries[i].type == FILE_TYPE_GLX_CLIENT_SYMLINK ||
+                p->entries[i].type == FILE_TYPE_EGL_CLIENT_LIB ||
+                p->entries[i].type == FILE_TYPE_EGL_CLIENT_SYMLINK) {
                 ui_log(op, "Skipping GLVND file: \"%s\"", p->entries[i].file);
                 invalidate_package_entry(&(p->entries[i]));
             }
@@ -3371,131 +3326,4 @@ int check_libglvnd_files(Options *op, Package *p)
         }
     }
     return TRUE;
-}
-
-/* Select between GLVND and non-GLVND installation; invalidate any
- * package entries incompatible with the selection */
-
-static int prompt_user_glvnd(Options *op, Package *p,
-        const char *api, int defaultEnabled)
-{
-#define GLVND_PROMPT_QUESTION "The NVIDIA OpenGL %s client libraries " \
-                           "may be installed using the GL Vendor Neutral " \
-                           "Dispatch (GLVND) architecture, or using a " \
-                           "traditional, non-GLVND architecture. Choosing " \
-                           "GLVND will allow GLVND-compliant client " \
-                           "libraries from other OpenGL implementations to " \
-                           "coexist with the NVIDIA client libraries, but " \
-                           "may result in compatibility problems with some " \
-                           "programs. What type of client libraries do you " \
-                           "want to install?"
-
-    const char *choices[2] = {
-        "GLVND",
-        "non-GLVND"
-    };
-    int result = ui_multiple_choice(op, choices, 2,
-                                    defaultEnabled ? 0 : 1,
-                                    GLVND_PROMPT_QUESTION, api);
-    return (result == 0);
-}
-
-void select_glvnd(Options *op, Package *p)
-{
-    int i;
-    int glvnd_glx_present = FALSE;
-    int glvnd_egl_present = FALSE;
-    int non_glvnd_glx_present = FALSE;
-    int non_glvnd_egl_present = FALSE;
-
-    /* Figure out if the package contains GLVND or non-GLVND files for EGL and GLX. */
-    for (i = 0; i < p->num_entries; i++) {
-        if (p->entries[i].glvnd == FILE_GLVND_GLVND_ONLY) {
-            if (p->entries[i].type == FILE_TYPE_GLX_CLIENT_LIB ||
-                    p->entries[i].type == FILE_TYPE_GLX_CLIENT_SYMLINK) {
-                glvnd_glx_present = TRUE;
-            } else if (p->entries[i].type == FILE_TYPE_EGL_CLIENT_LIB ||
-                    p->entries[i].type == FILE_TYPE_EGL_CLIENT_SYMLINK) {
-                glvnd_egl_present = TRUE;
-            }
-        } else if (p->entries[i].glvnd == FILE_GLVND_NON_GLVND_ONLY) {
-            if (p->entries[i].type == FILE_TYPE_GLX_CLIENT_LIB ||
-                    p->entries[i].type == FILE_TYPE_GLX_CLIENT_SYMLINK) {
-                non_glvnd_glx_present = TRUE;
-            } else if (p->entries[i].type == FILE_TYPE_EGL_CLIENT_LIB ||
-                    p->entries[i].type == FILE_TYPE_EGL_CLIENT_SYMLINK) {
-                non_glvnd_egl_present = TRUE;
-            }
-        }
-    }
-
-    if (!glvnd_glx_present && non_glvnd_glx_present) {
-        ui_log(op, "Package does not include GLVND GLX client libraries: "
-               "forcing '--no-glvnd-glx-client'.");
-        op->glvnd_glx_client = FALSE;
-    } else if (glvnd_glx_present && !non_glvnd_glx_present) {
-        ui_log(op, "Package does not include non-GLVND GLX client libraries: "
-               "forcing '--glvnd-glx-client'.");
-        op->glvnd_glx_client = TRUE;
-    }
-
-    if (!glvnd_egl_present && non_glvnd_egl_present) {
-        ui_log(op, "Package does not include GLVND EGL client libraries: "
-               "forcing '--no-glvnd-egl-client'.");
-        op->glvnd_egl_client = FALSE;
-    } else if (glvnd_egl_present && !non_glvnd_egl_present) {
-        ui_log(op, "Package does not include non-GLVND EGL client libraries: "
-               "forcing '--glvnd-egl-client'.");
-        op->glvnd_egl_client = TRUE;
-    }
-
-    if (!(glvnd_glx_present && non_glvnd_glx_present) &&
-            !(glvnd_egl_present && non_glvnd_egl_present)) {
-
-        return;
-    }
-
-    /* Allow expert users to change the default or commandline given choice */
-
-    if (op->expert) {
-        if (glvnd_glx_present && non_glvnd_glx_present) {
-            op->glvnd_glx_client = prompt_user_glvnd(op, p, "GLX", op->glvnd_glx_client);
-        }
-        if (glvnd_egl_present && non_glvnd_egl_present) {
-            op->glvnd_egl_client = prompt_user_glvnd(op, p, "EGL", op->glvnd_egl_client);
-        }
-    }
-
-    ui_log(op, "Will install %sGLVND GLX client libraries.",
-           op->glvnd_glx_client ? "" : "non-");
-
-    ui_log(op, "Will install %sGLVND EGL client libraries.",
-           op->glvnd_egl_client ? "" : "non-");
-
-    // Select the correct GLX and EGL libraries.
-    for (i = 0; i < p->num_entries; i++) {
-        if (p->entries[i].type == FILE_TYPE_GLX_CLIENT_LIB ||
-                 p->entries[i].type == FILE_TYPE_GLX_CLIENT_SYMLINK) {
-            if (op->glvnd_glx_client &&
-                    p->entries[i].glvnd == FILE_GLVND_NON_GLVND_ONLY) {
-                ui_log(op, "Skipping GLX non-GLVND file: \"%s\"", p->entries[i].file);
-                invalidate_package_entry(&(p->entries[i]));
-            } else if (!op->glvnd_glx_client &&
-                    p->entries[i].glvnd == FILE_GLVND_GLVND_ONLY) {
-                ui_log(op, "Skipping GLX GLVND file: \"%s\"", p->entries[i].file);
-                invalidate_package_entry(&(p->entries[i]));
-            }
-        } else if (p->entries[i].type == FILE_TYPE_EGL_CLIENT_LIB ||
-                 p->entries[i].type == FILE_TYPE_EGL_CLIENT_SYMLINK) {
-            if (op->glvnd_egl_client &&
-                    p->entries[i].glvnd == FILE_GLVND_NON_GLVND_ONLY) {
-                ui_log(op, "Skipping EGL non-GLVND file: \"%s\"", p->entries[i].file);
-                invalidate_package_entry(&(p->entries[i]));
-            } else if (!op->glvnd_egl_client &&
-                    p->entries[i].glvnd == FILE_GLVND_GLVND_ONLY) {
-                ui_log(op, "Skipping EGL GLVND file: \"%s\"", p->entries[i].file);
-                invalidate_package_entry(&(p->entries[i]));
-            }
-        }
-    }
 }

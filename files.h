@@ -59,7 +59,6 @@ char *process_template_file(Options *op, PackageEntry *pe,
 void process_libGL_la_files(Options *op, Package *p);
 void process_dot_desktop_files(Options *op, Package *p);
 void process_dkms_conf(Options *op, Package *p);
-void process_vulkan_icd_file(Options *op, Package *p);
 int set_security_context(Options *op, const char *filename, const char *type);
 void get_default_prefixes_and_paths(Options *op);
 void get_compat32_path(Options *op);
@@ -71,6 +70,5 @@ int is_subdirectory(const char *dir, const char *subdir, int *is_subdir);
 void add_libgl_abi_symlink(Options *op, Package *p);
 
 int check_libglvnd_files(Options *op, Package *p);
-void select_glvnd(Options *op, Package *p);
 
 #endif /* __NVIDIA_INSTALLER_FILES_H__ */

@@ -35,13 +35,11 @@ int determine_kernel_output_path                   (Options*);
 int unpack_kernel_modules                          (Options*, Package*,
                                                     const char *,
                                                     const PrecompiledFileInfo *);
-int check_cc_version                               (Options*, Package*);
 int build_kernel_modules                           (Options*, Package*);
 int build_kernel_interfaces                        (Options*, Package*,
                                                     PrecompiledFileInfo **);
 int test_kernel_modules                            (Options*, Package*);
 int load_kernel_module                             (Options*, const char*);
-int load_kernel_modules                            (Options*, Package*);
 int check_for_unloaded_kernel_module               (Options*);
 PrecompiledInfo *find_precompiled_kernel_interface (Options*, Package*);
 char *get_kernel_name                              (Options*);
@@ -55,6 +53,8 @@ void free_kernel_module_info                       (KernelModuleInfo);
 int package_includes_kernel_module                 (const Package*,
                                                     const char *);
 int rmmod_kernel_module                            (Options*, const char *);
+int conftest_sanity_check                          (Options*, const char *,
+                                                    const char *, const char *);
 
 #ifndef ENOKEY
 #define	ENOKEY		126	/* Required key not available */

@@ -139,8 +139,6 @@ static Options *load_default_options(void)
     op->check_for_alternate_installs = TRUE;
     op->install_uvm = TRUE;
     op->install_drm = TRUE;
-    op->glvnd_glx_client = TRUE;
-    op->glvnd_egl_client = TRUE;
     op->install_compat32_libs = NV_OPTIONAL_BOOL_DEFAULT;
     op->install_libglx_indirect = NV_OPTIONAL_BOOL_DEFAULT;
     op->install_libglvnd_libraries = NV_OPTIONAL_BOOL_DEFAULT;
@@ -460,13 +458,17 @@ static void parse_commandline(int argc, char *argv[], Options *op)
                                                        NV_OPTIONAL_BOOL_FALSE;
             break;
         case GLVND_GLX_CLIENT_OPTION:
-            op->glvnd_glx_client = boolval;
+            /* This option is no longer used; ignore it. */
+            nv_warning_msg("The '--glvnd-glx-client' option is deprecated:  "
+                           "nvidia-installer will ignore this option.");
             break;
         case GLVND_EGL_CONFIG_FILE_PATH_OPTION:
             op->libglvnd_json_path = strval;
             break;
         case GLVND_EGL_CLIENT_OPTION:
-            op->glvnd_egl_client = boolval;
+            /* This option is no longer used; ignore it. */
+            nv_warning_msg("The '--glvnd-egl-client' option is deprecated:  "
+                           "nvidia-installer will ignore this option.");
             break;
         case EGL_EXTERNAL_PLATFORM_CONFIG_FILE_PATH_OPTION:
             op->external_platform_json_path = strval;

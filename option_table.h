@@ -593,45 +593,24 @@ static const NVGetoptOption __options[] = {
       "a higher level on the command line will override this limit." },
 
     { "force-libglx-indirect", FORCE_LIBGLX_INDIRECT, 0, NULL,
-      "If the package includes a libglvnd-based OpenGL library, then always "
-      "install a libGLX_indirect.so.0 symlink, overwriting one if it exists." },
+      "Always install a libGLX_indirect.so.0 symlink, overwriting one if it "
+      "exists." },
     { "no-libglx-indirect", NO_LIBGLX_INDIRECT, 0, NULL,
       "Do not install a libGLX_indirect.so.0 symlink." },
 
     { "install-libglvnd", INSTALL_LIBGLVND_OPTION, NVGETOPT_IS_BOOLEAN, NULL,
-      "If the package includes a libglvnd-based OpenGL library, then it will "
-      "try to determine whether the libglvnd libraries are already available, "
-      "and will install them if they're not. Use --install-libglvnd to always "
-      "install the libglvnd libraries, overwriting any that already exist. "
-      "Use --no-install-libglvnd to exclude the libglvnd libraries, even if "
-      "they appear to be missing." },
-
-    { "glvnd-glx-client", GLVND_GLX_CLIENT_OPTION, NVGETOPT_IS_BOOLEAN, NULL,
-      "By default, the NVIDIA GLX driver will be installed with the new "
-      "GLVND architecture, to support coexisting with other GLVND-compliant "
-      "GLX drivers. However, some applications which do not conform to "
-      "the Linux OpenGL ABI may not be fully compatible with a GLVND-based "
-      "GLX driver. The --no-glvnd-glx-client option will select a "
-      "non-GLVND GLX client library (libGL.so.1), which may help to avoid "
-      "compatibility issues with such applications."
-    },
+      "The installer will try to determine whether the libglvnd libraries are "
+      "already available, and will install them if they're not. Use "
+      "--install-libglvnd to always install the libglvnd libraries, "
+      "overwriting any that already exist.  Use --no-install-libglvnd to "
+      "exclude the libglvnd libraries, even if they appear to be missing." },
 
     { "glvnd-egl-config-path", GLVND_EGL_CONFIG_FILE_PATH_OPTION, NVGETOPT_STRING_ARGUMENT, NULL,
-      "If the package includes a libglvnd-based EGL library, then install the "
-      "EGL vendor library config file to this directory. If the libglvnd "
-      "libraries are already present, then by default the installer will try "
-      "to determine the path by running `pkg-config --variable=datadir "
-      "libglvnd`. If that fails, then it will default to "
+      "Install the EGL vendor library config file to this directory. If the "
+      "libglvnd libraries are already present, then by default the installer "
+      "will try to determine the path by running `pkg-config "
+      "--variable=datadir libglvnd`. If that fails, then it will default to "
       DEFAULT_GLVND_EGL_JSON_PATH "."
-    },
-
-    { "glvnd-egl-client", GLVND_EGL_CLIENT_OPTION, NVGETOPT_IS_BOOLEAN, NULL,
-      "By default, the NVIDIA EGL driver will be installed with the new "
-      "GLVND architecture, to support coexisting with other GLVND-compliant "
-      "EGL drivers. However, some applications may not be fully compatible "
-      "with a GLVND-based EGL driver. The --no-glvnd-egl-client option will "
-      "select a non-GLVND EGL client library, which may help to avoid "
-      "compatibility issues with such applications."
     },
 
     { "egl-external-platform-config-path",
@@ -680,6 +659,8 @@ static const NVGetoptOption __options[] = {
     { "force-tls", FORCE_TLS_OPTION, NVGETOPT_STRING_ARGUMENT, NULL, NULL },
     { "force-tls-compat32", FORCE_TLS_COMPAT32_OPTION, NVGETOPT_STRING_ARGUMENT,
       NULL, NULL },
+    { "glvnd-glx-client", GLVND_GLX_CLIENT_OPTION, NVGETOPT_IS_BOOLEAN, NULL, NULL },
+    { "glvnd-egl-client", GLVND_EGL_CLIENT_OPTION, NVGETOPT_IS_BOOLEAN, NULL, NULL },
 
     { NULL, 0, 0, NULL, NULL },
 };

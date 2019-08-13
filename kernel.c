@@ -50,9 +50,6 @@ static char *default_kernel_source_path(Options *op);
 static char *find_module_substring(char *string, const char *substring);
 static int check_for_loaded_kernel_module(Options *op, const char *);
 static void check_for_warning_messages(Options *op);
-static int sanity_check(Options *op, const char *dir,
-                        const char *sanity_check_name,
-                        const char *conftest_name);
 
 static PrecompiledInfo *scan_dir(Options *op, Package *p,
                                  const char *directory_name,
@@ -70,6 +67,7 @@ static void load_kernel_module_quiet(Options *op, const char *module_name);
 static void modprobe_remove_kernel_module_quiet(Options *op, const char *name);
 static int kernel_configuration_conflict(Options *op, Package *p,
                                          int target_system_checks);
+static int check_cc_version(Options *op, Package *p);
 
 /*
  * Message text that is used by several error messages.
@@ -159,7 +157,7 @@ int determine_kernel_module_installation_path(Options *op)
 static int run_conftest(Options *op, const char *dir, const char *args,
                         char **result)
 {
-    char *cmd, *arch;
+    char *cmd, *arch, *kernel_source_path, *kernel_output_path;
     int ret;
 
     if (result) {
@@ -171,12 +169,23 @@ static int run_conftest(Options *op, const char *dir, const char *args,
         return FALSE;
     }
 
+    /* Some conftests don't require kernel source/output paths;
+     * if run_conftest() is run early enough, these may not be
+     * set yet, so use a placeholder string instead of NULL to
+     * prevent premature termination of nvstrcat() below. */
+    kernel_source_path = kernel_output_path = "DIRECTORY_PLACEHOLDER";
+    if (op->kernel_source_path) {
+        kernel_source_path = op->kernel_source_path;
+    }
+    if (op->kernel_output_path) {
+        kernel_output_path = op->kernel_output_path;
+    }
+
     cmd = nvstrcat("sh \"", dir, "/conftest.sh\" \"",
                    op->utils[CC], "\" \"",
-                   op->utils[CC], "\" \"",
                    arch, "\" \"",
-                   op->kernel_source_path, "\" \"",
-                   op->kernel_output_path, "\" ",
+                   kernel_source_path, "\" \"",
+                   kernel_output_path, "\" ",
                    args, NULL);
 
     ret = run_command(op, cmd, result, FALSE, 0, TRUE);
@@ -198,7 +207,7 @@ static int run_conftest(Options *op, const char *dir, const char *args,
 int determine_kernel_source_path(Options *op, Package *p)
 {
     char *result;
-    char *source_files[2], *source_path;
+    char *version_h, *uapi_version_h;
     int ret, count = 0;
     
     /* determine the kernel source path */
@@ -286,47 +295,28 @@ int determine_kernel_source_path(Options *op, Package *p)
 
     if (!determine_kernel_output_path(op)) return FALSE;
 
-    ret = run_conftest(op, p->kernel_module_build_directory, "get_uname",
-                       &result);
+    /* check to make sure that either include/linux/version.h or
+     * include/generated/uapi/linux/version.h is present in the output dir */
+
+#define VERSION_H_PATH "/include/linux/version.h"
+#define UAPI_VERSION_H_PATH "/include/generated/uapi/linux/version.h"
+
+    version_h = nvstrcat(op->kernel_output_path, VERSION_H_PATH, NULL);
+    uapi_version_h = nvstrcat(op->kernel_output_path, UAPI_VERSION_H_PATH,
+                              NULL);
+
+    ret = access(version_h, F_OK) == 0 || access(uapi_version_h, F_OK) == 0;
+
+    free(version_h);
+    free(uapi_version_h);
 
     if (!ret) {
-        ui_error(op, "Unable to determine the version of the kernel "
-                 "sources located in '%s'.  %s",
-                 op->kernel_source_path, install_your_kernel_source);
-        free(result);
+        ui_error(op, "Neither the '" VERSION_H_PATH "' nor the '"
+                 UAPI_VERSION_H_PATH "' kernel header file exists.  "
+                 "The most likely reason for this is that the kernel "
+                 "source files in '%s' have not been configured.",
+                 op->kernel_output_path);
         return FALSE;
-    }
-
-    if (strncmp(result, "2.4", 3) == 0) {
-        source_files[0] = nvstrcat(op->kernel_source_path,
-                                   "/include/linux/version.h", NULL);
-        source_files[1] = NULL;
-        source_path = op->kernel_source_path;
-    } else {
-        source_files[0] = nvstrcat(op->kernel_output_path,
-                                   "/include/linux/version.h", NULL);
-        source_files[1] = nvstrcat(op->kernel_output_path,
-                                   "/include/generated/uapi/linux/version.h",
-                                   NULL);
-        source_path = op->kernel_output_path;
-    }
-    free(result);
-
-    if (access(source_files[0], F_OK) != 0) {
-        if (!source_files[1]) {
-            ui_error(op, "The kernel header file '%s' does not exist.  "
-                     "The most likely reason for this is that the kernel "
-                     "source files in '%s' have not been configured.",
-                     source_files[0], source_path);
-            return FALSE;
-        } else if (access(source_files[1], F_OK) != 0) {
-            ui_error(op, "Neither the '%s' nor the '%s' kernel header "
-                     "file exists.  The most likely reason for this "
-                     "is that the kernel source files in '%s' have not been "
-                     "configured.",
-                     source_files[0], source_files[1], source_path);
-            return FALSE;
-        }
     }
 
     /* OK, we seem to have a path to a configured kernel source tree */
@@ -506,7 +496,7 @@ static int attach_signature(Options *op, Package *p,
 int unpack_kernel_modules(Options *op, Package *p, const char *build_directory,
                           const PrecompiledFileInfo *fileInfo)
 {
-    char *cmd, *result;
+    char *cmd;
     int ret;
     uint32 attrmask;
 
@@ -533,7 +523,7 @@ int unpack_kernel_modules(Options *op, Package *p, const char *build_directory,
                    fileInfo->target_directory, "/", fileInfo->core_object_name,
                    NULL);
 
-    ret = run_command(op, cmd, &result, TRUE, 0, TRUE);
+    ret = run_command(op, cmd, NULL, TRUE, 0, TRUE);
 
     free(cmd);
 
@@ -930,11 +920,17 @@ int build_kernel_interfaces(Options *op, Package *p,
 
     /* run sanity checks */
     for (i = 0; i < ARRAY_LEN(sanity_checks); i++) {
-        if (!sanity_check(op, builddir,
-                          sanity_checks[i].sanity_check_name,
-                          sanity_checks[i].conftest_name)) {
+        if (!conftest_sanity_check(op, builddir,
+                                   sanity_checks[i].sanity_check_name,
+                                   sanity_checks[i].conftest_name)) {
             return FALSE;
         }
+    }
+
+    /* run cc_version_check separately to allow check_cc_version() to set
+     * IGNORE_CC_MISMATCH if needed */
+    if (!check_cc_version(op, p)) {
+        return FALSE;
     }
 
     ui_log(op, "Cleaning kernel module build directory.");
@@ -1462,23 +1458,6 @@ static void load_kernel_module_quiet(Options *op, const char *module_name)
 static void modprobe_remove_kernel_module_quiet(Options *op, const char *name)
 {
     modprobe_helper(op, name, TRUE, TRUE);
-}
-
-/*
- * Attempt to load all kernel modules that are part of the Package. Returns
- * the number of successfully loaded kernel modules.
- */
-int load_kernel_modules(Options *op, Package *p)
-{
-    int i;
-
-    for (i = 0; i < p->num_kernel_modules; i++) {
-        if (!load_kernel_module(op, p->kernel_modules[i].module_name)) {
-            break;
-        }
-    }
-
-    return i;
 }
 
 
@@ -2057,7 +2036,7 @@ int rmmod_kernel_module(Options *op, const char *module_name)
  * currently running kernel.
  */
 
-int check_cc_version(Options *op, Package *p)
+static int check_cc_version(Options *op, Package *p)
 {
     char *result;
     int ret;
@@ -2106,13 +2085,14 @@ int check_cc_version(Options *op, Package *p)
 
 
 /*
- * sanity_check() - run the given sanity check conftest; if the test fails,
- * print the error message from the test. Return the status from the test.
+ * conftest_sanity_check() - run the given sanity check conftest; if the test
+ * fails, print the error message from the test. Return the status from the
+ * test.
  */
 
-static int sanity_check(Options *op, const char *dir,
-                        const char *sanity_check_name,
-                        const char *conftest_name)
+int conftest_sanity_check(Options *op, const char *dir,
+                          const char *sanity_check_name,
+                          const char *conftest_name)
 {
     char *result, *conftest_args;
     int ret;
@@ -2124,7 +2104,8 @@ static int sanity_check(Options *op, const char *dir,
     nvfree(conftest_args);
 
     if (!ret && result) {
-        ui_error(op, "%s", result);
+        ui_error(op, "The %s sanity check failed:\n\n%s",
+                 sanity_check_name, result);
     }
 
     nvfree(result);

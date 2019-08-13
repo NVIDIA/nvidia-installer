@@ -899,11 +899,8 @@ ConflictingFileInfo *build_conflicting_file_list(Options *op, Package *p)
     }
 
     /* XXX always conflict with these files if OpenGL files will be installed
-     * libglamoregl.so: prevent X from loading libGL and libglx simultaneously
-     *                  (bug 1299091)
      * libGLwrapper.so: this library has an SONAME of libGL.so.1 (bug 74761) */
     if (!op->no_opengl_files) {
-        get_conflicting_file_info("libglamoregl.so", &cfList[index++]);
         get_conflicting_file_info("libGLwrapper.so", &cfList[index++]);
     }
 
