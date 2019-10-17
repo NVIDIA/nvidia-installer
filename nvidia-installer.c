@@ -458,7 +458,12 @@ static void parse_commandline(int argc, char *argv[], Options *op)
                                                        NV_OPTIONAL_BOOL_FALSE;
             break;
         case GLVND_GLX_CLIENT_OPTION:
-            /* This option is no longer used; ignore it. */
+            /* This option is no longer used */
+            if (!boolval) {
+                nv_error_msg("The --no-glvnd-glx-client option is no longer supported");
+                goto fail;
+            }
+
             nv_warning_msg("The '--glvnd-glx-client' option is deprecated:  "
                            "nvidia-installer will ignore this option.");
             break;
@@ -466,7 +471,12 @@ static void parse_commandline(int argc, char *argv[], Options *op)
             op->libglvnd_json_path = strval;
             break;
         case GLVND_EGL_CLIENT_OPTION:
-            /* This option is no longer used; ignore it. */
+            /* This option is no longer used */
+            if (!boolval) {
+                nv_error_msg("The --no-glvnd-egl-client option is no longer supported");
+                goto fail;
+            }
+
             nv_warning_msg("The '--glvnd-egl-client' option is deprecated:  "
                            "nvidia-installer will ignore this option.");
             break;

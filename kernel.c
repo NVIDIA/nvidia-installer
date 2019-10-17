@@ -1661,32 +1661,35 @@ PrecompiledInfo *find_precompiled_kernel_interface(Options *op, Package *p)
  * the user specified via the --kernel-name option, or `uname -r`.
  */
 
-char __kernel_name[256];
-
 char *get_kernel_name(Options *op)
 {
+    static char kernel_name[256];
     struct utsname uname_buf;
 
-    __kernel_name[0] = '\0';
+    if (!kernel_name[0]) {
+        if (uname(&uname_buf) == -1) {
+            static int uname_failed;
 
-    if (uname(&uname_buf) == -1) {
-        ui_warn(op, "Unable to determine the version of the running kernel "
-                "(%s).", strerror(errno));
-    } else {
-        strncpy(__kernel_name, uname_buf.release, sizeof(__kernel_name));
-        __kernel_name[sizeof(__kernel_name) - 1] = '\0';
+            if (!uname_failed) {
+                ui_warn(op, "Unable to determine the version of the running "
+                            "kernel (%s).", strerror(errno));
+                uname_failed = TRUE;
+            }
+        } else {
+            strncpy(kernel_name, uname_buf.release, sizeof(kernel_name) - 1);
+        }
     }
 
     if (op->kernel_name) {
-        if (strcmp(op->kernel_name, __kernel_name) != 0) {
+        if (strcmp(op->kernel_name, kernel_name) != 0) {
             /* Don't load kernel modules built against a non-running kernel */
             op->skip_module_load = TRUE;
         }
         return op->kernel_name;
     }
 
-    if (__kernel_name[0]) {
-        return __kernel_name;
+    if (kernel_name[0]) {
+        return kernel_name;
     }
 
     return NULL;
