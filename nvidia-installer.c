@@ -307,6 +307,8 @@ static void parse_commandline(int argc, char *argv[], Options *op)
             op->kernel_module_installation_path = strval; break;
         case UNINSTALL_OPTION:
             op->uninstall = TRUE; break;
+        case SKIP_MODULE_LOAD_OPTION:
+            op->skip_module_load = TRUE; break;
         case SKIP_MODULE_UNLOAD_OPTION:
             op->skip_module_unload = TRUE; break;
         case PROC_MOUNT_POINT_OPTION:
