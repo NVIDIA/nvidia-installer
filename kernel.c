@@ -1479,7 +1479,7 @@ int check_for_unloaded_kernel_module(Options *op)
      * kernel and only installing a kernel module.
      */
 
-    if (op->kernel_module_only && op->kernel_name) {
+    if (op->skip_module_load || (op->kernel_module_only && op->kernel_name)) {
         ui_log(op, "Only installing a kernel module for a non-running "
                "kernel; skipping the \"is an NVIDIA kernel module loaded?\" "
                "test.");
