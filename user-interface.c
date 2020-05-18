@@ -63,6 +63,10 @@ extern const int ncurses_ui_array_size;
 extern const char ncurses6_ui_array[];
 extern const int ncurses6_ui_array_size;
 #endif
+#if defined(NV_INSTALLER_NCURSESW6)
+extern const char ncursesw6_ui_array[];
+extern const int ncursesw6_ui_array_size;
+#endif
 
 /* struct describing the ui data */
 
@@ -108,6 +112,10 @@ int ui_init(Options *op)
 #endif
         { "ncurses", "nvidia-installer ncurses user interface", NULL,
           ncurses_ui_array, ncurses_ui_array_size },
+#if defined(NV_INSTALLER_NCURSESW6)
+        { "ncursesw6", "nvidia-installer ncurses v6 user interface (widechar)",
+          NULL, ncursesw6_ui_array, ncursesw6_ui_array_size },
+#endif
         { "none", NULL, NULL, NULL, 0 }
     };
 
