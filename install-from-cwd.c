@@ -230,13 +230,12 @@ int install_from_cwd(Options *op)
         if (!get_prefixes(op)) goto failed;
 
         /*
-         * if the package contains any libGL.la or .desktop files,
+         * if the package contains any .desktop files,
          * process them (perform some search and replacing so
          * that they reflect the correct installation path, etc)
          * and add them to the package list (files to be installed).
          */
-        
-        process_libGL_la_files(op, p);
+
         process_dot_desktop_files(op, p);
 
 #if defined(NV_X86_64)

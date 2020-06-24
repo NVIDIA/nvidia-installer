@@ -634,17 +634,6 @@ int set_destinations(Options *op, Package *p)
             path = "";
             break;
 
-        case FILE_TYPE_LIBGL_LA:
-            if (p->entries[i].compat_arch == FILE_COMPAT_ARCH_COMPAT32) {
-                prefix = op->compat32_prefix;
-                dir = op->compat32_libdir;
-            } else {
-                prefix = op->opengl_prefix;
-                dir = op->opengl_libdir;
-            }
-            path = "";
-            break;
-
         case FILE_TYPE_NVCUVID_LIB:
         case FILE_TYPE_NVCUVID_LIB_SYMLINK:
             if (p->entries[i].compat_arch == FILE_COMPAT_ARCH_COMPAT32) {
@@ -792,6 +781,18 @@ int set_destinations(Options *op, Package *p)
              * Defined in the prototype allocator driver loader module code.
              */
             prefix = "/etc/allocator/";
+            dir = path = "";
+            break;
+
+        case FILE_TYPE_INTERNAL_UTILITY_BINARY:
+        case FILE_TYPE_INTERNAL_UTILITY_LIB:
+        case FILE_TYPE_INTERNAL_UTILITY_DATA:
+            if (p->entries[i].compat_arch == FILE_COMPAT_ARCH_COMPAT32) {
+                // TODO: Avoid the chroot stuff below for this?
+                prefix = "/usr/lib/nvidia/32";
+            } else {
+                prefix = "/usr/lib/nvidia";
+            }
             dir = path = "";
             break;
 
@@ -1919,77 +1920,6 @@ done:
     return tmpfile;
 
 } /* process_template_files() */
-
-
-
-/*
- * process_libGL_la_files() - for any libGL.la files in the package,
- * copy them to a temporary file, replacing __GENERATED_BY__ and
- * __LIBGL_PATH__ as appropriate.  Then, add the new file to the
- * package list.
- */
-
-void process_libGL_la_files(Options *op, Package *p)
-{
-    int i;
-    char *tmpfile;
-
-    char *tokens[3] = { "__LIBGL_PATH__", "__GENERATED_BY__", NULL };
-    char *replacements[3] = { NULL, NULL, NULL };
-
-    int package_num_entries = p->num_entries;
-
-    replacements[1] = nvstrcat(PROGRAM_NAME, ": ",
-                               NVIDIA_INSTALLER_VERSION, NULL);
-
-    for (i = 0; i < package_num_entries; i++) {
-        if ((p->entries[i].type == FILE_TYPE_LIBGL_LA)) {
-    
-            if (p->entries[i].compat_arch == FILE_COMPAT_ARCH_COMPAT32) {
-                replacements[0] = nvstrcat(op->compat32_prefix,
-                                           "/", op->compat32_libdir, NULL);
-            } else {
-                replacements[0] = nvstrcat(op->opengl_prefix,
-                                           "/", op->opengl_libdir, NULL);
-            }
-
-            /* invalidate the template file */
-
-            invalidate_package_entry(&(p->entries[i]));
-
-            tmpfile = process_template_file(op, &p->entries[i], tokens,
-                                            replacements);
-
-            if (tmpfile != NULL) {
-                /* add this new file to the package */
-
-                /*
-                 * XXX 'name' is the basename (non-directory part) of
-                 * the file to be installed; normally, 'name' just
-                 * points into 'file', but in this case 'file' is
-                 * mkstemp(3)-generated, so doesn't have the same
-                 * basename; instead, we just strdup the name from the
-                 * template package entry; yes, 'name' will get leaked
-                 */
-
-                add_package_entry(p,
-                                  tmpfile,
-                                  p->entries[i].path,
-                                  nvstrdup(p->entries[i].name),
-                                  NULL, /* target */
-                                  NULL, /* dst */
-                                  FILE_TYPE_LIBGL_LA,
-                                  p->entries[i].compat_arch,
-                                  p->entries[i].mode);
-            }
-
-            nvfree(replacements[0]);
-        }
-    }
-
-    nvfree(replacements[1]);
-
-} /* process_libGL_la_files() */
 
 
 

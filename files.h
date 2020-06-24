@@ -56,7 +56,6 @@ int pack_precompiled_files(Options *op, Package *p, int num_files,
 
 char *process_template_file(Options *op, PackageEntry *pe,
                             char **tokens, char **replacements);
-void process_libGL_la_files(Options *op, Package *p);
 void process_dot_desktop_files(Options *op, Package *p);
 void process_dkms_conf(Options *op, Package *p);
 int set_security_context(Options *op, const char *filename, const char *type);

@@ -79,7 +79,6 @@ static const struct {
     { ENTRY(OPENCL_WRAPPER_LIB,         T, T, T, F, T, F, F, F, F) },
     { ENTRY(OPENCL_LIB_SYMLINK,         T, F, T, T, F, F, F, T, F) },
     { ENTRY(OPENCL_WRAPPER_SYMLINK,     T, F, T, T, F, F, F, F, F) },
-    { ENTRY(LIBGL_LA,                   T, T, F, F, F, T, T, T, F) },
     { ENTRY(TLS_LIB,                    T, T, T, F, T, T, F, T, F) },
     { ENTRY(UTILITY_LIB,                T, T, F, F, T, F, F, T, F) },
     { ENTRY(DOCUMENTATION,              F, T, T, F, F, F, F, T, F) },
@@ -125,6 +124,9 @@ static const struct {
     { ENTRY(FLEXERA_LIB,                F, T, T, F, T, F, F, F, F) },
     { ENTRY(FLEXERA_LIB_SYMLINK,        F, F, T, T, F, F, F, F, F) },
     { ENTRY(ALLOCATOR_JSON,             F, T, F, F, F, F, F, T, F) },
+    { ENTRY(INTERNAL_UTILITY_BINARY,    T, T, F, F, F, F, F, T, F) },
+    { ENTRY(INTERNAL_UTILITY_LIB,       T, T, F, F, T, F, F, T, F) },
+    { ENTRY(INTERNAL_UTILITY_DATA,      F, T, F, F, F, F, F, T, F) },
 };
 
 /*
