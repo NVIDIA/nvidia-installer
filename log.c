@@ -56,7 +56,7 @@ static FILE *log_file_stream;
 /*
  * log_init() - if logging is enabled, initialize the log file; if
  * initializing the log file fails, print an error to stderr and
- * disable loggging.  If initialization succeeds, write a header line
+ * disable logging.  If initialization succeeds, write a header line
  * and the state of all noteworthy options.
  */
 

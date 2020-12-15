@@ -393,7 +393,7 @@ static void nv_ncurses_set_title(Options *op, const char *title)
 
 /*
  * nv_ncurses_get_input - prompt for user input with the given msg;
- * returns the user inputed string.
+ * returns the user inputted string.
  */
 
 #define MIN_INPUT_LEN 32
@@ -880,7 +880,7 @@ static void nv_ncurses_status_update(Options *op, const float percent,
 
     while ((ch = wgetch(nv_stdscr)) != ERR) {
         /*
-         * if the user explicitely requested that the screen be
+         * if the user explicitly requested that the screen be
          * redrawn by pressing CTRL-L, then also redraw the entire
          * progress bar egion.
          */

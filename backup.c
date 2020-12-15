@@ -1717,7 +1717,7 @@ static int sanity_check_backup_log_entries(Options *op, BackupInfo *b)
  *
  *  "1.0-105917 (105.9.17)"
  *
- * In this way, an old nvidia-installer will atleast be able to parse
+ * In this way, an old nvidia-installer will at least be able to parse
  * the string, even though it may not understand it, but a new
  * nvidia-installer can be smart and pull out the new version string.
  */

@@ -181,7 +181,7 @@ void stream_set_title(Options *op, const char *title)
 
 /*
  * stream_get_input - prompt for user input with the given msg;
- * returns the user inputed string.
+ * returns the user inputted string.
  */
 
 char *stream_get_input(Options *op, const char *def, const char *msg)

@@ -799,7 +799,7 @@ static Package *parse_manifest (Options *op)
     remove_trailing_slashes(p->kernel_module_build_directory);
 
     /*
-     * the eigth line is the directory containing precompiled kernel
+     * the eighth line is the directory containing precompiled kernel
      * interfaces
      */
 
@@ -1217,7 +1217,7 @@ static int assisted_module_signing(Options *op, Package *p)
 
             /* Determine what hashing algorithm to use for the generated X.509
              * certificate. XXX The default is to use the same hash that is
-             * used for signing modules; the two hashes are actually orthognal
+             * used for signing modules; the two hashes are actually orthogonal
              * to each other, but by choosing the module signing hash we are
              * guaranteed that the chosen hash will be built into the kernel.
              */
@@ -1359,7 +1359,7 @@ generate_done:
                                       "delete the private signing key?");
 
         /* Get the fingerprint of the X.509 certificate. We already used 
-           openssl to create a keypair at this point, so we know we have it;
+           openssl to create a key pair at this point, so we know we have it;
            otherwise, we would have already returned by now. */
         cmdline = nvstrcat(op->utils[OPENSSL], " x509 -noout -fingerprint ",
                            "-inform DER -in ", op->module_signing_public_key,

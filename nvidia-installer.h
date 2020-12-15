@@ -438,8 +438,8 @@ typedef struct __package {
 /*
  * These are the default installation prefixes and the default
  * paths relative to the prefixes. Some of the defaults are
- * overriden on some distributions or when the new modular Xorg
- * is detected, all prefixes/paths can be overriden from the
+ * overridden on some distributions or when the new modular Xorg
+ * is detected, all prefixes/paths can be overridden from the
  * command line.
  */
 #define DEFAULT_OPENGL_PREFIX            "/usr"

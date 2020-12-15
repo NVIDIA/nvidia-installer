@@ -186,7 +186,7 @@ static int get_conflicting_search_paths(const Options *op, char ***paths)
  *   - backing and removing up conflicting files
  *   - installing all the installable files
  *   - create any needed symbolic links
- *   - executing any nessary commands
+ *   - executing any necessary commands
  *   - running `ldconfig` and `depmod -aq`
  *
  * If we are only installing the kernel module, then we trim back all
@@ -913,7 +913,7 @@ ConflictingFileInfo *build_conflicting_file_list(Options *op, Package *p)
 
 
 /*
- * condense_file_list() - Take a FileList stucture and delete any
+ * condense_file_list() - Take a FileList structure and delete any
  * duplicate entries in the list.  This is a pretty brain dead
  * brute-force algorithm.
  */

@@ -349,4 +349,4 @@ $(MANPAGE): nvidia-installer.1.m4 $(OPTIONS_1_INC) $(VERSION_MK)
 	   -D__DRIVER_VERSION__="$(NVIDIA_VERSION)" \
 	   -D__OUTPUTDIR__=$(OUTPUTDIR) \
 	   -I $(OUTPUTDIR) \
-	   $< | $(GZIP_CMD) -9f > $@
+	   $< | $(GZIP_CMD) -9nf > $@

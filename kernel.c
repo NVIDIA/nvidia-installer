@@ -1528,7 +1528,7 @@ int check_for_unloaded_kernel_module(Options *op)
                      "to upgrade your driver.  If no GPU-based programs are "
                      "running, you know that your kernel supports module "
                      "unloading, and you still receive this message, then an "
-                     "error may have occured that has corrupted an NVIDIA "
+                     "error may have occurred that has corrupted an NVIDIA "
                      "kernel module's usage count, for which the simplest "
                      "remedy is to reboot your computer.",
                      conflicting_kernel_modules[n]);
@@ -1973,7 +1973,7 @@ static int substring_is_isolated(const char *substring, const char *string,
  * kernel module is loaded; FALSE if it is not.
  *
  * Be sure to check that the character following the kernel module
- * name is a space (to avoid getting false positivies when the given
+ * name is a space (to avoid getting false positives when the given
  * kernel module name is contained within another kernel module name.
  */
 

@@ -50,7 +50,7 @@ static void  get_x_library_and_module_paths(Options *op);
 
 
 /*
- * remove_directory() - recursively delete a direcotry (`rm -rf`)
+ * remove_directory() - recursively delete a directory (`rm -rf`)
  */
 
 int remove_directory(Options *op, const char *victim)
@@ -1704,7 +1704,7 @@ int pack_precompiled_files(Options *op, Package *p, int num_files,
 
 /*
  * nv_strreplace() - we can't assume that the user has sed installed
- * on their system, so use this function to preform simple string
+ * on their system, so use this function to perform simple string
  * search and replacement.  Returns a newly allocated string that is a
  * duplicate of src, with all instances of 'orig' replaced with
  * 'replace'.
@@ -1839,7 +1839,7 @@ char *process_template_file(Options *op, PackageEntry *pe,
 
     while (token != NULL && replacement != NULL) {
         /*
-         * Replace any occurances of 'token' with 'replacement' in
+         * Replace any occurrences of 'token' with 'replacement' in
          * the source string and free the source
          */
         tmp0 = nv_strreplace(tmp, token, replacement);

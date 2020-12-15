@@ -174,7 +174,7 @@ int ui_init(Options *op)
     /*
      * init the ui
      *
-     * XXX if init() fails, we should try to fall back to the build-in
+     * XXX if init() fails, we should try to fall back to the built-in
      * stream ui.
      */
 
