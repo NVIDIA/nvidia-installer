@@ -796,6 +796,34 @@ int set_destinations(Options *op, Package *p)
             dir = path = "";
             break;
 
+        case FILE_TYPE_FIRMWARE:
+            prefix = nvstrcat("/lib/firmware/nvidia/", p->version, "/", NULL);
+            path = p->entries[i].path;
+            dir = "";
+            break;
+
+        case FILE_TYPE_SYSTEMD_UNIT:
+            prefix = op->systemd_unit_prefix;
+            dir = path = "";
+            break;
+
+        case FILE_TYPE_SYSTEMD_UNIT_SYMLINK:
+            /*
+             * Construct the symlink target from the systemd unit prefix and
+             * symlink name.
+             */
+            p->entries[i].target = nvstrcat(op->systemd_unit_prefix, "/", p->entries[i].name, NULL);
+
+            prefix = op->systemd_sysconf_prefix;
+            path = p->entries[i].path;
+            dir = "";
+            break;
+
+        case FILE_TYPE_SYSTEMD_SLEEP_SCRIPT:
+            prefix = op->systemd_sleep_prefix;
+            dir = path = "";
+            break;
+
         default:
             
             /* 
@@ -1102,6 +1130,22 @@ void remove_opengl_files_from_package(Options *op, Package *p)
     }
 }
 
+
+/*
+ * Invalidate each package entry that is a systemd file
+ */
+void remove_systemd_files_from_package(Options *op, Package *p)
+{
+    int i;
+
+    for (i = 0; i < p->num_entries; i++) {
+        if (p->entries[i].type == FILE_TYPE_SYSTEMD_UNIT ||
+            p->entries[i].type == FILE_TYPE_SYSTEMD_UNIT_SYMLINK ||
+            p->entries[i].type == FILE_TYPE_SYSTEMD_SLEEP_SCRIPT) {
+            invalidate_package_entry(&(p->entries[i]));
+        }
+    }
+}
 
 
 /*
@@ -2310,6 +2354,13 @@ void get_default_prefixes_and_paths(Options *op)
     if (!op->module_signing_key_path)
         op->module_signing_key_path = DEFAULT_MODULE_SIGNING_KEY_PATH;
     /* kernel_module_src_dir's default value is set in set_destinations() */
+
+    if (!op->systemd_unit_prefix)
+        op->systemd_unit_prefix = DEFAULT_SYSTEMD_UNIT_PREFIX;
+    if (!op->systemd_sleep_prefix)
+        op->systemd_sleep_prefix = DEFAULT_SYSTEMD_SLEEP_PREFIX;
+    if (!op->systemd_sysconf_prefix)
+        op->systemd_sysconf_prefix = DEFAULT_SYSTEMD_SYSCONF_PREFIX;
 
 } /* get_default_prefixes_and_paths() */
 

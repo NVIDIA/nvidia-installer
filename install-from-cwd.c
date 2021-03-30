@@ -253,6 +253,13 @@ int install_from_cwd(Options *op)
     }
 
     /*
+     * determine whether systemd files should be installed
+     */
+    if (op->use_systemd != NV_OPTIONAL_BOOL_TRUE) {
+        remove_systemd_files_from_package(op, p);
+    }
+
+    /*
      * now that we have the installation prefixes, build the
      * destination for each file to be installed
      */

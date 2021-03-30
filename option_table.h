@@ -106,6 +106,10 @@ enum {
     EGL_EXTERNAL_PLATFORM_CONFIG_FILE_PATH_OPTION,
     OVERRIDE_FILE_TYPE_DESTINATION_OPTION,
     SKIP_DEPMOD_OPTION,
+    SYSTEMD_OPTION,
+    SYSTEMD_UNIT_PREFIX_OPTION,
+    SYSTEMD_SLEEP_PREFIX_OPTION,
+    SYSTEMD_SYSCONF_PREFIX_OPTION,
 };
 
 static const NVGetoptOption __options[] = {
@@ -638,6 +642,35 @@ static const NVGetoptOption __options[] = {
       "should only be used in cases where depmod(1) will be run separately after "
       "running nvidia-installer."
     },
+
+    { "systemd", SYSTEMD_OPTION, NVGETOPT_IS_BOOLEAN, NULL,
+      "By default, the installer will install systemd unit files if systemctl "
+      "is detected. Specifying --no-systemd will disable installation of "
+      "systemd units." },
+
+    { "systemd-unit-prefix",
+      SYSTEMD_UNIT_PREFIX_OPTION, NVGETOPT_STRING_ARGUMENT, NULL,
+      "The path to which systemd unit files should be installed. By default, "
+      "the installer uses `pkg-config --variable=systemdsystemunitdir systemd` "
+      "to determine the location to install systemd unit files, or "
+      "'/usr/lib/systemd/system' if pkg-config is not available. Ignored if "
+      "--no-systemd is specified." },
+
+    { "systemd-sleep-prefix",
+      SYSTEMD_SLEEP_PREFIX_OPTION, NVGETOPT_STRING_ARGUMENT, NULL,
+      "The path to which systemd-sleep script files should be installed. By "
+      "default, the installer uses `pkg-config --variable=systemdsleepdir "
+      "systemd` to determine the location to install systemd-sleep script "
+      "files, or '/usr/lib/systemd/system-sleep' if pkg-config is not "
+      "available. Ignored if --no-systemd is specified." },
+
+    { "systemd-sysconf-prefix",
+      SYSTEMD_SYSCONF_PREFIX_OPTION, NVGETOPT_STRING_ARGUMENT, NULL,
+      "The path to which systemd unit enable symlinks should be installed. By "
+      "default, the installer uses `pkg-config "
+      "--variable=systemdsystemconfdir systemd` to determine the location to "
+      "install these symlinks, or '/etc/systemd/system' if pkg-config is not "
+      "available. Ignored if --no-systemd is specified." },
 
     /* Orphaned options: These options were in the long_options table in
      * nvidia-installer.c but not in the help. */

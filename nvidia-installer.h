@@ -58,6 +58,7 @@ typedef enum {
     XSERVER,
     OPENSSL,
     DKMS,
+    SYSTEMCTL,
     MAX_SYSTEM_OPTIONAL_UTILS
 } SystemOptionalUtils;
 
@@ -155,6 +156,10 @@ typedef enum {
     FILE_TYPE_INTERNAL_UTILITY_BINARY,
     FILE_TYPE_INTERNAL_UTILITY_LIB,
     FILE_TYPE_INTERNAL_UTILITY_DATA,
+    FILE_TYPE_FIRMWARE,
+    FILE_TYPE_SYSTEMD_UNIT,
+    FILE_TYPE_SYSTEMD_UNIT_SYMLINK,
+    FILE_TYPE_SYSTEMD_SLEEP_SCRIPT,
     FILE_TYPE_MAX
 } PackageEntryFileType;
 
@@ -284,6 +289,11 @@ typedef struct __options {
     void *ui_priv; /* for use by the ui's */
 
     int ignore_cc_version_check;
+
+    NVOptionalBool use_systemd;
+    char *systemd_unit_prefix;
+    char *systemd_sleep_prefix;
+    char *systemd_sysconf_prefix;
 
 } Options;
 
@@ -467,6 +477,9 @@ typedef struct __package {
 #define DEFAULT_MODULE_SIGNING_KEY_PATH "/usr/share/nvidia"
 #define DEFAULT_KERNEL_MODULE_SRC_PREFIX "/usr/src"
 #define DEFAULT_X_DATAROOT_PATH         "/usr/share"
+#define DEFAULT_SYSTEMD_UNIT_PREFIX     "/usr/lib/systemd/system"
+#define DEFAULT_SYSTEMD_SLEEP_PREFIX    "/usr/lib/systemd/system-sleep"
+#define DEFAULT_SYSTEMD_SYSCONF_PREFIX  "/etc/systemd/system"
 
 /*
  * As of Xorg 7.x, X components need not be installed relative

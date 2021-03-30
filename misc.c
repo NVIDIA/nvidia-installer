@@ -468,6 +468,7 @@ static const Util __utils[] = {
     [XSERVER]         = { "X",              "xserver" },
     [OPENSSL]         = { "openssl",        "openssl" },
     [DKMS]            = { "dkms",           "dkms"    },
+    [SYSTEMCTL]       = { "systemctl",      "systemd" },
 
     /* ModuleUtils */
     [MODPROBE] = { "modprobe", "module-init-tools' or 'kmod" },
@@ -2926,4 +2927,113 @@ to detect the number of processors.
         } while (val < 1);
         op->concurrency_level = val;
     }
+}
+
+static void
+free_path_if_empty(char **path)
+{
+    char *str = *path;
+
+    if (str && str[0] == '\0') {
+        nvfree(*path);
+        *path = NULL;
+    }
+}
+
+/*
+ * check_systemd() - check if systemd is available.
+ *
+ * If op->use_systemd is NV_OPTIONAL_BOOL_DEFAULT, this sets it to _TRUE or
+ * _FALSE depending on whether systemctl is available.
+ *
+ * Also assigns op->systemd_unit_prefix, op->systemd_sleep_prefix, and
+ * op->systemd_sysconf_prefix if pkg-config is available.
+ *
+ * Returns TRUE on success, FALSE otherwise.
+ */
+int check_systemd(Options *op)
+{
+    /*
+     * If the user specified --no-systemd, skip everything else.
+     */
+    if (op->use_systemd == NV_OPTIONAL_BOOL_FALSE) {
+        return TRUE;
+    }
+
+    if (op->utils[SYSTEMCTL] == NULL) {
+        if (op->use_systemd == NV_OPTIONAL_BOOL_TRUE) {
+            ui_error(op, "Option '--systemd' was specified but systemctl was "
+                     "not found on this system");
+            return FALSE;
+        }
+
+        op->use_systemd = NV_OPTIONAL_BOOL_FALSE;
+        return TRUE;
+    }
+
+    op->use_systemd = NV_OPTIONAL_BOOL_TRUE;
+
+    /*
+     * Determine the path for unit files and systemd-sleep scripts if pkg-config
+     * and systemd.pc are available.
+     */
+    if (op->utils[PKG_CONFIG]) {
+        if (op->systemd_unit_prefix == NULL) {
+            char *cmd, *prefix;
+            int ret;
+
+            cmd = nvstrcat(op->utils[PKG_CONFIG],
+                           " --variable=systemdsystemunitdir systemd",
+                           NULL);
+            ret = run_command(op, cmd, &prefix, FALSE, 0, TRUE);
+            if (ret == 0) {
+                op->systemd_unit_prefix = prefix;
+            }
+
+            nvfree(cmd);
+        }
+
+        if (op->systemd_sleep_prefix == NULL) {
+            char *cmd, *prefix;
+            int ret;
+
+            cmd = nvstrcat(op->utils[PKG_CONFIG],
+                           " --variable=systemdsleepdir systemd",
+                           NULL);
+            ret = run_command(op, cmd, &prefix, FALSE, 0, TRUE);
+            if (ret == 0) {
+                op->systemd_sleep_prefix = prefix;
+            }
+
+            nvfree(cmd);
+        }
+
+        if (op->systemd_sysconf_prefix == NULL) {
+            char *cmd, *prefix;
+            int ret;
+
+            cmd = nvstrcat(op->utils[PKG_CONFIG],
+                           " --variable=systemdsystemconfdir systemd",
+                           NULL);
+            ret = run_command(op, cmd, &prefix, FALSE, 0, TRUE);
+            if (ret == 0) {
+                op->systemd_sysconf_prefix = prefix;
+            }
+
+            nvfree(cmd);
+        }
+
+        /*
+         * Rather than returning an error if a package exists but doen't have a
+         * particular variable, pkg-config will return success and write a blank
+         * line to stdout.
+         *
+         * If the paths are empty, use the defaults.
+         */
+        free_path_if_empty(&op->systemd_unit_prefix);
+        free_path_if_empty(&op->systemd_sleep_prefix);
+        free_path_if_empty(&op->systemd_sysconf_prefix);
+    }
+
+    return TRUE;
 }

@@ -144,6 +144,7 @@ static Options *load_default_options(void)
     op->install_libglvnd_libraries = NV_OPTIONAL_BOOL_DEFAULT;
     op->external_platform_json_path = DEFAULT_EGL_EXTERNAL_PLATFORM_JSON_PATH;
     op->skip_depmod = FALSE;
+    op->use_systemd = NV_OPTIONAL_BOOL_DEFAULT;
 
     return op;
 
@@ -491,6 +492,19 @@ static void parse_commandline(int argc, char *argv[], Options *op)
         case SKIP_DEPMOD_OPTION:
             op->skip_depmod = TRUE;
             break;
+        case SYSTEMD_OPTION:
+            op->use_systemd = boolval ? NV_OPTIONAL_BOOL_TRUE :
+                                        NV_OPTIONAL_BOOL_FALSE;
+            break;
+        case SYSTEMD_UNIT_PREFIX_OPTION:
+            op->systemd_unit_prefix = strval;
+            break;
+        case SYSTEMD_SLEEP_PREFIX_OPTION:
+            op->systemd_sleep_prefix = strval;
+            break;
+        case SYSTEMD_SYSCONF_PREFIX_OPTION:
+            op->systemd_sysconf_prefix = strval;
+            break;
         default:
             goto fail;
         }
@@ -614,6 +628,7 @@ int main(int argc, char *argv[])
     if (!find_system_utils(op)) goto done;
     if (!find_module_utils(op)) goto done;
     if (!check_selinux(op)) goto done;
+    if (!check_systemd(op)) goto done;
 
     /* check for X server properties based on the version of the server */
 

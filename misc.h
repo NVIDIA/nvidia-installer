@@ -93,5 +93,6 @@ int verify_crc(Options *op, const char *filename, unsigned int crc,
 int secure_boot_enabled(void);
 ElfFileType get_elf_architecture(const char *filename);
 void set_concurrency_level(Options *op);
+int check_systemd(Options *op);
 
 #endif /* __NVIDIA_INSTALLER_MISC_H__ */

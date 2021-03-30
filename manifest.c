@@ -111,7 +111,7 @@ static const struct {
     { ENTRY(NVIFR_LIB,                  T, T, F, F, T, F, F, T, F) },
     { ENTRY(NVIFR_LIB_SYMLINK,          T, F, F, T, F, F, F, T, F) },
     { ENTRY(XORG_OUTPUTCLASS_CONFIG,    F, T, F, F, F, F, F, T, F) },
-    { ENTRY(DKMS_CONF              ,    F, T, F, F, F, F, T, T, T) },
+    { ENTRY(DKMS_CONF,                  F, T, F, F, F, F, T, T, T) },
     { ENTRY(GLVND_LIB,                  T, T, F, F, T, T, F, T, F) },
     { ENTRY(GLVND_SYMLINK,              T, F, F, T, F, T, F, T, F) },
     { ENTRY(GLX_CLIENT_LIB,             T, T, F, F, T, T, F, T, F) },
@@ -127,6 +127,10 @@ static const struct {
     { ENTRY(INTERNAL_UTILITY_BINARY,    T, T, F, F, F, F, F, T, F) },
     { ENTRY(INTERNAL_UTILITY_LIB,       T, T, F, F, T, F, F, T, F) },
     { ENTRY(INTERNAL_UTILITY_DATA,      F, T, F, F, F, F, F, T, F) },
+    { ENTRY(FIRMWARE,                   F, T, F, F, F, F, F, F, T) },
+    { ENTRY(SYSTEMD_UNIT,               F, T, F, F, F, F, F, F, F) },
+    { ENTRY(SYSTEMD_UNIT_SYMLINK,       F, F, T, T, F, F, F, F, F) },
+    { ENTRY(SYSTEMD_SLEEP_SCRIPT,       F, T, F, F, F, F, F, F, F) },
 };
 
 /*

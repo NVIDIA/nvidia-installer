@@ -413,7 +413,16 @@ CommandList *build_command_list(Options *op, Package *p)
         add_command(c, RUN_CMD, tmp);
         nvfree(tmp);
     }
-    
+
+    /*
+     * If systemd files were installed, run `systemctl daemon-reload`.
+     */
+    if (op->use_systemd == NV_OPTIONAL_BOOL_TRUE) {
+        tmp = nvstrcat(op->utils[SYSTEMCTL], " daemon-reload", NULL);
+        add_command(c, RUN_CMD, tmp);
+        nvfree(tmp);
+    }
+
     /* free the FileList */
     free_file_list(l);
 

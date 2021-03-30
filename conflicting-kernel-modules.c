@@ -27,6 +27,8 @@
  */
 
 const char * const conflicting_kernel_modules[] = {
+    "nv_peer_mem",
+    "nvidia-peermem",
     "nvidia-vgpu-vfio",
     "nvidia-uvm",
     "nvidia-drm",

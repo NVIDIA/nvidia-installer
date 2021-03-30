@@ -1324,10 +1324,20 @@ int test_kernel_modules(Options *op, Package *p)
 
     for (i = 0; i < p->num_kernel_modules; i++) {
         int module_success = FALSE, insmod_ret;
-        char *module_path = nvstrcat(p->kernel_module_build_directory, "/",
-                                     p->kernel_modules[i].module_filename,
-                                     NULL);
         const char *module_opts = "";
+        char *module_path;
+
+        /*
+         * nvidia-peermem depends on out-of-tree kernel modules,
+         * so we can't reliably test-insmod it here
+         */
+        if (strcmp(p->kernel_modules[i].module_name, "nvidia-peermem") == 0) {
+            continue;
+        }
+
+        module_path = nvstrcat(p->kernel_module_build_directory, "/",
+                               p->kernel_modules[i].module_filename,
+                               NULL);
 
         if (strcmp(p->kernel_modules[i].module_name, "nvidia") == 0) {
             module_opts = "NVreg_DeviceFileUID=0 NVreg_DeviceFileGID=0 "

@@ -858,6 +858,26 @@ static int do_uninstall(Options *op, const char *version,
                     "after uninstallation: your system may have stale state "
                     "involving recently uninstalled files.");
         }
+
+        /*
+         * In case systemd units were just uninstalled, run `systemctl
+         * daemon-reload` to reflect the change.
+         */
+        if (op->utils[SYSTEMCTL]) {
+            char *cmd = nvstrcat(op->utils[SYSTEMCTL], " daemon-reload", NULL);
+
+            ui_log(op, "Running `%s`:", cmd);
+            status = run_command(op, cmd, NULL, FALSE, 0, FALSE);
+            nvfree(cmd);
+
+            if (status == 0) {
+                ui_log(op, "done.");
+            } else {
+                ui_log(op, "error!");
+                ui_warn(op, "An error occurred while reloading the systemd "
+                        "daemon configuration.");
+            }
+        }
     }
 
     run_distro_hook(op, "post-uninstall");
