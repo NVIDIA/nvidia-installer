@@ -568,7 +568,11 @@ int set_destinations(Options *op, Package *p)
             }
             path = "";
             break;
-
+        case FILE_TYPE_WINE_LIB:
+            prefix = op->wine_prefix;
+            dir = op->wine_libdir;
+            path = "";
+            break;
         case FILE_TYPE_VDPAU_LIB:
         case FILE_TYPE_VDPAU_SYMLINK:
             if (p->entries[i].compat_arch == FILE_COMPAT_ARCH_COMPAT32) {
@@ -1125,6 +1129,21 @@ void remove_opengl_files_from_package(Options *op, Package *p)
 
     for (i = 0; i < p->num_entries; i++) {
         if (p->entries[i].caps.is_opengl) {
+            invalidate_package_entry(&(p->entries[i]));
+        }
+    }
+}
+
+
+/*
+ * Invalidate each package entry that is an Wine file
+ */
+void remove_wine_files_from_package(Options *op, Package *p)
+{
+    int i;
+
+    for (i = 0; i < p->num_entries; i++) {
+        if (p->entries[i].type == FILE_TYPE_WINE_LIB) {
             invalidate_package_entry(&(p->entries[i]));
         }
     }
@@ -2362,6 +2381,15 @@ void get_default_prefixes_and_paths(Options *op)
     if (!op->systemd_sysconf_prefix)
         op->systemd_sysconf_prefix = DEFAULT_SYSTEMD_SYSCONF_PREFIX;
 
+    if (!op->wine_prefix)
+        op->wine_prefix = DEFAULT_WINE_PREFIX;
+    if (!op->wine_libdir)
+    {
+        op->wine_libdir = nvstrcat(op->opengl_libdir, "/",
+                                   DEFAULT_WINE_LIBDIR_SUFFIX, NULL);
+        collapse_multiple_slashes(op->wine_libdir);
+    }
+
 } /* get_default_prefixes_and_paths() */
 
 
@@ -3098,16 +3126,10 @@ done:
 static void set_libglvnd_egl_json_path(Options *op)
 {
     if (op->libglvnd_json_path == NULL) {
-        if (op->utils[PKG_CONFIG]) {
-            char *path = NULL;
-            char *cmd = nvstrcat(op->utils[PKG_CONFIG], " --variable=datadir libglvnd", NULL);
-            int ret = run_command(op, cmd, &path, FALSE, 0, TRUE);
-            nvfree(cmd);
-
-            if (ret == 0) {
-                op->libglvnd_json_path = nvstrcat(path, "/glvnd/egl_vendor.d", NULL);
-                collapse_multiple_slashes(op->libglvnd_json_path);
-            }
+        char *path = get_pkg_config_variable(op, "libglvnd", "datadir");
+        if (path != NULL) {
+            op->libglvnd_json_path = nvstrcat(path, "/glvnd/egl_vendor.d", NULL);
+            collapse_multiple_slashes(op->libglvnd_json_path);
             nvfree(path);
         }
     }

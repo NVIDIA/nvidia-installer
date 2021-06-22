@@ -23,7 +23,6 @@
 #include <sys/utsname.h>
 #include <sys/types.h>
 #include <sys/stat.h>
-#include <sys/sysctl.h>
 #include <ctype.h>
 #include <stdlib.h>
 #include <dirent.h>
@@ -1051,9 +1050,9 @@ void check_for_warning_messages(Options *op)
 #define PRINTK_LOGLEVEL_KERN_ALERT 1
 
 /*
- * Attempt to set the printk loglevel, first using the /proc/sys interface,
- * and falling back to the deprecated sysctl if that fails. Pass the previous
- * loglevel back to the caller and return TRUE on success, or FALSE on failure.
+ * Attempt to set the printk loglevel using the /proc/sys interface.
+ * Pass the previous loglevel back to the caller and return TRUE on success,
+ * or FALSE on failure.
  */
 static int set_loglevel(int level, int *old_level)
 {
@@ -1063,6 +1062,9 @@ static int set_loglevel(int level, int *old_level)
     fp = fopen("/proc/sys/kernel/printk", "r+");
     if (fp) {
         if (!old_level || fscanf(fp, "%d ", old_level) == 1) {
+            /* Use a dynamic buffer for the string: the kernel does not range
+             * check the loglevel, so the value reported by the procfs file
+             * may have an unknown number of digits. */
             char *strlevel = nvasprintf("%d", level);
 
             fseek(fp, 0, SEEK_SET);
@@ -1073,23 +1075,6 @@ static int set_loglevel(int level, int *old_level)
             nvfree(strlevel);
         }
         fclose(fp);
-    }
-
-    if (!loglevel_set) {
-        /*
-         * Explicitly initialize the value of len, even though it looks like the
-         * syscall should do that, since in practice it doesn't always actually
-         * set the value of the pointed-to length parameter.
-         */
-        size_t len = sizeof(int);
-        int name[] = { CTL_KERN, KERN_PRINTK };
-
-        if (!old_level ||
-            sysctl(name, ARRAY_LEN(name), old_level, &len, NULL, 0) == 0) {
-            if (sysctl(name, ARRAY_LEN(name), NULL, 0, &level, len) == 0) {
-                loglevel_set = TRUE;
-            }
-        }
     }
 
     return loglevel_set;
@@ -1297,8 +1282,7 @@ int test_kernel_modules(Options *op, Package *p)
 {
     char *cmd = NULL, *data = NULL;
     int ret = FALSE, i;
-    const char *depmods[] = { "i2c-core", "drm", "drm-kms-helper", "vfio_mdev",
-                              "ipmi_msghandler" };
+    const char *depmods[] = { "i2c-core", "drm", "drm-kms-helper", "vfio_mdev" };
 
     /* 
      * If we're building/installing for a different kernel, then we

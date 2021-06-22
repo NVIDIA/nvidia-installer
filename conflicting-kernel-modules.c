@@ -2,7 +2,7 @@
  * nvidia-installer: A tool for installing NVIDIA software packages on
  * Unix and Linux systems.
  *
- * Copyright (C) 2015 NVIDIA Corporation
+ * Copyright (C) 2015-2021 NVIDIA Corporation
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms and conditions of the GNU General Public License,
@@ -37,6 +37,7 @@ const char * const conflicting_kernel_modules[] = {
     "nvidia0", "nvidia1", "nvidia2", "nvidia3",
     "nvidia4", "nvidia5", "nvidia6", "nvidia7",
     "nvidia-frontend",
+    "nvidia-kutils",
 };
 
 const int num_conflicting_kernel_modules = ARRAY_LEN(conflicting_kernel_modules);

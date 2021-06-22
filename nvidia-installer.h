@@ -101,6 +101,7 @@ typedef enum {
     FILE_TYPE_NONE,
     FILE_TYPE_KERNEL_MODULE_SRC,
     FILE_TYPE_OPENGL_LIB,
+    FILE_TYPE_WINE_LIB,
     FILE_TYPE_DOCUMENTATION,
     FILE_TYPE_OPENGL_SYMLINK,
     FILE_TYPE_KERNEL_MODULE,
@@ -208,6 +209,7 @@ typedef struct __options {
     int no_nouveau_check;
     int disable_nouveau;
     int no_opengl_files;
+    int no_wine_files;
     int no_kernel_module_source;
     int dkms;
     int check_for_alternate_installs;
@@ -227,6 +229,9 @@ typedef struct __options {
 
     char *opengl_prefix;
     char *opengl_libdir;
+
+    char *wine_prefix;
+    char *wine_libdir;
 
     char *x_prefix;
     char *x_libdir;
@@ -294,6 +299,8 @@ typedef struct __options {
     char *systemd_unit_prefix;
     char *systemd_sleep_prefix;
     char *systemd_sysconf_prefix;
+
+    char *kernel_module_build_directory_override;
 
 } Options;
 
@@ -457,6 +464,7 @@ typedef struct __package {
 #define DEFAULT_UTILITY_PREFIX           "/usr"
 #define DEFAULT_DOCUMENTATION_PREFIX     "/usr"
 #define DEFAULT_APPLICATION_PROFILE_PATH "/usr/share/nvidia"
+#define DEFAULT_WINE_PREFIX              "/usr"
 
 #define DEFAULT_LIBDIR                  "lib"
 #define DEFAULT_32BIT_LIBDIR            "lib32"
@@ -467,6 +475,7 @@ typedef struct __package {
 #define DEFAULT_ARMV7HF_TRIPLET_LIBDIR  "lib/arm-linux-gnueabihf"
 #define DEFAULT_AARCH64_TRIPLET_LIBDIR  "lib/aarch64-linux-gnu"
 #define DEFAULT_PPC64LE_TRIPLET_LIBDIR  "lib/powerpc64le-linux-gnu"
+#define DEFAULT_WINE_LIBDIR_SUFFIX      "nvidia/wine"
 #define DEFAULT_BINDIR                  "bin"
 #define DEFAULT_X_MODULEDIR             "modules"
 #define DEFAULT_DOT_DESKTOPDIR          "share/applications"

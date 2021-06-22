@@ -276,6 +276,10 @@ static void parse_commandline(int argc, char *argv[], Options *op)
             op->opengl_prefix = strval; break;
         case OPENGL_LIBDIR_OPTION:
             op->opengl_libdir = strval; break;
+        case WINE_PREFIX_OPTION:
+            op->wine_prefix = strval; break;
+        case WINE_LIBDIR_OPTION:
+            op->wine_libdir = strval; break;
 #if defined(NV_X86_64)
         case COMPAT32_CHROOT_OPTION:
             op->compat32_chroot = strval; break;
@@ -400,6 +404,9 @@ static void parse_commandline(int argc, char *argv[], Options *op)
         case NO_OPENGL_FILES_OPTION:
             op->no_opengl_files = TRUE;
             break;
+        case NO_WINE_FILES_OPTION:
+            op->no_wine_files = TRUE;
+            break;
         case KERNEL_MODULE_SOURCE_PREFIX_OPTION:
             op->kernel_module_src_prefix = strval;
             break;
@@ -504,6 +511,9 @@ static void parse_commandline(int argc, char *argv[], Options *op)
             break;
         case SYSTEMD_SYSCONF_PREFIX_OPTION:
             op->systemd_sysconf_prefix = strval;
+            break;
+        case 'm':
+            op->kernel_module_build_directory_override = strval;
             break;
         default:
             goto fail;

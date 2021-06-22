@@ -74,6 +74,7 @@ static const struct {
     { ENTRY(KERNEL_MODULE,              F, T, F, F, F, F, F, T, F) },
     { ENTRY(CUDA_ICD,                   F, T, F, F, F, F, F, T, F) },
     { ENTRY(OPENGL_LIB,                 T, T, F, F, T, T, F, T, F) },
+    { ENTRY(WINE_LIB,                   T, T, F, F, F, F, F, F, F) },
     { ENTRY(CUDA_LIB,                   T, T, T, F, T, F, F, T, F) },
     { ENTRY(OPENCL_LIB,                 T, T, T, F, T, F, F, T, F) },
     { ENTRY(OPENCL_WRAPPER_LIB,         T, T, T, F, T, F, F, F, F) },

@@ -34,6 +34,7 @@ int get_prefixes(Options *op); /* XXX move? */
 void add_kernel_modules_to_package(Options *op, Package *p);
 void remove_non_kernel_module_files_from_package(Options *op, Package *p);
 void remove_opengl_files_from_package(Options *op, Package *p);
+void remove_wine_files_from_package(Options *op, Package *p);
 void remove_systemd_files_from_package(Options *op, Package *p);
 int mode_string_to_mode(Options *op, char *s, mode_t *mode);
 char *mode_to_permission_string(mode_t mode);

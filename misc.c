@@ -1885,7 +1885,14 @@ int check_for_running_x(Options *op)
     }
     
     for (i = 0; i < 8; i++) {
-        snprintf(path, 14, "/tmp/.X%1d-lock", i);
+        int ret;
+        ret = snprintf(path, 14, "/tmp/.X%1d-lock", i);
+        if (ret < 0)
+        {
+            ui_warn(op, "Failed to determine presence of X lock file");
+            return TRUE;
+        }
+
         if (read_text_file(path, &buf) == TRUE) {
             int num = sscanf(buf, "%d", &pid);
             nvfree(buf);
@@ -2929,15 +2936,45 @@ to detect the number of processors.
     }
 }
 
-static void
-free_path_if_empty(char **path)
+/*
+ * get_pkg_config_variable() - call pkg-config to query the value of the given
+ *                             variable.
+ *
+ * Invokes `pkg-config --variable <VARIABLE> <PKG>` and returns a malloced
+ * string containing the returned value of the variable, if any.  NULL is
+ * returned if the variable could not be found or some error occurred.
+ */
+char *
+get_pkg_config_variable(Options *op,
+                        const char *pkg, const char *variable)
 {
-    char *str = *path;
+    char *cmd, *prefix = NULL;
+    int ret;
 
-    if (str && str[0] == '\0') {
-        nvfree(*path);
-        *path = NULL;
+    if (!op->utils[PKG_CONFIG]) {
+        return NULL;
     }
+
+    cmd = nvstrcat(op->utils[PKG_CONFIG],
+                   " --variable=", variable, " ", pkg,
+                   NULL);
+    ret = run_command(op, cmd, &prefix, FALSE, 0, TRUE);
+    nvfree(cmd);
+
+    if (ret != 0 ||
+        /*
+         * Rather than returning an error if a package exists but doen't have a
+         * particular variable, pkg-config will return success and write a blank
+         * line to stdout.
+         *
+         * If the path is empty, return NULL to fall back to the defaults.
+         */
+        (prefix && prefix[0] == '\0')) {
+        nvfree(prefix);
+        prefix = NULL;
+    }
+
+    return prefix;
 }
 
 /*
@@ -2977,62 +3014,19 @@ int check_systemd(Options *op)
      * Determine the path for unit files and systemd-sleep scripts if pkg-config
      * and systemd.pc are available.
      */
-    if (op->utils[PKG_CONFIG]) {
-        if (op->systemd_unit_prefix == NULL) {
-            char *cmd, *prefix;
-            int ret;
+    if (op->systemd_unit_prefix == NULL) {
+        op->systemd_unit_prefix =
+            get_pkg_config_variable(op, "systemd", "systemdsystemunitdir");
+    }
 
-            cmd = nvstrcat(op->utils[PKG_CONFIG],
-                           " --variable=systemdsystemunitdir systemd",
-                           NULL);
-            ret = run_command(op, cmd, &prefix, FALSE, 0, TRUE);
-            if (ret == 0) {
-                op->systemd_unit_prefix = prefix;
-            }
+    if (op->systemd_sleep_prefix == NULL) {
+        op->systemd_sleep_prefix =
+            get_pkg_config_variable(op, "systemd", "systemdsleepdir");
+    }
 
-            nvfree(cmd);
-        }
-
-        if (op->systemd_sleep_prefix == NULL) {
-            char *cmd, *prefix;
-            int ret;
-
-            cmd = nvstrcat(op->utils[PKG_CONFIG],
-                           " --variable=systemdsleepdir systemd",
-                           NULL);
-            ret = run_command(op, cmd, &prefix, FALSE, 0, TRUE);
-            if (ret == 0) {
-                op->systemd_sleep_prefix = prefix;
-            }
-
-            nvfree(cmd);
-        }
-
-        if (op->systemd_sysconf_prefix == NULL) {
-            char *cmd, *prefix;
-            int ret;
-
-            cmd = nvstrcat(op->utils[PKG_CONFIG],
-                           " --variable=systemdsystemconfdir systemd",
-                           NULL);
-            ret = run_command(op, cmd, &prefix, FALSE, 0, TRUE);
-            if (ret == 0) {
-                op->systemd_sysconf_prefix = prefix;
-            }
-
-            nvfree(cmd);
-        }
-
-        /*
-         * Rather than returning an error if a package exists but doen't have a
-         * particular variable, pkg-config will return success and write a blank
-         * line to stdout.
-         *
-         * If the paths are empty, use the defaults.
-         */
-        free_path_if_empty(&op->systemd_unit_prefix);
-        free_path_if_empty(&op->systemd_sleep_prefix);
-        free_path_if_empty(&op->systemd_sysconf_prefix);
+    if (op->systemd_sysconf_prefix == NULL) {
+        op->systemd_sysconf_prefix =
+            get_pkg_config_variable(op, "systemd", "systemdsystemconfdir");
     }
 
     return TRUE;

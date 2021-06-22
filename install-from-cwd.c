@@ -252,6 +252,10 @@ int install_from_cwd(Options *op)
         remove_opengl_files_from_package(op, p);
     }
 
+    if (op->no_wine_files) {
+        remove_wine_files_from_package(op, p);
+    }
+
     /*
      * determine whether systemd files should be installed
      */
@@ -803,6 +807,18 @@ static Package *parse_manifest (Options *op)
     line++;
     p->kernel_module_build_directory = get_next_line(ptr, &ptr, manifest, len);
     if (!p->kernel_module_build_directory) goto invalid_manifest_file;
+
+    /*
+     * allow the kernel module build directory to be overridden from the command
+     * line
+     */
+
+    if (op->kernel_module_build_directory_override) {
+        nvfree(p->kernel_module_build_directory);
+        p->kernel_module_build_directory =
+            nvstrdup(op->kernel_module_build_directory_override);
+    }
+
     remove_trailing_slashes(p->kernel_module_build_directory);
 
     /*

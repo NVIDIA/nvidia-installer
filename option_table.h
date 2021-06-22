@@ -38,6 +38,8 @@ enum {
     XFREE86_PREFIX_OPTION = 1024,
     OPENGL_PREFIX_OPTION,
     OPENGL_LIBDIR_OPTION,
+    WINE_PREFIX_OPTION,
+    WINE_LIBDIR_OPTION,
     KERNEL_INCLUDE_PATH_OPTION,
     KERNEL_INSTALL_PATH_OPTION,
     UNINSTALL_OPTION,
@@ -81,6 +83,7 @@ enum {
     NO_CC_VERSION_CHECK_OPTION,
     NO_DISTRO_SCRIPTS_OPTION,
     NO_OPENGL_FILES_OPTION,
+    NO_WINE_FILES_OPTION,
     KERNEL_MODULE_SOURCE_PREFIX_OPTION,
     KERNEL_MODULE_SOURCE_DIR_OPTION,
     NO_KERNEL_MODULE_SOURCE_OPTION,
@@ -223,6 +226,16 @@ static const NVGetoptOption __options[] = {
       DEFAULT_64BIT_LIBDIR "' or '" DEFAULT_LIBDIR "' on 64bit systems, "
       "depending on the installed Linux distribution.  Only under very rare "
       "circumstances should this option be used." },
+
+     { "wine-prefix", WINE_PREFIX_OPTION, NVGETOPT_STRING_ARGUMENT, NULL,
+       "The prefix under which Wine components of the NVIDIA driver will be "
+       "installed.  The default is '" DEFAULT_WINE_PREFIX "'."},
+
+     { "wine-libdir", WINE_LIBDIR_OPTION, NVGETOPT_STRING_ARGUMENT, NULL,
+       "The path relative to the Wine installation prefix under which Wine "
+       "components of the NVIDIA driver will be installed.  "
+       "The default is '<opengl-libdir>/" DEFAULT_WINE_LIBDIR_SUFFIX "', where "
+       "<opengl-libdir> is the path determined for --opengl-libdir above."},
 
 #if defined(NV_X86_64)
     { "compat32-chroot", COMPAT32_CHROOT_OPTION, NVGETOPT_STRING_ARGUMENT,
@@ -500,6 +513,9 @@ static const NVGetoptOption __options[] = {
     { "no-opengl-files", NO_OPENGL_FILES_OPTION, 0, NULL,
       "Do not install any of the OpenGL-related driver files." },
 
+    { "no-wine-files", NO_WINE_FILES_OPTION, 0, NULL,
+      "Do not install any of the Wine driver files." },
+
     { "kernel-module-source-prefix", KERNEL_MODULE_SOURCE_PREFIX_OPTION, 
        NVGETOPT_STRING_ARGUMENT, NULL,
       "Specify a path where the source directory for the kernel module will "
@@ -671,6 +687,12 @@ static const NVGetoptOption __options[] = {
       "--variable=systemdsystemconfdir systemd` to determine the location to "
       "install these symlinks, or '/etc/systemd/system' if pkg-config is not "
       "available. Ignored if --no-systemd is specified." },
+
+    { "kernel-module-build-directory", 'm',
+      NVGETOPT_STRING_ARGUMENT, NULL,
+      "The path within the driver package that contains the kernel module "
+      "build files is normally 'kernel/'.  This option can be used to "
+      "override this value." },
 
     /* Orphaned options: These options were in the long_options table in
      * nvidia-installer.c but not in the help. */
