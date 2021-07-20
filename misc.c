@@ -2927,3 +2927,44 @@ to detect the number of processors.
         op->concurrency_level = val;
     }
 }
+
+/*
+ * get_pkg_config_variable() - call pkg-config to query the value of the given
+ *                             variable.
+ *
+ * Invokes `pkg-config --variable <VARIABLE> <PKG>` and returns a malloced
+ * string containing the returned value of the variable, if any.  NULL is
+ * returned if the variable could not be found or some error occurred.
+ */
+char *
+get_pkg_config_variable(Options *op,
+                        const char *pkg, const char *variable)
+{
+    char *cmd, *prefix = NULL;
+    int ret;
+
+    if (!op->utils[PKG_CONFIG]) {
+        return NULL;
+    }
+
+    cmd = nvstrcat(op->utils[PKG_CONFIG],
+                   " --variable=", variable, " ", pkg,
+                   NULL);
+    ret = run_command(op, cmd, &prefix, FALSE, 0, TRUE);
+    nvfree(cmd);
+
+    if (ret != 0 ||
+        /*
+         * Rather than returning an error if a package exists but doen't have a
+         * particular variable, pkg-config will return success and write a blank
+         * line to stdout.
+         *
+         * If the path is empty, return NULL to fall back to the defaults.
+         */
+        (prefix && prefix[0] == '\0')) {
+        nvfree(prefix);
+        prefix = NULL;
+    }
+
+    return prefix;
+}
