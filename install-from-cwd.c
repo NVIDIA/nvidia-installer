@@ -620,6 +620,7 @@ static int has_separate_interface_file(char *name) {
         "nvidia-vgpu-vfio",
         "nvidia-uvm",
         "nvidia-drm",
+        "nvidia-peermem",
     };
 
     for (i = 0; i < ARRAY_LEN(no_interface_modules); i++) {
