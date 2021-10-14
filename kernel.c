@@ -1237,8 +1237,8 @@ static int ignore_load_error(Options *op, Package *p,
                  "from the one used to build the target kernel, or "
                  "if another driver, such as nouveau, is "
                  "present and prevents the NVIDIA kernel module from "
-                 "obtaining ownership of the NVIDIA GPU(s), "
-                 "or no NVIDIA GPU installed in this system is supported "
+                 "obtaining ownership of the NVIDIA device(s), "
+                 "or no NVIDIA device installed in this system is supported "
                  "by this NVIDIA Linux graphics driver release.\n\n"
                  "Please see the log entries 'Kernel module load "
                  "error' and 'Kernel messages' at the end of the file "
@@ -2230,7 +2230,7 @@ static char *convert_include_path_to_source_path(const char *inc)
  * i386 for i586 and i686 or arm for arm7l.
  */
 
-static char __machine_arch[16];
+static char __machine_arch[65];
 
 char *get_machine_arch(Options *op)
 {

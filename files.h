@@ -63,7 +63,7 @@ void process_dkms_conf(Options *op, Package *p);
 int set_security_context(Options *op, const char *filename, const char *type);
 void get_default_prefixes_and_paths(Options *op);
 void get_compat32_path(Options *op);
-char *nv_strreplace(char *src, char *orig, char *replace);
+char *nv_strreplace(const char *src, const char *orig, const char *replace);
 char *get_filename(Options *op, const char *def, const char *msg);
 int secure_delete(Options *op, const char *file);
 void invalidate_package_entry(PackageEntry *entry);

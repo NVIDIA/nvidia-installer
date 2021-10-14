@@ -1420,7 +1420,7 @@ generate_done:
         } else {
             /* Remove any ':' characters from fingerprint and truncate */
             char *tmp = nv_strreplace(fingerprint, ":", "");
-            strncpy(short_fingerprint, tmp, sizeof(short_fingerprint));
+            strncpy(short_fingerprint, tmp, sizeof(short_fingerprint) - 1);
             nvfree(tmp);
         }
         short_fingerprint[sizeof(short_fingerprint) - 1] = '\0';

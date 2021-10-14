@@ -138,8 +138,6 @@ typedef enum {
     FILE_TYPE_NVIDIA_MODPROBE,
     FILE_TYPE_NVIDIA_MODPROBE_MANPAGE,
     FILE_TYPE_MODULE_SIGNING_KEY,
-    FILE_TYPE_NVIFR_LIB,
-    FILE_TYPE_NVIFR_LIB_SYMLINK,
     FILE_TYPE_XORG_OUTPUTCLASS_CONFIG,
     FILE_TYPE_DKMS_CONF,
     FILE_TYPE_GLVND_LIB,
@@ -153,7 +151,6 @@ typedef enum {
     FILE_TYPE_EGL_EXTERNAL_PLATFORM_JSON,
     FILE_TYPE_FLEXERA_LIB,
     FILE_TYPE_FLEXERA_LIB_SYMLINK,
-    FILE_TYPE_ALLOCATOR_JSON,
     FILE_TYPE_INTERNAL_UTILITY_BINARY,
     FILE_TYPE_INTERNAL_UTILITY_LIB,
     FILE_TYPE_INTERNAL_UTILITY_DATA,
@@ -161,6 +158,8 @@ typedef enum {
     FILE_TYPE_SYSTEMD_UNIT,
     FILE_TYPE_SYSTEMD_UNIT_SYMLINK,
     FILE_TYPE_SYSTEMD_SLEEP_SCRIPT,
+    FILE_TYPE_GBM_BACKEND_LIB,
+    FILE_TYPE_GBM_BACKEND_LIB_SYMLINK,
     FILE_TYPE_MAX
 } PackageEntryFileType;
 
@@ -248,6 +247,8 @@ typedef struct __options {
     char *utility_libdir;
     char *utility_bindir;
     char *installer_prefix;
+
+    char *gbm_backend_dir;
 
     char *dot_desktopdir;
 
@@ -463,6 +464,7 @@ typedef struct __package {
 #define DEFAULT_X_PREFIX                 "/usr/X11R6"
 #define DEFAULT_UTILITY_PREFIX           "/usr"
 #define DEFAULT_DOCUMENTATION_PREFIX     "/usr"
+#define DEFAULT_GBM_PREFIX               "/usr"
 #define DEFAULT_APPLICATION_PROFILE_PATH "/usr/share/nvidia"
 #define DEFAULT_WINE_PREFIX              "/usr"
 

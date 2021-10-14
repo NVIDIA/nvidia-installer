@@ -113,6 +113,7 @@ enum {
     SYSTEMD_UNIT_PREFIX_OPTION,
     SYSTEMD_SLEEP_PREFIX_OPTION,
     SYSTEMD_SYSCONF_PREFIX_OPTION,
+    GBM_BACKEND_DIR_OPTION,
 };
 
 static const NVGetoptOption __options[] = {
@@ -289,6 +290,14 @@ static const NVGetoptOption __options[] = {
       DEFAULT_LIBDIR "' on 32bit systems, and '" DEFAULT_64BIT_LIBDIR
       "' or '" DEFAULT_LIBDIR "' on 64bit " "systems, depending on the "
       "installed Linux distribution." },
+
+    { "gbm-backend-dir", GBM_BACKEND_DIR_OPTION, NVGETOPT_STRING_ARGUMENT, NULL,
+      "The path relative to the OpenGL library installation prefix under "
+      "which the NVIDIA GBM backend library will be installed.  The "
+      "default is '$libdir/gbm', where '$libdir' is '" DEFAULT_64BIT_LIBDIR
+      "' or '" DEFAULT_LIBDIR "', depending on the installed Linux "
+      "distribution.  Only under very rare circumstances should this option be "
+      "used." },
 
     { "documentation-prefix", DOCUMENTATION_PREFIX_OPTION,
       NVGETOPT_STRING_ARGUMENT,  NULL,

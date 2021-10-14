@@ -101,6 +101,8 @@ else
   COMPAT_32_SRC =
 endif
 
+BULLSEYE_BUILD ?= 0
+
 ##############################################################################
 # The common-utils directory may be in one of two places: either
 # elsewhere in the driver source tree when building nvidia-installer
@@ -134,6 +136,8 @@ common_cflags  = -I.
 common_cflags += -imacros $(CONFIG_H)
 common_cflags += -I $(OUTPUTDIR)
 common_cflags += -I $(COMMON_UTILS_DIR)
+
+common_cflags += $(if $(BULLSEYE_BUILD),-DBULLSEYE_BUILD,)
 
 CFLAGS += $(common_cflags)
 

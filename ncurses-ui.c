@@ -424,8 +424,9 @@ static char *nv_ncurses_get_input(Options *op,
     /* copy the default response into the buffer */
 
     memset(buf, 0, MAX_BUF_LEN);
-    if (def) strncpy(buf, def, MAX_BUF_LEN);
-    
+    if (def) strncpy(buf, def, MAX_BUF_LEN - 1);
+    buf[MAX_BUF_LEN - 1] = '\0';
+
  draw_get_input:
     
     /* free any existing message region */
@@ -1890,8 +1891,8 @@ static char *nv_ncurses_create_command_list_text(DataStruct *d, CommandList *cl)
 
             tmp[0] = 0;
 
-            strncat(tmp, ret, lenret);
-            strncat(tmp, str, lenstr);
+            memcpy(tmp, ret, lenret);
+            memcpy(tmp + lenret, str, lenstr);
 
             tmp[lenret + lenstr] = '\n';
             tmp[lenret + lenstr + 1] = 0;

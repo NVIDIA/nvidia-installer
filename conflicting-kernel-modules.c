@@ -38,6 +38,9 @@ const char * const conflicting_kernel_modules[] = {
     "nvidia4", "nvidia5", "nvidia6", "nvidia7",
     "nvidia-frontend",
     "nvidia-kutils",
+#ifdef BULLSEYE_BUILD
+    "libcov-lkm",
+#endif
 };
 
 const int num_conflicting_kernel_modules = ARRAY_LEN(conflicting_kernel_modules);

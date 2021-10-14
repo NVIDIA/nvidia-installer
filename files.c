@@ -638,6 +638,15 @@ int set_destinations(Options *op, Package *p)
             path = "";
             break;
 
+        case FILE_TYPE_GBM_BACKEND_LIB_SYMLINK:
+            p->entries[i].target = nvstrcat(op->utility_prefix, "/", op->utility_libdir, "/", p->entries[i].target, NULL);
+            /* fallthrough */
+        case FILE_TYPE_GBM_BACKEND_LIB:
+            prefix = op->opengl_prefix;
+            dir = op->gbm_backend_dir;
+            path = "";
+            break;
+
         case FILE_TYPE_NVCUVID_LIB:
         case FILE_TYPE_NVCUVID_LIB_SYMLINK:
             if (p->entries[i].compat_arch == FILE_COMPAT_ARCH_COMPAT32) {
@@ -741,18 +750,6 @@ int set_destinations(Options *op, Package *p)
             dir = path = "";
             break;
 
-        case FILE_TYPE_NVIFR_LIB:
-        case FILE_TYPE_NVIFR_LIB_SYMLINK:
-            if (p->entries[i].compat_arch == FILE_COMPAT_ARCH_COMPAT32) {
-                prefix = op->compat32_prefix;
-                dir = op->compat32_libdir;
-            } else {
-                prefix = op->opengl_prefix;
-                dir = op->opengl_libdir;
-            }
-            path = "";
-            break;
-
         case FILE_TYPE_XORG_OUTPUTCLASS_CONFIG:
             prefix = op->x_sysconfig_path;
             dir = path = "";
@@ -777,14 +774,6 @@ int set_destinations(Options *op, Package *p)
 
         case FILE_TYPE_EGL_EXTERNAL_PLATFORM_JSON:
             prefix = op->external_platform_json_path;
-            dir = path = "";
-            break;
-
-        case FILE_TYPE_ALLOCATOR_JSON:
-            /*
-             * Defined in the prototype allocator driver loader module code.
-             */
-            prefix = "/etc/allocator/";
             dir = path = "";
             break;
 
@@ -1773,9 +1762,9 @@ int pack_precompiled_files(Options *op, Package *p, int num_files,
  * 'replace'.
  */
 
-char *nv_strreplace(char *src, char *orig, char *replace)
+char *nv_strreplace(const char *src, const char *orig, const char *replace)
 {
-    char *prev_s, *end_s, *s;
+    const char *prev_s, *end_s, *s;
     char *d, *dst;
     int len, dst_len, orig_len, replace_len;
     int done = 0;
@@ -1818,7 +1807,7 @@ char *nv_strreplace(char *src, char *orig, char *replace)
         if (!done) {
             dst = realloc(dst, dst_len + replace_len + 1);
             d = dst + dst_len;
-            strncpy(d, replace, replace_len);
+            memcpy(d, replace, replace_len);
             d[replace_len] = '\0';
             dst_len += replace_len;
         }
@@ -2312,6 +2301,9 @@ void get_default_prefixes_and_paths(Options *op)
 
     if (!op->opengl_libdir)
         op->opengl_libdir = default_libdir;
+
+    if (!op->gbm_backend_dir)
+        op->gbm_backend_dir = nvstrcat(default_libdir, "/", "gbm", NULL);
 
     if (!op->x_prefix) {
         if (op->modular_xorg) {
