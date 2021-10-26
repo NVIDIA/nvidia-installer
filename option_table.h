@@ -98,6 +98,7 @@ enum {
     NO_CHECK_FOR_ALTERNATE_INSTALLS_OPTION,
     NO_UVM_OPTION,
     NO_DRM_OPTION,
+    NO_PEERMEM_OPTION,
     INSTALL_COMPAT32_LIBS_OPTION,
     X_SYSCONFIG_PATH_OPTION,
     FORCE_LIBGLX_INDIRECT,
@@ -612,6 +613,12 @@ static const NVGetoptOption __options[] = {
       "windowing systems that run independently of X11. The '--no-drm' option "
       "should only be used to work around failures to build or install the "
       "nvidia-drm kernel module on systems that do not need these features." },
+
+    { "no-peermem", NO_PEERMEM_OPTION, 0, NULL,
+      "Do not install the nvidia-peermem kernel module. This kernel module "
+      "provides support for peer-to-peer memory sharing with Mellanox HCAs "
+      "(Host Channel Adapters) via GPUDirect RDMA (Remote Direct Memory "
+      "Access)." },
 
     { "concurrency-level", 'j', NVGETOPT_INTEGER_ARGUMENT, NULL,
       "Set the concurrency level for operations such as building the kernel "

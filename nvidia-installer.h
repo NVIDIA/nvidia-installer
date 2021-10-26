@@ -214,6 +214,7 @@ typedef struct __options {
     int check_for_alternate_installs;
     int install_uvm;
     int install_drm;
+    int install_peermem;
     int compat32_files_packaged;
     int x_files_packaged;
     int concurrency_level;

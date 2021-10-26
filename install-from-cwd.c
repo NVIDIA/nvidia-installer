@@ -69,6 +69,12 @@ static const KernelModuleInfo optional_modules[] = {
          .disable_option = "no-drm",
          .option_offset = offsetof(Options, install_drm),
     },
+    {
+        .module_name = "nvidia-peermem",
+        .optional_module_dependee = "GPUDirect RDMA p2p memory sharing",
+        .disable_option = "no-peermem",
+        .option_offset = offsetof(Options, install_peermem),
+    },
 };
 
 /*
