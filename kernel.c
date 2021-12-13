@@ -1282,7 +1282,7 @@ int test_kernel_modules(Options *op, Package *p)
 {
     char *cmd = NULL, *data = NULL;
     int ret = FALSE, i;
-    const char *depmods[] = { "i2c-core", "drm", "drm-kms-helper", "vfio_mdev" };
+    const char *depmods[] = { "i2c-core", "drm", "drm-kms-helper", "vfio_mdev", "vfio", "mdev", "vfio_iommu_type1" };
 
     /* 
      * If we're building/installing for a different kernel, then we
