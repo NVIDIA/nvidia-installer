@@ -3225,16 +3225,10 @@ done:
 static void set_libglvnd_egl_json_path(Options *op)
 {
     if (op->libglvnd_json_path == NULL) {
-        if (op->utils[PKG_CONFIG]) {
-            char *path = NULL;
-            char *cmd = nvstrcat(op->utils[PKG_CONFIG], " --variable=datadir libglvnd", NULL);
-            int ret = run_command(op, cmd, &path, FALSE, 0, TRUE);
-            nvfree(cmd);
-
-            if (ret == 0) {
-                op->libglvnd_json_path = nvstrcat(path, "/glvnd/egl_vendor.d", NULL);
-                collapse_multiple_slashes(op->libglvnd_json_path);
-            }
+        char *path = get_pkg_config_variable(op, "libglvnd", "datadir");
+        if (path != NULL) {
+            op->libglvnd_json_path = nvstrcat(path, "/glvnd/egl_vendor.d", NULL);
+            collapse_multiple_slashes(op->libglvnd_json_path);
             nvfree(path);
         }
     }
