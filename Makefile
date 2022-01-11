@@ -25,6 +25,7 @@
 # include common variables and functions
 ##############################################################################
 
+COMMON_UTILS_PCIACCESS = 1
 include utils.mk
 
 
@@ -70,16 +71,6 @@ NCURSESW6_UI_O     = $(OUTPUTDIR)/ncursesw6-ui.o
 NCURSESW6_UI_SO    = $(OUTPUTDIR)/nvidia-installer-ncursesw6-ui.so
 NCURSESW6_UI_SO_C  = $(OUTPUTDIR)/g_$(notdir $(NCURSESW6_UI_SO:.so=.c))
 
-RTLD_TEST_C        = $(OUTPUTDIR)/g_rtld_test.c
-RTLD_TEST          = $(OUTPUTDIR)/rtld_test
-
-# Use a precompiled rtld_test-Linux-x86 binary to simplify the Linux-x86_64
-# build. If a fresh rtld_test-Linux-x86 binary is needed, it can be copied
-# from a Linux-x86 build of nvidia-settings.
-
-RTLD_TEST_32_C     = $(OUTPUTDIR)/g_rtld_test_32.c
-RTLD_TEST_32       = rtld_test_$(TARGET_OS)-x86
-
 GEN_UI_ARRAY       = $(OUTPUTDIR)/gen-ui-array
 CONFIG_H           = $(OUTPUTDIR)/config.h
 
@@ -91,14 +82,10 @@ OPTIONS_1_INC      = $(OUTPUTDIR)/options.1.inc
 ifeq ($(TARGET_OS)-$(TARGET_ARCH), Linux-x86_64)
   TLS_MODEL = initial-exec
   PIC = -fPIC
-  # Only Linux-x86_64 needs the rtld_test_32 file
-  COMPAT_32_SRC = $(RTLD_TEST_32_C)
 else
   # So far all other platforms use local-exec
   TLS_MODEL = local-exec
   PIC =
-  # Non-Linux-x86_64 platforms do not include the rtld_test_32 file
-  COMPAT_32_SRC =
 endif
 
 BULLSEYE_BUILD ?= 0
@@ -128,7 +115,7 @@ NCURSES_UI_SO_SRC += $(if $(BUILD_NCURSESW6),$(NCURSESW6_UI_SO_C),)
 CFLAGS += $(if $(BUILD_NCURSES6),-DNV_INSTALLER_NCURSES6,)
 CFLAGS += $(if $(BUILD_NCURSESW6),-DNV_INSTALLER_NCURSESW6,)
 
-INSTALLER_SRC = $(SRC) $(NCURSES_UI_SO_SRC) $(RTLD_TEST_C) $(COMPAT_32_SRC)
+INSTALLER_SRC = $(SRC) $(NCURSES_UI_SO_SRC)
 
 INSTALLER_OBJS = $(call BUILD_OBJECT_LIST,$(INSTALLER_SRC))
 
@@ -236,12 +223,6 @@ $(NCURSES6_UI_SO_C): $(GEN_UI_ARRAY) $(NCURSES6_UI_SO)
 $(NCURSESW6_UI_SO_C): $(GEN_UI_ARRAY) $(NCURSESW6_UI_SO)
 	$(call quiet_cmd,GEN_UI_ARRAY) $(NCURSESW6_UI_SO) ncursesw6_ui_array > $@
 
-$(RTLD_TEST_C): $(GEN_UI_ARRAY) $(RTLD_TEST)
-	$(call quiet_cmd,GEN_UI_ARRAY) $(RTLD_TEST) rtld_test_array > $@
-
-$(RTLD_TEST_32_C): $(GEN_UI_ARRAY) $(RTLD_TEST_32)
-	$(call quiet_cmd,GEN_UI_ARRAY) $(RTLD_TEST_32) rtld_test_array_32 > $@
-
 # misc.c includes pciaccess.h
 $(call BUILD_OBJECT_LIST,misc.c): CFLAGS += $(PCIACCESS_CFLAGS)
 
@@ -278,14 +259,6 @@ $(call BUILD_MAKESELF_OBJECT_LIST,$(MAKESELF_HELP_SCRIPT_SRC)): $(CONFIG_H)
 
 clean clobber:
 	rm -rf $(OUTPUTDIR)
-
-
-# rule to build a native rtld_test; a precompiled Linux-x86 rtld_test is
-# distributed with nvidia-installer to simplify Linux-x86_64 builds.
-
-$(eval $(call DEBUG_INFO_RULES, $(RTLD_TEST)))
-$(RTLD_TEST).unstripped: rtld_test.c $(CONFIG_H)
-	$(call quiet_cmd,LINK) $(CFLAGS) $(LDFLAGS) $(BIN_LDFLAGS) -o $@ -lGL -lEGL $<
 
 
 ##############################################################################

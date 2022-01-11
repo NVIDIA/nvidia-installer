@@ -1095,7 +1095,7 @@ void add_kernel_modules_to_package(Options *op, Package *p)
  * FILE_TYPE_KERNEL_MODULE{,_SRC} or FILE_TYPE_DKMS_CONF.
  */
 
-void remove_non_kernel_module_files_from_package(Options *op, Package *p)
+void remove_non_kernel_module_files_from_package(Package *p)
 {
     int i;
 
@@ -1110,9 +1110,60 @@ void remove_non_kernel_module_files_from_package(Options *op, Package *p)
 
 
 /*
+ * package_entry_is_in_kernel_module_build_directory() - returns TRUE if the
+ * package entry at index i is in p->kernel_module_build_directory.
+ */
+static int package_entry_is_in_kernel_module_build_directory(Package *p, int i)
+{
+    const char *build_dir = p->kernel_module_build_directory;
+    const char *file = p->entries[i].file;
+    const char *cwd_prefix = "./";
+
+
+    /* Remove any leading "./" */
+    while (strncmp(build_dir, cwd_prefix, strlen(cwd_prefix)) == 0) {
+        build_dir += strlen(cwd_prefix);
+    }
+    while (strncmp(file, cwd_prefix, strlen(cwd_prefix)) == 0) {
+        file += strlen(cwd_prefix);
+    }
+
+    /* Check if the build directory is an initial substring of the file path */
+    if (strncmp(file, build_dir, strlen(build_dir)) == 0) {
+        if (build_dir[strlen(build_dir) - 1] == '/') {
+            /* If the last character of the directory name is a '/', then the
+             * strncmp(3) test above matched the full directory name, including
+             * a trailing directory separator character. */
+            return TRUE;
+        }
+        if (file[strlen(build_dir)] == '/') {
+            /* If the next character after the matched portion of the file name
+             * is a '/', then the directory name match is not a partial one. */ 
+            return TRUE;
+        }
+    }
+
+    return FALSE;
+}
+
+void remove_non_installed_kernel_module_source_files_from_package(Package *p)
+{
+    int i;
+
+    for (i = 0; i < p->num_entries; i++) {
+        if (p->entries[i].type == FILE_TYPE_KERNEL_MODULE_SRC) {
+            if (!package_entry_is_in_kernel_module_build_directory(p, i)) {
+                invalidate_package_entry(&(p->entries[i]));
+            }
+        }
+    }
+}
+
+
+/*
  * Invalidate each package entry that is an OpenGL file
  */
-void remove_opengl_files_from_package(Options *op, Package *p)
+void remove_opengl_files_from_package(Package *p)
 {
     int i;
 
@@ -1127,7 +1178,7 @@ void remove_opengl_files_from_package(Options *op, Package *p)
 /*
  * Invalidate each package entry that is an Wine file
  */
-void remove_wine_files_from_package(Options *op, Package *p)
+void remove_wine_files_from_package(Package *p)
 {
     int i;
 
@@ -1142,7 +1193,7 @@ void remove_wine_files_from_package(Options *op, Package *p)
 /*
  * Invalidate each package entry that is a systemd file
  */
-void remove_systemd_files_from_package(Options *op, Package *p)
+void remove_systemd_files_from_package(Package *p)
 {
     int i;
 
@@ -2094,29 +2145,33 @@ void process_dkms_conf(Options *op, Package *p)
 
             invalidate_package_entry(&(p->entries[i]));
 
-            tmpfile = process_template_file(op, &p->entries[i], tokens,
-                                            replacements);
-            if (tmpfile != NULL) {
-                /* add this new file to the package */
+            /* only process template files that are in the build directory */
 
-                /*
-                 * XXX 'name' is the basename (non-directory part) of
-                 * the file to be installed; normally, 'name' just
-                 * points into 'file', but in this case 'file' is
-                 * mkstemp(3)-generated, so doesn't have the same
-                 * basename; instead, we just strdup the name from the
-                 * template package entry; yes, 'name' will get leaked
-                 */
+            if (package_entry_is_in_kernel_module_build_directory(p, i)) {
+                tmpfile = process_template_file(op, &p->entries[i], tokens,
+                                                replacements);
+                if (tmpfile != NULL) {
+                    /* add this new file to the package */
 
-                add_package_entry(p,
-                                  tmpfile,
-                                  nvstrdup(p->entries[i].path),
-                                  nvstrdup(p->entries[i].name),
-                                  NULL, /* target */
-                                  NULL, /* dst */
-                                  FILE_TYPE_DKMS_CONF,
-                                  p->entries[i].compat_arch,
-                                  p->entries[i].mode);
+                    /*
+                     * XXX 'name' is the basename (non-directory part) of
+                     * the file to be installed; normally, 'name' just
+                     * points into 'file', but in this case 'file' is
+                     * mkstemp(3)-generated, so doesn't have the same
+                     * basename; instead, we just strdup the name from the
+                     * template package entry; yes, 'name' will get leaked
+                     */
+
+                    add_package_entry(p,
+                                      tmpfile,
+                                      nvstrdup(p->entries[i].path),
+                                      nvstrdup(p->entries[i].name),
+                                      NULL, /* target */
+                                      NULL, /* dst */
+                                      FILE_TYPE_DKMS_CONF,
+                                      p->entries[i].compat_arch,
+                                      p->entries[i].mode);
+                }
             }
         }
     }
@@ -2438,7 +2493,7 @@ void get_compat32_path(Options *op)
     if (!op->compat32_prefix)
         op->compat32_prefix = DEFAULT_OPENGL_PREFIX;
 
-    if(!op->compat32_libdir) {
+    if (!op->compat32_libdir) {
         char *compat_libdir;
 
 

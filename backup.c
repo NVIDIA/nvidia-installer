@@ -383,7 +383,7 @@ static int parse_first_line(const char *buf, int *num, char **filename)
     *num = strtol(local_buf, NULL, 10);
 
     c++;
-    while(isspace(*c)) c++;
+    while (isspace(*c)) c++;
 
     *filename = nvstrdup(c);
 
@@ -965,7 +965,7 @@ static BackupInfo *read_backup_log_file(Options *op)
     b->e = NULL;
     line_num = 3;
 
-    while(1) {
+    while (1) {
 
         percent = (float) (c - buf) / (float) stat_buf.st_size;
         ui_status_update(op, percent, NULL);

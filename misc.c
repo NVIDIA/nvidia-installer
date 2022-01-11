@@ -47,6 +47,7 @@
 #include "crc.h"
 #include "nvLegacy.h"
 #include "manifest.h"
+#include "nvpci-utils.h"
 
 static int check_symlink(Options*, const char*, const char*, const char*);
 
@@ -450,13 +451,9 @@ static const Util __utils[] = {
 
     /* SystemUtils */
     [LDCONFIG] = { "ldconfig", "glibc" },
-    [LDD]      = { "ldd",      "glibc" },
     [GREP]     = { "grep",     "grep" },
     [DMESG]    = { "dmesg",    "util-linux" },
     [TAIL]     = { "tail",     "coreutils" },
-    [CUT]      = { "cut",      "coreutils" },
-    [TR]       = { "tr",       "coreutils" },
-    [SED]      = { "sed",      "sed" },
 
     /* SystemOptionalUtils */
     [OBJCOPY]         = { "objcopy",        "binutils" },
@@ -480,6 +477,8 @@ static const Util __utils[] = {
     [CC]   = { "cc",   "gcc"  },
     [MAKE] = { "make", "make" },
     [LD]   = { "ld",   "binutils" },
+    [TR]   = { "tr",   "coreutils" },
+    [SED]  = { "sed",  "sed" },
 
 };
 
@@ -805,11 +804,17 @@ char *find_system_util(const char *util)
 
     for (x = y = path; ; x++) {
         if (*x == ':' || *x == '\0') {
+            struct stat st;
+
             c = *x;
             *x = '\0';
             file = nvstrcat(y, "/", util, NULL);
             *x = c;
-            if ((access(file, F_OK | X_OK)) == 0) {
+            if (stat(file, &st) == 0 && S_ISREG(st.st_mode) &&
+                (st.st_mode & (S_IXUSR | S_IXGRP | S_IXOTH)) != 0) {
+                /* If the path points to a regular file (or a symbolic link to a
+                 * regular file), and it is executable by at least one of user,
+                 * group, or other, use this path for the relevant utility. */
                 nvfree(path);
                 return file;
             }
@@ -1389,93 +1394,6 @@ int check_installed_file(Options *op, const char *filename,
 
 
 /*
- * check_runtime_configuration() - In the past, nvidia-installer has
- * frequently failed to backup/move all conflicting files prior to
- * installing the NVIDIA OpenGL libraries.  Consequently, some of the
- * installations considered successful by the installer didn't work
- * correctly.
- *
- * This sanity check attempts to verify that the correct libraries are
- * picked up by the runtime linker.  It returns TRUE on success and
- * FALSE on failure.
- */
-
-/* pull in the array and size from g_rtld_test.c */
-
-extern const unsigned char rtld_test_array[];
-extern const int rtld_test_array_size;
-
-#if defined(NV_X86_64)
-
-/* pull in the array and size from g_rtld_test_32.c */
-
-extern const unsigned char rtld_test_array_32[];
-extern const int rtld_test_array_32_size;
-
-#endif /* NV_X86_64 */
-
-
-/* forward prototype */
-
-static int rtld_test_internal(Options *op, Package *p,
-                              const unsigned char *test_array,
-                              const int test_array_size,
-                              int compat_32_libs);
-
-int check_runtime_configuration(Options *op, Package *p)
-{
-    int ret = TRUE;
-    char *tmpdir = NULL;
-    char old_cwd[PATH_MAX];
-    int chdir_success = FALSE;
-
-    ui_status_begin(op, "Running runtime sanity check:", "Checking");
-
-    /* chdir to an empty directory to avoid picking up DSOs from the CWD */
-
-    if (getcwd(old_cwd, sizeof(old_cwd)) != NULL &&
-        (tmpdir = make_tmpdir(op)) &&
-        chdir(tmpdir) == 0) {
-        chdir_success = TRUE;
-    } else {
-        ui_warn(op, "Unable to chdir into an empty directory: this may cause "
-                "the runtime configuration test to fail on some systems.");
-    }
-
-#if defined(NV_X86_64)
-    ret = rtld_test_internal(op, p,
-                             rtld_test_array_32,
-                             rtld_test_array_32_size,
-                             TRUE);
-#endif /* NV_X86_64 */
-
-    if (ret == TRUE) {
-        ret = rtld_test_internal(op, p,
-                                 rtld_test_array,
-                                 rtld_test_array_size,
-                                 FALSE);
-    }
-
-    if (chdir_success) {
-        if (chdir(old_cwd) != 0) {
-            ui_error(op, "Unable to restore cwd to '%s' (%s)!", old_cwd,
-                     strerror(errno));
-        }
-    }
-
-    if (tmpdir) {
-        remove_directory(op, tmpdir);
-    }
-
-    ui_status_end(op, "done.");
-    ui_log(op, "Runtime sanity check %s.", ret ? "passed" : "failed");
-
-    return ret;
-
-} /* check_runtime_configuration() */
-
-
-/*
  * collapse_multiple_slashes() - remove any/all occurrences of "//" from the
  * argument string.
  */
@@ -1493,235 +1411,6 @@ void collapse_multiple_slashes(char *s)
         }
     }
 }
-
-
-
-/*
- * is_symbolic_link_to() - check if the file with path 'path' is
- * a symbolic link pointing to 'dest'.  Returns TRUE if this is
- * the case; if the file is not a symbolic link if it doesn't point
- * to 'dest', is_symbolic_link_to() returns FALSE.
- */
-
-int is_symbolic_link_to(const char *path, const char *dest)
-{
-    struct stat stat_buf0, stat_buf1;
-
-    if ((lstat(path, &stat_buf0) != 0)
-            || !S_ISLNK(stat_buf0.st_mode))
-        return FALSE;
-
-    if ((stat(path, &stat_buf0) == 0) &&
-        (stat(dest, &stat_buf1) == 0) &&
-        (stat_buf0.st_dev == stat_buf1.st_dev) &&
-        (stat_buf0.st_ino == stat_buf1.st_ino))
-        return TRUE;
-
-    return FALSE;
-
-} /* is_symbolic_link_to() */
-
-
-
-/*
- * rtld_test_internal() - this routine writes the test binaries to a file
- * and performs the test; the caller (rtld_test()) selects which array data
- * is used (native, compat_32).
- */
-
-static int rtld_test_internal(Options *op, Package *p,
-                              const unsigned char *test_array,
-                              const int test_array_size,
-                              int compat_32_libs)
-{
-    int fd, i, found = TRUE, ret = TRUE;
-    char *name = NULL, *cmd = NULL, *data = NULL;
-    char *tmpfile, *s;
-    char *tmpfile1 = NULL;
-    struct stat stat_buf0, stat_buf1;
-
-    if ((test_array == NULL) || (test_array_size == 0)) {
-        ui_warn(op, "The runtime configuration test program is not "
-                "present; assuming successful installation.");
-        return TRUE;
-    }
-
-    /* write the rtld_test data to a temporary file */
-
-    tmpfile = write_temp_file(op, test_array_size, test_array,
-                              S_IRUSR|S_IWUSR|S_IXUSR);
-
-    if (!tmpfile) {
-        ui_warn(op, "Unable to create a temporary file for the runtime "
-                "configuration test program (%s); assuming successful "
-                "installation.", strerror(errno));
-        goto done;
-    }
-
-    /* create another temporary file */
-
-    tmpfile1 = nvstrcat(op->tmpdir, "/nv-tmp-XXXXXX", NULL);
-    
-    fd = mkstemp(tmpfile1);
-    if (fd == -1) {
-        ui_warn(op, "Unable to create a temporary file for the runtime "
-                "configuration test program (%s); assuming successful "
-                "installation.", strerror(errno));
-        goto done;
-    }
-    close(fd);
-
-    /* perform the test(s) */
-
-    for (i = 0; i < p->num_entries; i++) {
-        if ((p->entries[i].type != FILE_TYPE_OPENGL_LIB) &&
-            (p->entries[i].type != FILE_TYPE_TLS_LIB)) {
-            continue;
-#if defined(NV_X86_64)
-        } else if ((p->entries[i].compat_arch == FILE_COMPAT_ARCH_NATIVE)
-                   && compat_32_libs) {
-            continue;
-        } else if ((p->entries[i].compat_arch == FILE_COMPAT_ARCH_COMPAT32)
-                   && !compat_32_libs) {
-            continue;
-#endif /* NV_X86_64 */
-        }
-
-        name = nvstrdup(p->entries[i].name);
-        if (!name) continue;
-
-        s = strstr(name, ".so.1");
-        if (!s || s[strlen(".so.1")] != '\0') goto next;
-
-        cmd = nvstrcat(op->utils[LDD], " ", tmpfile, " > ", tmpfile1, NULL);
-
-        if (run_command(op, cmd, NULL, FALSE, 0, TRUE)) {
-            /* running ldd on a 32-bit SO will fail without a 32-bit loader */
-            if (compat_32_libs) {
-                ui_warn(op, "Unable to perform the runtime configuration "
-                        "check for 32-bit library '%s' ('%s'); this is "
-                        "typically caused by the lack of a 32-bit "
-                        "compatibility environment.  Assuming successful "
-                        "installation.", name, p->entries[i].dst);
-            } else {
-                ui_warn(op, "Unable to perform the runtime configuration "
-                        "check for library '%s' ('%s'); assuming successful "
-                        "installation.", name, p->entries[i].dst);
-            }
-            goto done;
-        }
-
-        cmd = nvstrcat(op->utils[GREP], " ", name, " ", tmpfile1,
-                             " | ", op->utils[CUT], " -d \" \" -f 3", NULL);
-
-        if (run_command(op, cmd, &data, FALSE, 0, TRUE) ||
-                (data == NULL)) {
-            ui_warn(op, "Unable to perform the runtime configuration "
-                    "check for library '%s' ('%s'); assuming successful "
-                    "installation.", name, p->entries[i].dst);
-            goto done;
-        }
-
-        if (!strcmp(data, "not") || !strlen(data)) {
-            /*
-             * If the library didn't show up in ldd's output or
-             * wasn't found, set 'found' to false and notify the
-             * user with a more meaningful message below.
-             */
-            free(data); data = NULL;
-            found = FALSE;
-        } else {
-            /*
-             * Double slashes in /etc/ld.so.conf make it all the
-             * way to ldd's output on some systems. Strip them
-             * here to make sure they don't cause a false failure.
-             */
-            collapse_multiple_slashes(data);
-        }
-
-        nvfree(name); name = NULL;
-        name = nvstrdup(p->entries[i].dst);
-        if (!name) goto next;
-
-        s = strstr(name, ".so.1");
-        if (!s) goto next;
-        *(s + strlen(".so.1")) = '\0';
-
-        if (!found || (strcmp(data, name) != 0)) {
-            /*
-             * XXX Handle the case where the same library is
-             * referred to, once directly and once via a symbolic
-             * link. This check is far from perfect, but should
-             * get the job done.
-             */
-
-            if ((stat(data, &stat_buf0) == 0) &&
-                (stat(name, &stat_buf1) == 0) &&
-                (stat_buf0.st_dev == stat_buf1.st_dev) &&
-                (stat_buf0.st_ino == stat_buf1.st_ino))
-                goto next;
-
-            if (!found && !compat_32_libs) {
-                ui_error(op, "The runtime configuration check failed for "
-                         "library '%s' (expected: '%s', found: (not found)).  "
-                         "The most likely reason for this is that the library "
-                         "was installed to the wrong location or that your "
-                         "system's dynamic loader configuration needs to be "
-                         "updated.  Please check the OpenGL library installation "
-                         "prefix and/or the dynamic loader configuration.",
-                         p->entries[i].name, name);
-                ret = FALSE;
-                goto done;
-#if defined(NV_X86_64)
-            } else if (!found) {
-                ui_warn(op, "The runtime configuration check failed for "
-                        "library '%s' (expected: '%s', found: (not found)).  "
-                        "The most likely reason for this is that the library "
-                        "was installed to the wrong location or that your "
-                        "system's dynamic loader configuration needs to be "
-                        "updated.  Please check the 32-bit OpenGL compatibility "
-                        "library installation prefix and/or the dynamic loader "
-                        "configuration.",
-                         p->entries[i].name, name);
-                goto next;
-#endif /* NV_X86_64 */
-            } else {
-                ui_error(op, "The runtime configuration check failed for the "
-                         "library '%s' (expected: '%s', found: '%s').  The "
-                         "most likely reason for this is that conflicting "
-                         "OpenGL libraries are installed in a location not "
-                         "inspected by `nvidia-installer`.  Please be sure you "
-                         "have uninstalled any third-party OpenGL and/or "
-                         "third-party graphics driver packages.",
-                         p->entries[i].name, name, data);
-                ret = FALSE;
-                goto done;
-            }
-        }
-
- next:
-        nvfree(name); name = NULL;
-        nvfree(cmd); cmd = NULL;
-        nvfree(data); data = NULL;
-    }
-
- done:
-    if (tmpfile) {
-        unlink(tmpfile);
-        nvfree(tmpfile);
-    }
-    if (tmpfile1) {
-        unlink(tmpfile1);
-        nvfree(tmpfile1);
-    }
-
-    nvfree(name);
-    nvfree(cmd);
-    nvfree(data);
-
-    return ret;
-
-} /* rtld_test_internal() */
 
 
 
@@ -1938,31 +1627,11 @@ int check_for_nvidia_graphics_devices(Options *op, Package *p)
     int i, found_supported_device = FALSE;
     int found_vga_device = FALSE;
 
-    /*
-     * libpciaccess stores the device class in bits 16-23, subclass in 8-15, and
-     * interface in bits 0-7 of dev->device_class.  We care only about the class
-     * and subclass.
-     */
-    const uint32_t PCI_CLASS_DISPLAY_VGA = 0x30000;
-    const uint32_t PCI_CLASS_SUBCLASS_MASK = 0xffff00;
-    const struct pci_id_match match = {
-        .vendor_id = 0x10de,
-        .device_id = PCI_MATCH_ANY,
-        .subvendor_id = PCI_MATCH_ANY,
-        .subdevice_id = PCI_MATCH_ANY,
-        .device_class = PCI_CLASS_DISPLAY_VGA,
-        /*
-         * Ignore bit 1 of the subclass, to allow both 0x30000 (VGA controller)
-         * and 0x30200 (3D controller).
-         */
-        .device_class_mask = PCI_CLASS_SUBCLASS_MASK & ~0x200,
-    };
-
     if (pci_system_init()) {
         return TRUE;
     }
 
-    iter = pci_id_match_iterator_create(&match);
+    iter = nvpci_find_gpu_by_vendor(NV_PCI_VENDOR_ID);
 
     for (dev = pci_device_next(iter); dev; dev = pci_device_next(iter)) {
         if (dev->device_id >= 0x0020 /* TNT or later */) {
@@ -2025,13 +1694,9 @@ int check_for_nvidia_graphics_devices(Options *op, Package *p)
             } else {
                 found_supported_device = TRUE;
 
-                /*
-                 * libpciaccess packs the device class into bits 16 through 23
-                 * and the subclass into bits 8 through 15 of dev->device_class.
-                 */
-                if ((dev->device_class & PCI_CLASS_SUBCLASS_MASK) ==
-                    PCI_CLASS_DISPLAY_VGA)
+                if (nvpci_dev_is_vga(dev)) {
                     found_vga_device = TRUE;
+                }
             }
         }
     }
@@ -2758,7 +2423,7 @@ int dkms_install_module(Options *op, const char *version, const char *kernel)
     if (!run_dkms(op, DKMS_BUILD, version, kernel, NULL)) goto failed;
 
     ui_status_update(op, .9, "Installing module");
-    if(!run_dkms(op, DKMS_INSTALL, version, kernel, NULL)) goto failed;
+    if( !run_dkms(op, DKMS_INSTALL, version, kernel, NULL)) goto failed;
 
     ui_status_end(op, "done.");
     return TRUE;
@@ -2797,7 +2462,7 @@ static int test_last_bit(const char *file) {
      * trying to read after an fseek(stream, -1, SEEK_END) call on a UEFI
      * variable file in sysfs hits a premature EOF. */
 
-    while(fread(&buf, 1, 1, fp)) {
+    while (fread(&buf, 1, 1, fp)) {
         data_read = TRUE;
     }
 

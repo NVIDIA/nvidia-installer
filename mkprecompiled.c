@@ -662,7 +662,7 @@ int main(int argc, char *argv[])
                    precompiled_file_type_name(file->type));
             printf("  attributes: ");
 
-            for(attr = attrs; *attr; attr++) {
+            for (attr = attrs; *attr; attr++) {
                 if (attr > attrs) {
                     printf(", ");
                 }

@@ -37,13 +37,9 @@
 typedef enum {
     MIN_SYSTEM_UTILS = 0,
     LDCONFIG = MIN_SYSTEM_UTILS,
-    LDD,
     GREP,
     DMESG,
     TAIL,
-    CUT,
-    TR,
-    SED,
     MAX_SYSTEM_UTILS
 } SystemUtils;
 
@@ -88,6 +84,10 @@ typedef enum {
     CC = MIN_DEVELOP_UTILS,
     MAKE,
     LD,
+    /* TR and SED aren't used directly by the installer, but conftest.sh
+     * depends on them, so we check for their presence */
+    TR,
+    SED,
     MAX_DEVELOP_UTILS
 } DevelopUtils;
 

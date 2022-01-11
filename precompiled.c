@@ -853,7 +853,7 @@ static int precompiled_read_fileinfo(Options *op, PrecompiledFileInfo *fileInfos
     fileInfo->linked_module_crc = read_uint32(buf, &offset);
 
     fileInfo->signature_size = read_uint32(buf, &offset);
-    if(fileInfo->signature_size) {
+    if (fileInfo->signature_size) {
         if (offset + fileInfo->signature_size > size) {
             ui_log(op, "Bad signature size");
             return -1;

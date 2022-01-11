@@ -467,7 +467,7 @@ static int attach_signature(Options *op, Package *p,
     }
 
     if (ret) {
-        if(op->kernel_module_signed) {
+        if (op->kernel_module_signed) {
             ui_log(op, "Signature attached successfully.");
         } else {
             ui_log(op, "Signature not attached.");
@@ -1282,14 +1282,9 @@ int test_kernel_modules(Options *op, Package *p)
 {
     char *cmd = NULL, *data = NULL;
     int ret = FALSE, i;
-    const char *depmods[] = { "i2c-core", "drm", "drm-kms-helper", "vfio_mdev" };
+    const char *depmods[] = { "i2c-core", "drm", "drm-kms-helper", "vfio_mdev", "vfio", "mdev", "vfio_iommu_type1" };
 
-    /* 
-     * If we're building/installing for a different kernel, then we
-     * can't test the module now.
-     */
-
-    if (op->kernel_name) return TRUE;
+    if (op->skip_module_load) return TRUE;
 
     /*
      * Attempt to load modules that nvidia.ko might depend on.  Silently ignore
@@ -2440,7 +2435,7 @@ static char *get_cpu_type(const Options *op)
         char *line, *ret = NULL;
         int eof;
 
-        while((line = fget_next_line(fp, &eof))) {
+        while ((line = fget_next_line(fp, &eof))) {
             ret = nvrealloc(ret, strlen(line) + 1);
 
             if (sscanf(line, "cpu : %s", ret) == 1) {

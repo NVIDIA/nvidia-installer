@@ -63,9 +63,6 @@ DIST_FILES += COPYING
 DIST_FILES += README
 DIST_FILES += dist-files.mk
 
-DIST_FILES += rtld_test_Linux-x86
-DIST_FILES += rtld_test.c
-
 DIST_FILES += nvidia-installer.1.m4
 DIST_FILES += gen-manpage-opts.c
 DIST_FILES += makeself-help-script.c

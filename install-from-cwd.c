@@ -228,7 +228,7 @@ int install_from_cwd(Options *op)
      */
 
     if (op->kernel_module_only) {
-        remove_non_kernel_module_files_from_package(op, p);
+        remove_non_kernel_module_files_from_package(p);
     } else {
 
         /* ask for the XFree86 and OpenGL installation prefixes. */
@@ -255,19 +255,24 @@ int install_from_cwd(Options *op)
     }
 
     if (op->no_opengl_files) {
-        remove_opengl_files_from_package(op, p);
+        remove_opengl_files_from_package(p);
     }
 
     if (op->no_wine_files) {
-        remove_wine_files_from_package(op, p);
+        remove_wine_files_from_package(p);
     }
 
     /*
      * determine whether systemd files should be installed
      */
     if (op->use_systemd != NV_OPTIONAL_BOOL_TRUE) {
-        remove_systemd_files_from_package(op, p);
+        remove_systemd_files_from_package(p);
     }
+
+    /*
+     * Remove any kernel module source files that won't be installed.
+     */
+    remove_non_installed_kernel_module_source_files_from_package(p);
 
     /*
      * now that we have the installation prefixes, build the
@@ -358,8 +363,6 @@ int install_from_cwd(Options *op)
 
     check_installed_files_from_package(op, p);
 
-    if (!check_runtime_configuration(op, p)) goto failed;
-    
     /* done */
 
     if (op->kernel_module_only || op->no_nvidia_xconfig_question) {
