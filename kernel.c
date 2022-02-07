@@ -1284,7 +1284,7 @@ int test_kernel_modules(Options *op, Package *p)
     int ret = FALSE, i;
     const char *depmods[] = { "i2c-core", "drm", "drm-kms-helper", "vfio_mdev", "vfio", "mdev", "vfio_iommu_type1" };
 
-    if (op->skip_module_load) return TRUE;
+    if (op->skip_module_load || op->kernel_name ) return TRUE;
 
     /*
      * Attempt to load modules that nvidia.ko might depend on.  Silently ignore
