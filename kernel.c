@@ -619,6 +619,26 @@ static int try_sign_file(Options *op, const char *file, int num_args)
     return ret == 0;
 }
 
+
+/*
+ * Check to see if scripts/sign-file exists under 'dir' and is executable
+ */
+static char *test_sign_file(const char *dir)
+{
+    char *path = nvstrcat(dir, "/scripts/sign-file", NULL);
+    struct stat st;
+
+    if (stat(path, &st) == 0 &&
+        (st.st_mode & (S_IXUSR|S_IXGRP|S_IXOTH)) != 0) {
+        return path;
+    }
+
+    nvfree(path);
+    return NULL;
+}
+
+
+
 /*
  * sign_kernel_module() - sign a kernel module. The caller is responsible
  * for ensuring that the kernel module is already built successfully and that
@@ -633,8 +653,19 @@ int sign_kernel_module(Options *op, const char *build_directory,
     /* Lazily set the default value for module_signing_script. */
 
     if (!op->module_signing_script) {
-        op->module_signing_script = nvstrcat(op->kernel_source_path,
-                                             "/scripts/sign-file", NULL);
+        op->module_signing_script = test_sign_file(op->kernel_output_path);
+        if (!op->module_signing_script) {
+            op->module_signing_script = test_sign_file(op->kernel_source_path);
+        }
+    }
+
+    if (!op->module_signing_script) {
+        ui_error(op, "nvidia-installer cannot sign %s without the `sign-file` "
+                 "module signing program, and was unable to automatically "
+                 "locate it. If you need to sign the NVIDIA kernel modules, "
+                 "please try again and set the '--module-signing-script' "
+                 "option on the installer's command line.", module_filename);
+        return FALSE;
     }
 
     if (status) {
@@ -1282,7 +1313,7 @@ int test_kernel_modules(Options *op, Package *p)
 {
     char *cmd = NULL, *data = NULL;
     int ret = FALSE, i;
-    const char *depmods[] = { "i2c-core", "drm", "drm-kms-helper", "vfio_mdev", "vfio", "mdev", "vfio_iommu_type1" };
+    const char *depmods[] = { "i2c-core", "drm", "drm-kms-helper", "vfio_mdev", "vfio", "mdev" };
 
     if (op->skip_module_load) return TRUE;
 
