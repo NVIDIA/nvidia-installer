@@ -78,7 +78,7 @@ enum {
     DOCUMENTATION_PREFIX_OPTION,
     APPLICATION_PROFILE_PATH_OPTION,
     X_LIBRARY_PATH_OPTION,
-    NO_KERNEL_MODULE_OPTION,
+    NO_KERNEL_MODULES_OPTION,
     NO_X_CHECK_OPTION,
     NO_CC_VERSION_CHECK_OPTION,
     NO_DISTRO_SCRIPTS_OPTION,
@@ -426,22 +426,30 @@ static const NVGetoptOption __options[] = {
       "and X server installation locations.  With this option set, "
       "the installer will only search in the top-level directories." },
 
+    /* alias for backwards compatibility */
     { "kernel-module-only", 'K',
+      NVGETOPT_OPTION_APPLIES_TO_NVIDIA_UNINSTALL, NULL, NULL },
+
+    { "kernel-modules-only", 'K',
       NVGETOPT_OPTION_APPLIES_TO_NVIDIA_UNINSTALL, NULL,
-      "Install a kernel module only, and do not uninstall the "
+      "Install the kernel modules only, and do not uninstall the "
       "existing driver.  This is intended to be used to install kernel "
       "modules for additional kernels (in cases where you might boot "
       "between several different kernels).  To use this option, you "
       "must already have a driver installed, and the version of the "
-      "installed driver must match the version of this kernel "
-      "module." },
+      "installed driver must match the version of these kernel "
+      "modules." },
 
-    { "no-kernel-module", NO_KERNEL_MODULE_OPTION, 0, NULL,
-      "Install everything but the kernel module, and do not remove any "
-      "existing, possibly conflicting kernel modules.  This can be "
-      "useful in some DEBUG environments.  If you use this option, you "
-      "must be careful to ensure that a NVIDIA kernel module matching "
-      "this driver version is installed separately." },
+    /* alias for backwards compatibility */
+    { "no-kernel-module", NO_KERNEL_MODULES_OPTION, 0, NULL, NULL },
+
+    { "no-kernel-modules", NO_KERNEL_MODULES_OPTION, 0, NULL,
+      "Install everything but the kernel modules, and do not remove any "
+      "existing, possibly conflicting, kernel modules.  This can be "
+      "useful in some debug environments, or when installing the open kernel "
+      "modules from source.  If you use this option, you "
+      "must be careful to ensure that NVIDIA kernel modules matching "
+      "this driver version are installed separately." },
 
     { "no-x-check", NO_X_CHECK_OPTION, 0, NULL,
       "Do not abort the installation if nvidia-installer detects that "
@@ -502,17 +510,6 @@ static const NVGetoptOption __options[] = {
       "forks to execute commands, e.g. to build the kernel module, and "
       "restores the SIGWINCH signal handler after the child process "
       "has terminated.  This option disables this behavior." },
-
-    { "no-cc-version-check", NO_CC_VERSION_CHECK_OPTION, 0, NULL,
-      "The NVIDIA kernel module should be compiled with the same compiler that "
-      "was used to compile the currently running kernel. The layout of some "
-      "Linux kernel data structures may be dependent on the version of gcc "
-      "used to compile it. The Linux 2.6 kernel modules are tagged with "
-      "information about the compiler and the Linux kernel's module loader "
-      "performs a strict version match check. nvidia-installer checks for "
-      "mismatches prior to building the NVIDIA kernel module and aborts the "
-      "installation in case of failures. Use this option to override this "
-      "check." },
 
     { "no-distro-scripts", NO_DISTRO_SCRIPTS_OPTION,
       NVGETOPT_OPTION_APPLIES_TO_NVIDIA_UNINSTALL, NULL,
@@ -732,6 +729,7 @@ static const NVGetoptOption __options[] = {
       NULL, NULL },
     { "glvnd-glx-client", GLVND_GLX_CLIENT_OPTION, NVGETOPT_IS_BOOLEAN, NULL, NULL },
     { "glvnd-egl-client", GLVND_EGL_CLIENT_OPTION, NVGETOPT_IS_BOOLEAN, NULL, NULL },
+    { "no-cc-version-check", NO_CC_VERSION_CHECK_OPTION, 0, NULL, NULL },
 
     { NULL, 0, 0, NULL, NULL },
 };

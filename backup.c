@@ -1302,9 +1302,9 @@ int get_installed_driver_version_and_descr(Options *op,
  * Returns FALSE if the user decided they didn't want to continue with
  * installation.
  *
- * If we are only installing a kernel module, then there must be an
+ * If we are only installing kernel modules, then there must be an
  * existing driver installation, and the version of that installation
- * must match the module we're trying to install.
+ * must match the modules we're trying to install.
  */
 
 int check_for_existing_driver(Options *op, Package *p)
@@ -1318,20 +1318,20 @@ int check_for_existing_driver(Options *op, Package *p)
 
     localRet = get_installed_driver_version_and_descr(op, &version, &descr);
 
-    if (op->kernel_module_only) {
+    if (op->kernel_modules_only) {
         if (!localRet) {
             ui_error(op, "No NVIDIA driver is currently installed; the "
-                     "'--kernel-module-only' option can only be used "
-                     "to install the NVIDIA kernel module on top of an "
+                     "'--kernel-modules-only' option can only be used "
+                     "to install the NVIDIA kernel modules on top of an "
                      "existing driver installation.");
             goto done;
         } else {
             if (strcmp(p->version, version) != 0) {
-                ui_error(op, "The '--kernel-module-only' option can only be "
-                         "used to install a kernel module on top of an "
+                ui_error(op, "The '--kernel-modules-only' option can only be "
+                         "used to install kernel modules on top of an "
                          "existing driver installation of the same driver "
                          "version.  The existing driver installation is "
-                         "%s, but the kernel module is %s.\n",
+                         "%s, but the kernel modules are %s.\n",
                          version, p->version);
                 goto done;
             } else {
@@ -1470,7 +1470,7 @@ int run_existing_uninstaller(Options *op)
      * kernel modules and run depmod afterwards, we don't need to run depmod
      * as part of uninstallation.
      */
-    int skip_depmod = !op->no_kernel_module;
+    int skip_depmod = !op->no_kernel_modules;
 
     if (uninstaller) {
         char *uninstall_cmd = NULL;

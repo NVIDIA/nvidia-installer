@@ -1564,11 +1564,11 @@ int check_for_running_x(Options *op)
 
     /*
      * If we are installing for a non-running kernel *and* we are only
-     * installing a kernel module, then skip this check.
+     * installing kernel modules, then skip this check.
      */
 
-    if (op->kernel_module_only && op->kernel_name) {
-        ui_log(op, "Only installing a kernel module for a non-running "
+    if (op->kernel_modules_only && op->kernel_name) {
+        ui_log(op, "Only installing kernel modules for a non-running "
                "kernel; skipping the \"is an X server running?\" test.");
         return TRUE;
     }
@@ -1614,13 +1614,12 @@ int check_for_running_x(Options *op)
 
 /*
  * check_for_nvidia_graphics_devices() - check if there are supported
- * NVIDIA graphics devices installed in this system. If one or more
- * supported devices are found, the function returns TRUE, else it prints
- * a warning message and returns FALSE. If legacy devices are detected
+ * NVIDIA graphics devices installed in this system. If no supported devices
+ * are found, a warning message is printed. If legacy devices are detected
  * in the system, a warning message is printed for each one.
  */
 
-int check_for_nvidia_graphics_devices(Options *op, Package *p)
+void check_for_nvidia_graphics_devices(Options *op, Package *p)
 {
     struct pci_device_iterator *iter;
     struct pci_device *dev;
@@ -1628,7 +1627,7 @@ int check_for_nvidia_graphics_devices(Options *op, Package *p)
     int found_vga_device = FALSE;
 
     if (pci_system_init()) {
-        return TRUE;
+        return;
     }
 
     iter = nvpci_find_gpu_by_vendor(NV_PCI_VENDOR_ID);
@@ -1704,19 +1703,18 @@ int check_for_nvidia_graphics_devices(Options *op, Package *p)
     pci_system_cleanup();
 
     if (!found_supported_device) {
+        /* Don't test-load the modules on a system with no supported devices */
+        op->skip_module_load = TRUE;
+
         ui_warn(op, "You do not appear to have an NVIDIA GPU supported by the "
                  "%s NVIDIA Linux graphics driver installed in this system.  "
                  "For further details, please see the appendix SUPPORTED "
                  "NVIDIA GRAPHICS CHIPS in the README available on the Linux "
                  "driver download page at www.nvidia.com.", p->version);
-        return FALSE;
     }
 
     if (!found_vga_device)
         op->no_nvidia_xconfig_question = TRUE;
-
-    return TRUE;
-
 } /* check_for_nvidia_graphics_devices() */
 
 
@@ -1899,10 +1897,10 @@ HookScriptStatus run_distro_hook(Options *op, const char *hook)
     int ret, status, shouldrun = op->run_distro_scripts;
     char *cmd = nvstrcat(DISTRO_HOOK_DIRECTORY, hook, NULL);
 
-    if (op->kernel_module_only) {
+    if (op->kernel_modules_only) {
         ui_expert(op,
                   "Not running distribution-provided %s script %s because "
-                  "--kernel-module-only was specified.",
+                  "--kernel-modules-only was specified.",
                   hook, cmd);
         ret = HOOK_SCRIPT_NO_RUN;
         goto done;

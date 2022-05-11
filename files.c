@@ -2111,17 +2111,14 @@ void process_dkms_conf(Options *op, Package *p)
     char *tmpfile;
 
     char *tokens[] = { "__VERSION_STRING", "__DKMS_MODULES", "__JOBS",
-                             "__EXCLUDE_MODULES", "will be generated",
-                             "__IGNORE_CC_MISMATCH", NULL };
-    char *replacements[] = { p->version, NULL, NULL,
-                                   p->excluded_kernel_modules,
-                                   "was generated", NULL, NULL };
+                       "__EXCLUDE_MODULES", "will be generated", NULL };
+    char *replacements[] = { p->version, NULL, NULL, p->excluded_kernel_modules,
+                             "was generated", NULL };
 
     int package_num_entries = p->num_entries;
 
     replacements[1] = nvstrdup("");
     replacements[2] = nvasprintf("%d", op->concurrency_level);
-    replacements[5] = op->ignore_cc_version_check ? "1" : "";
 
     /* Build the list of kernel modules to be installed */
     for (i = 0; i < p->num_kernel_modules; i++) {

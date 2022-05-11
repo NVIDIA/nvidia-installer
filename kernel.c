@@ -66,7 +66,6 @@ static void load_kernel_module_quiet(Options *op, const char *module_name);
 static void modprobe_remove_kernel_module_quiet(Options *op, const char *name);
 static int kernel_configuration_conflict(Options *op, Package *p,
                                          int target_system_checks);
-static int check_cc_version(Options *op, Package *p);
 
 /*
  * Message text that is used by several error messages.
@@ -957,12 +956,6 @@ int build_kernel_interfaces(Options *op, Package *p,
         }
     }
 
-    /* run cc_version_check separately to allow check_cc_version() to set
-     * IGNORE_CC_MISMATCH if needed */
-    if (!check_cc_version(op, p)) {
-        return FALSE;
-    }
-
     ui_log(op, "Cleaning kernel module build directory.");
     run_make(op, p, builddir, "clean", NULL, NULL, 0);
     ret = run_make(op, p, builddir, "", NULL, "Building kernel modules", 25);
@@ -1303,19 +1296,66 @@ static void unload_kernel_modules(Options *op, Package *p) {
     }
 }
 
-
 /*
- * test_kernel_module() - attempt to insmod the kernel modules and then rmmod
- * them.  Return TRUE if the insmod succeeded, or FALSE otherwise.
+ * Enable or disable the udev event queue
  */
 
-int test_kernel_modules(Options *op, Package *p)
+static void toggle_udev_event_queue(Options *op, int enable)
+{
+    const char *verb  = enable ? "start" : "stop";
+    char *udevadm = find_system_util("udevadm");
+    static int already_warned = FALSE;
+
+    if (udevadm) {
+        /*
+         * We want to wait for udevadm(8) to finish disabling the event queue,
+         * but since enabling it again can take several seconds as the queue
+         * backlog is processed, set the timeout to 0 when restarting the queue
+         * so udevadm(8) can return right away.
+         */
+        const char *timeout = enable ? " --timeout=0" : NULL;
+        char *cmd, *data;
+        int cmd_ret;
+
+        cmd = nvstrcat(udevadm, " control --", verb, "-exec-queue", timeout,
+                       NULL);
+        nvfree(udevadm);
+
+        cmd_ret = run_command(op, cmd, &data, FALSE, 0, TRUE) != 0;
+        nvfree(cmd);
+
+        if (cmd_ret != 0) {
+            ui_warn(op, "Failed to %s the udev event queue:\n\n%s",
+                    verb, data);
+        }
+        nvfree(data);
+    } else if (!already_warned) {
+        ui_warn(op, "Failed to find udevadm(8); nvidia-installer will not "
+                "be able to %s the udev event queue.", verb);
+        already_warned = TRUE;
+    }
+}
+
+
+/*
+ * test_kernel_modules_helper(): test-load the kernel modules, optionally
+ * pausing the udev event queue. Passes the return value of do_insmod() back
+ * up to the caller, stopping early if do_insmod() fails for an individual
+ * kernel module.
+ */
+static int test_kernel_modules_helper(Options *op, Package *p, int pause_udev)
 {
     char *cmd = NULL, *data = NULL;
-    int ret = FALSE, i;
+    int insmod_ret = -1, i;
     const char *depmods[] = { "i2c-core", "drm", "drm-kms-helper", "vfio_mdev", "vfio", "mdev" };
 
-    if (op->skip_module_load) return TRUE;
+    if (pause_udev) {
+        /*
+         * Temporarily disable the udev event queue to prevent modules from
+         * being automatically loaded by udev rules.
+         */
+        toggle_udev_event_queue(op, FALSE);
+    }
 
     /*
      * Attempt to load modules that nvidia.ko might depend on.  Silently ignore
@@ -1327,13 +1367,19 @@ int test_kernel_modules(Options *op, Package *p)
     }
 
     /*
+     * It's possible that one or more (existing) kernel modules may have been
+     * loaded between the initial attempt to unload the kernel modules and now;
+     * unload everything again just in case.
+     */
+    unload_kernel_modules(op, p);
+
+    /*
      * Attempt to load each kernel module one at a time. The order of the list
      * in the package manifest is set such that loading modules in that order
      * should satisfy any dependencies that exist between modules.
      */
 
     for (i = 0; i < p->num_kernel_modules; i++) {
-        int module_success = FALSE, insmod_ret;
         const char *module_opts = "";
         char *module_path;
 
@@ -1357,23 +1403,24 @@ int test_kernel_modules(Options *op, Package *p)
         insmod_ret = do_insmod(op, module_path, module_opts);
         nvfree(module_path);
 
-        if (insmod_ret == 0) {
-            module_success = TRUE;
-        } else {
-            ret = ignore_load_error(op, p, p->kernel_modules[i].module_filename,
-                                    insmod_ret);
-            if (ret) {
+        if (insmod_ret == EEXIST) {
+            /* The kernel module was already loaded: propagate this error back
+             * to test_kernel_modules() */
+            break;
+        } else if (insmod_ret != 0) {
+            const char *name = p->kernel_modules[i].module_filename;
+            int ignore = ignore_load_error(op, p, name, insmod_ret);
+
+            if (ignore) {
                 op->skip_module_load = TRUE;
-                ui_log(op, "Ignoring failure to load %s.",
-                       p->kernel_modules[i].module_filename);
+                ui_log(op, "Ignoring failure to load %s.", name);
+                insmod_ret = 0;
             } else {
                 handle_optional_module_failure(op, p->kernel_modules[i],
                                                "load");
             }
-        }
 
-        if (!module_success) {
-            goto test_exit;
+            break;
         }
     }
 
@@ -1385,11 +1432,18 @@ int test_kernel_modules(Options *op, Package *p)
 
     check_for_warning_messages(op);
 
+    if (pause_udev) {
+        /*
+         * Re-enable the udev event queue, if we disabled it. This is done
+         * before unloading the modules so that udev only has to process a
+         * backlog of events trigered by loading the modules, without also
+         * having to process a backlog of events triggered by unloading them.
+         */
+        toggle_udev_event_queue(op, TRUE);
+    }
+
     unload_kernel_modules(op, p);
 
-    ret = TRUE;
-
-test_exit:
     /*
      * display/log the last few lines of the kernel ring buffer
      * to provide further details in case of a load failure or
@@ -1412,7 +1466,35 @@ test_exit:
         modprobe_remove_kernel_module_quiet(op, depmods[i]);
     }
 
-    return ret;
+    return insmod_ret;
+}
+
+
+
+/*
+ * test_kernel_modules() - attempt to insmod the kernel modules and then rmmod
+ * them.  Return TRUE if the insmod succeeded, or FALSE otherwise.
+ */
+
+int test_kernel_modules(Options *op, Package *p)
+{
+    int ret;
+
+    if (op->skip_module_load) {
+        return TRUE;
+    }
+
+    ret = test_kernel_modules_helper(op, p, FALSE);
+
+    if (ret == EEXIST) {
+        ui_log(op, "One or more kernel modules were already loaded before "
+               "the module test load; trying again with the udev event "
+               "queue paused.");
+
+        ret = test_kernel_modules_helper(op, p, TRUE);
+    }
+
+    return ret == 0;
 }
 
 
@@ -1496,23 +1578,23 @@ int check_for_unloaded_kernel_module(Options *op)
 
     /*
      * We can skip this check if we are installing for a non-running
-     * kernel and only installing a kernel module.
+     * kernel and only installing the kernel modules.
      */
 
-    if (op->kernel_module_only && op->kernel_name) {
-        ui_log(op, "Only installing a kernel module for a non-running "
+    if (op->kernel_modules_only && op->kernel_name) {
+        ui_log(op, "Only installing kernel modules for a non-running "
                "kernel; skipping the \"is an NVIDIA kernel module loaded?\" "
                "test.");
         return TRUE;
     }
 
     /*
-     * We can also skip this check if we aren't installing a kernel
-     * module at all.
+     * We can also skip this check if we aren't installing any kernel
+     * modules at all.
      */
 
-    if (op->no_kernel_module) {
-        ui_log(op, "Not installing a kernel module; skipping the \"is an "
+    if (op->no_kernel_modules) {
+        ui_log(op, "Not installing any kernel modules; skipping the \"is an "
                "NVIDIA kernel module loaded?\" test.");
         return TRUE;
     }
@@ -2050,61 +2132,6 @@ int rmmod_kernel_module(Options *op, const char *module_name)
     
 } /* rmmod_kernel_module() */
 
-
-
-
-/*
- * check_cc_version() - check if the selected or default system
- * compiler is compatible with the one that was used to build the
- * currently running kernel.
- */
-
-static int check_cc_version(Options *op, Package *p)
-{
-    char *result;
-    int ret;
-
-    /* 
-     * If we're building/installing for a different kernel, then we
-     * can't do the gcc version check (we don't have a /proc/version
-     * string from which to get the kernel's gcc version).
-     * If the user passes the option no-cc-version-check, then we also
-     * shouldn't perform the cc version check.
-     */
-
-    if (op->ignore_cc_version_check) {
-        setenv("IGNORE_CC_MISMATCH", "1", 1);
-        return TRUE;
-    }
-
-    ret = run_conftest(op, p->kernel_module_build_directory,
-                       "cc_version_check just_msg", &result);
-
-    if (!ret) {
-        const char *choices[2] = {
-            "Ignore CC version check",
-            "Abort installation"
-        };
-
-        ret = (ui_multiple_choice(op, choices, 2, 0,
-                                  "The CC version check failed:\n\n%s\n\n"
-                                  "This may lead to subtle problems; if you "
-                                  "are not certain whether the mismatched "
-                                  "compiler will be compatible with your "
-                                  "kernel, you may wish to abort installation, "
-                                  "set the CC environment variable to the name "
-                                  "of the compiler used to compile your kernel, "
-                                  "and restart installation.", result) == 0);
-
-        if (ret) {
-            setenv("IGNORE_CC_MISMATCH", "1", 1);
-            ui_warn(op, "Ignoring CC version mismatch:\n\n%s", result);
-        }
-    }
-
-    nvfree(result);
-    return ret;
-} /* check_cc_version() */
 
 
 /*

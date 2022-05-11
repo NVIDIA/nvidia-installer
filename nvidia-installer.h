@@ -193,8 +193,8 @@ typedef struct __options {
     int sanity;
     int add_this_kernel;
     int no_backup;
-    int kernel_module_only;
-    int no_kernel_module;
+    int kernel_modules_only;
+    int no_kernel_modules;
     int no_abi_note;
     int no_rpms;
     int no_recursion;
@@ -294,8 +294,6 @@ typedef struct __options {
     int kernel_module_signed;
 
     void *ui_priv; /* for use by the ui's */
-
-    int ignore_cc_version_check;
 
     NVOptionalBool use_systemd;
     char *systemd_unit_prefix;

@@ -97,12 +97,15 @@ int install_from_cwd(Options *op)
 {
     Package *p;
     CommandList *c;
-    int ret;
     int ran_pre_install_hook = FALSE;
     HookScriptStatus res;
 
-    static const char* edit_your_xf86config =
-        "Please update your xorg.conf file as "
+    static const char* module_only_text =
+        "kernel module for the ";
+    static const char* xconfig_success_text =
+        "Your X configuration file has been successfully updated.  ";
+    static const char* edit_your_xorgconf_text =
+        "  Please update your xorg.conf file as "
         "appropriate; see the file /usr/share/doc/"
         "NVIDIA_GLX-1.0/README.txt for details.";
 
@@ -114,7 +117,7 @@ int install_from_cwd(Options *op)
     if ((p = parse_manifest(op)) == NULL) goto failed;
 
     if (!op->x_files_packaged) {
-        edit_your_xf86config = "";
+        edit_your_xorgconf_text = "";
     }
 
     ui_set_title(op, "%s (%s)", p->description, p->version);
@@ -198,20 +201,20 @@ int install_from_cwd(Options *op)
 
     /* attempt to build the kernel modules for the target kernel */
 
-    if (!op->no_kernel_module) {
+    if (!op->no_kernel_modules) {
         if (!install_kernel_modules(op, p)) {
             goto failed;
         }
     } else {
-        ui_warn(op, "You specified the '--no-kernel-module' command line "
-                "option, nvidia-installer will not install a kernel "
-                "module as part of this driver installation, and it will "
+        ui_warn(op, "You specified the '--no-kernel-modules' command line "
+                "option, nvidia-installer will not install any kernel "
+                "modules as part of this driver installation, and it will "
                 "not remove existing NVIDIA kernel modules not part of "
                 "an earlier NVIDIA driver installation.  Please ensure "
-                "that an NVIDIA kernel module matching this driver version "
-                "is installed separately.");
+                "that NVIDIA kernel modules matching this driver version "
+                "are installed separately.");
 
-        /* no_kernel_module should imply no DKMS */
+        /* no_kernel_modules should imply no DKMS */
 
         if (op->dkms) {
             ui_warn(op, "You have specified both the '--no-kernel-module' "
@@ -222,12 +225,12 @@ int install_from_cwd(Options *op)
     }
     
     /*
-     * if we are only installing the kernel module, then remove
+     * if we are only installing the kernel modules, then remove
      * everything else from the package; otherwise do some
      * OpenGL-specific stuff
      */
 
-    if (op->kernel_module_only) {
+    if (op->kernel_modules_only) {
         remove_non_kernel_module_files_from_package(p);
     } else {
 
@@ -286,7 +289,7 @@ int install_from_cwd(Options *op)
      * installed to /usr/lib/libGL.so.1. add_libgl_abi_symlink() sets its own
      * destination, so it must be called after set_destinations().
      */
-    if (!op->kernel_module_only && !op->no_opengl_files) {
+    if (!op->kernel_modules_only && !op->no_opengl_files) {
         add_libgl_abi_symlink(op, p);
     }
     
@@ -300,7 +303,7 @@ int install_from_cwd(Options *op)
      * command list, they'll be left with no driver installed.
      */
 
-    if (!op->kernel_module_only) {
+    if (!op->kernel_modules_only) {
         if (!run_existing_uninstaller(op)) goto failed;
     }
 
@@ -320,7 +323,7 @@ int install_from_cwd(Options *op)
     
     /* initialize the backup log file */
 
-    if (!op->kernel_module_only) {
+    if (!op->kernel_modules_only) {
         if (!init_backup(op, p)) goto failed;
     }
 
@@ -338,7 +341,7 @@ int install_from_cwd(Options *op)
      * matching is being used.
      */
 
-    if (!op->no_kernel_module || op->dkms) {
+    if (!op->no_kernel_modules || op->dkms) {
         if (package_includes_kernel_module(p, "nvidia-drm")) {
             if (!load_kernel_module(op, "nvidia-drm")) {
                 goto failed;
@@ -365,33 +368,38 @@ int install_from_cwd(Options *op)
 
     /* done */
 
-    if (op->kernel_module_only || op->no_nvidia_xconfig_question) {
+    if (!op->kernel_modules_only) {
+        module_only_text = "";
+    }
 
-        ui_message(op, "Installation of the kernel module for the %s "
-                   "(version %s) is now complete.",
-                   p->description, p->version);
+    if (op->kernel_modules_only || op->no_nvidia_xconfig_question) {
+        xconfig_success_text = "";
+        edit_your_xorgconf_text = "";
     } else {
-        
+        int ret;
+
         /* ask the user if they would like to run nvidia-xconfig */
-        
+
         const char *msg = "Would you like to run the nvidia-xconfig utility "
                           "to automatically update your X configuration file "
                           "so that the NVIDIA X driver will be used when you "
                           "restart X?  Any pre-existing X configuration "
                           "file will be backed up.";
-        
+
         ret = run_nvidia_xconfig(op, FALSE, msg, op->run_nvidia_xconfig);
         
         if (ret) {
-            ui_message(op, "Your X configuration file has been successfully "
-                       "updated.  Installation of the %s (version: %s) is now "
-                       "complete.", p->description, p->version);
+            edit_your_xorgconf_text = "";
         } else {
-            ui_message(op, "Installation of the %s (version: %s) is now "
-                       "complete.  %s", p->description,
-                       p->version, edit_your_xf86config);
+            xconfig_success_text = "";
         }
     }
+
+    ui_message(op,
+               "%sInstallation of the %s%s (version: %s) is now complete.%s",
+               xconfig_success_text, module_only_text,
+               p->description, p->version,
+               edit_your_xorgconf_text);
     
     free_package(p);
 
@@ -470,7 +478,7 @@ static int install_kernel_modules(Options *op,  Package *p)
     /* Only do the normal kernel module install if not using DKMS */
 
     if (op->dkms) {
-        op->no_kernel_module = TRUE;
+        op->no_kernel_modules = TRUE;
         return TRUE;
     }
 

@@ -239,8 +239,8 @@ static void parse_commandline(int argc, char *argv[], Options *op)
         case 'q': op->no_questions = TRUE; break;
         case 'b': op->no_backup = TRUE; break;
         case 'K':
-            op->kernel_module_only = TRUE;
-            op->no_kernel_module = FALSE; /* conflicts  */
+            op->kernel_modules_only = TRUE;
+            op->no_kernel_modules = FALSE; /* conflicts  */
             break;
         case 'X': op->run_nvidia_xconfig = TRUE; break;
         case 's':
@@ -252,7 +252,6 @@ static void parse_commandline(int argc, char *argv[], Options *op)
         case 'k':
             op->kernel_name = strval;
             op->no_precompiled_interface = TRUE;
-            op->ignore_cc_version_check = TRUE;
             break;
         case 'j':
             if (intval < 1) {
@@ -388,16 +387,16 @@ static void parse_commandline(int argc, char *argv[], Options *op)
         case NO_SIGWINCH_WORKAROUND_OPTION:
             op->sigwinch_workaround = FALSE;
             break;
-        case NO_KERNEL_MODULE_OPTION:
-            op->no_kernel_module = TRUE;
-            op->kernel_module_only = FALSE; /* conflicts */
+        case NO_KERNEL_MODULES_OPTION:
+            op->no_kernel_modules = TRUE;
+            op->kernel_modules_only = FALSE; /* conflicts */
             op->no_kernel_module_source = TRUE;
             break;
         case NO_X_CHECK_OPTION:
             op->no_x_check = TRUE;
             break;
         case NO_CC_VERSION_CHECK_OPTION:
-            op->ignore_cc_version_check = TRUE;
+            /* This option is no longer used; ignore it. */
             break;
         case NO_DISTRO_SCRIPTS_OPTION:
             op->run_distro_scripts = FALSE;

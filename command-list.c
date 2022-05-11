@@ -209,15 +209,15 @@ CommandList *build_command_list(Options *op, Package *p)
 
     /* find any possibly conflicting modules and/or libraries */
 
-    if (!op->no_kernel_module || op->dkms) {
+    if (!op->no_kernel_modules || op->dkms) {
         find_conflicting_kernel_modules(op, l);
     }
 
     /* check the conflicting file list for any installed kernel modules */
 
-    if (op->kernel_module_only) {
+    if (op->kernel_modules_only) {
         if (dkms_module_installed(op, p->version)) {
-            ui_error(op, "A DKMS kernel module with version %s is already "
+            ui_error(op, "DKMS kernel modules with version %s are already "
                      "installed.", p->version);
             free_file_list(l);
             free_command_list(op,c);
@@ -234,16 +234,16 @@ CommandList *build_command_list(Options *op, Package *p)
             }
         }
 
-        /* XXX: If installing with --kernel-module-only on a system that has
-         * the kernel module sources already installed, but does NOT have a
-         * built kernel module or DKMS module, duplicate entries for the source
-         * files will be added to the backup log, leading to error messages
-         * when uninstalling the driver later leads to redundant attempts to
-         * delete the files. */
+        /* XXX: If installing with --kernel-modules-only on a system that has
+         * the kernel module sources already installed, but does NOT have built
+         * kernel modules or DKMS modules, duplicate entries for the source
+         * files will be added to the backup log, leading to error messages when
+         * uninstalling the driver later leads to redundant attempts to delete
+         * the files. */
 
     }
     
-    if (!op->kernel_module_only) {
+    if (!op->kernel_modules_only) {
         char **paths;
         int numpaths, i;
         ConflictingFileInfo *conflicting_files;
@@ -408,7 +408,7 @@ CommandList *build_command_list(Options *op, Package *p)
      * <Nigel.Spowage@energis.com>
      */
     
-    if (!op->no_kernel_module && !op->skip_depmod) {
+    if (!op->no_kernel_modules && !op->skip_depmod) {
         tmp = nvstrcat(op->utils[DEPMOD], " -a ", op->kernel_name, NULL);
         add_command(c, RUN_CMD, tmp);
         nvfree(tmp);
