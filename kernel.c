@@ -830,8 +830,8 @@ static int pack_kernel_interface(Options *op, Package *p,
 
 
 static void handle_optional_module_failure(Options *op,
-                                           KernelModuleInfo module,
-                                           const char *action) {
+                                            KernelModuleInfo *module,
+                                            const char *action) {
     if (module.is_optional) {
         ui_error(op, "The %s kernel module failed to %s. This kernel module "
                  "is required for the proper operation of %s. If you do not "
@@ -2413,7 +2413,7 @@ int remove_kernel_module_from_package(Package *p, const char *module)
 }
 
 
-void free_kernel_module_info(KernelModuleInfo info)
+void free_kernel_module_info(const KernelModuleInfo &info)
 {
     nvfree(info.module_name);
     nvfree(info.module_filename);
