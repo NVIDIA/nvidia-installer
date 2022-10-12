@@ -311,7 +311,7 @@ int copy_file(Options *op, const char *srcfile,
  */
 
 char *write_temp_file(Options *op, const int len,
-                      const unsigned char *data, mode_t perm)
+                      const void *data, mode_t perm)
 {
     unsigned char *dst = (void *) -1;
     char *tmpfile = NULL;
@@ -1552,7 +1552,7 @@ char *make_tmpdir(Options *op)
         remove_directory(op, tmpdir);
     }
     
-    if (!mkdir_recursive(op, tmpdir, 0655, FALSE)) {
+    if (!mkdir_recursive(op, tmpdir, 0755, FALSE)) {
         return NULL;
     }
     
@@ -1626,7 +1626,7 @@ int check_for_existing_rpms(Options *op)
         
         cmd = nvstrcat("env LD_KERNEL_ASSUME=2.2.5 rpm --query ",
                        rpms[i], NULL);
-        ret = run_command(op, cmd, NULL, FALSE, 0, TRUE);
+        ret = run_command(op, cmd, NULL, FALSE, NULL, TRUE);
         nvfree(cmd);
 
         if (ret == 0) {
@@ -1644,7 +1644,7 @@ int check_for_existing_rpms(Options *op)
             }
             
             cmd = nvstrcat("rpm --erase --nodeps ", rpms[i], NULL);
-            ret = run_command(op, cmd, &data, op->expert, 0, TRUE);
+            ret = run_command(op, cmd, &data, op->expert, NULL, TRUE);
             nvfree(cmd);
             
             if (ret == 0) {
@@ -2193,7 +2193,7 @@ int set_security_context(Options *op, const char *filename, const char *type)
     
     cmd = nvstrcat(op->utils[CHCON], " -t ", type, " ", filename, NULL);
     
-    ret = run_command(op, cmd, NULL, FALSE, 0, TRUE);
+    ret = run_command(op, cmd, NULL, FALSE, NULL, TRUE);
     
     ret = ((ret == 0) ? TRUE : FALSE);
     nvfree(cmd);
@@ -2255,7 +2255,7 @@ static char *get_ldconfig_cache(Options *op)
     int ret;
 
     cmd = nvstrcat(op->utils[LDCONFIG], " -p", NULL);
-    ret = run_command(op, cmd, &data, FALSE, 0, FALSE);
+    ret = run_command(op, cmd, &data, FALSE, NULL, FALSE);
     nvfree(cmd);
 
     if (ret != 0) {
@@ -2673,7 +2673,7 @@ static int get_x_paths_helper(Options *op,
 
         dirs = NULL;
         cmd = nvstrcat(op->utils[XSERVER], " ", xserver_cmd, NULL);
-        ret = run_command(op, cmd, &dirs, FALSE, 0, TRUE);
+        ret = run_command(op, cmd, &dirs, FALSE, NULL, TRUE);
         nvfree(cmd);
 
         if ((ret == 0) && dirs) {
@@ -2720,7 +2720,7 @@ static int get_x_paths_helper(Options *op,
         dirs = NULL;
         cmd = nvstrcat(op->utils[PKG_CONFIG], " ",
                 pkg_config_cmd, NULL);
-        ret = run_command(op, cmd, &dirs, FALSE, 0, TRUE);
+        ret = run_command(op, cmd, &dirs, FALSE, NULL, TRUE);
         nvfree(cmd);
 
         if ((ret == 0) && dirs) {
@@ -2907,7 +2907,7 @@ int secure_delete(Options *op, const char *file)
         int ret;
         char *cmdline = nvstrcat(cmd, " -u \"", file, "\"", NULL);
 
-        ret = run_command(op, cmdline, NULL, FALSE, 0, TRUE);
+        ret = run_command(op, cmdline, NULL, FALSE, NULL, TRUE);
         log_printf(op, NULL, "%s: %s", cmdline, ret == 0 ? "" : "failed!");
 
         nvfree(cmd);
@@ -3121,7 +3121,7 @@ static LibglvndInstallCheckResult run_libglvnd_script(Options *op, Package *p,
     }
 
     cmdline = nvasprintf("/bin/sh %s", scriptPath);
-    status = run_command(op, cmdline, &output, TRUE, 0, FALSE);
+    status = run_command(op, cmdline, &output, TRUE, NULL, FALSE);
     if (WIFEXITED(status)) {
         result = WEXITSTATUS(status);
     } else {

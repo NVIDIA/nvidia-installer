@@ -213,15 +213,6 @@ int install_from_cwd(Options *op)
                 "an earlier NVIDIA driver installation.  Please ensure "
                 "that NVIDIA kernel modules matching this driver version "
                 "are installed separately.");
-
-        /* no_kernel_modules should imply no DKMS */
-
-        if (op->dkms) {
-            ui_warn(op, "You have specified both the '--no-kernel-module' "
-                    "and the '--dkms' command line options. The '--dkms' "
-                    "option will be ignored.");
-            op->dkms = FALSE;
-        }
     }
     
     /*
@@ -259,6 +250,8 @@ int install_from_cwd(Options *op)
 
     if (op->no_opengl_files) {
         remove_opengl_files_from_package(p);
+    } else {
+        check_for_vulkan_loader(op);
     }
 
     if (op->no_wine_files) {
@@ -331,17 +324,12 @@ int install_from_cwd(Options *op)
 
     if (!do_install(op, p, c)) goto failed;
 
-    /* Register, build, and install the module with DKMS, if requested */
-
-    if (op->dkms && !dkms_install_module(op, p->version, get_kernel_name(op)))
-        goto failed;
-
     /*
      * Leave nvidia-drm loaded in case an X server with OutputClass-based driver
      * matching is being used.
      */
 
-    if (!op->no_kernel_modules || op->dkms) {
+    if (!op->no_kernel_modules) {
         if (package_includes_kernel_module(p, "nvidia-drm")) {
             if (!load_kernel_module(op, "nvidia-drm")) {
                 goto failed;
@@ -365,6 +353,14 @@ int install_from_cwd(Options *op)
      */
 
     check_installed_files_from_package(op, p);
+
+    /*
+     * Import the kernel modules into DKMS, if requested. This is done after
+     * the post-install sanity check because DKMS may move or rename files
+     */
+
+    dkms_register_module(op, p, get_kernel_name(op));
+
 
     /* done */
 
@@ -461,26 +457,6 @@ static int install_kernel_modules(Options *op,  Package *p)
     PrecompiledInfo *precompiled_info;
 
     process_dkms_conf(op,p);
-
-    /* Offer the DKMS option if DKMS exists and the kernel module sources 
-     * will be installed somewhere. Don't offer DKMS as an option if module
-     * signing was requested. */
-
-    if (op->utils[DKMS] && !op->no_kernel_module_source &&
-        !(op->module_signing_secret_key && op->module_signing_public_key)) {
-        op->dkms = ui_yes_no(op, op->dkms,
-                            "Would you like to register the kernel module "
-                            "sources with DKMS? This will allow DKMS to "
-                            "automatically build a new module, if you "
-                            "install a different kernel later.");
-    }
-
-    /* Only do the normal kernel module install if not using DKMS */
-
-    if (op->dkms) {
-        op->no_kernel_modules = TRUE;
-        return TRUE;
-    }
 
     /* determine where to install the kernel module */
     
@@ -908,6 +884,9 @@ static Package *parse_manifest (Options *op)
             case FILE_TYPE_XMODULE_SHARED_LIB:
                 op->x_files_packaged = TRUE;
                 break;
+            case FILE_TYPE_VULKAN_ICD_JSON:
+                op->vulkan_icd_json_packaged = TRUE;
+                break;
             default: break;
         }
 
@@ -1132,6 +1111,8 @@ static void free_package(Package *p)
 
     nvfree(p->excluded_kernel_modules);
 
+    nvfree(p->kernel_make_logs);
+
     for (i = 0; i < p->num_entries; i++) {
         nvfree(p->entries[i].file);
         nvfree(p->entries[i].path);
@@ -1249,6 +1230,10 @@ static int assisted_module_signing(Options *op, Package *p)
         if (generate_keys) {
             char *cmdline, *x509_hash, *private_key_path, *public_key_path;
             int ret, generate_failed = FALSE;
+            const RunCommandOutputMatch output_match[] = {
+                { .lines = 8, .initial_match = NULL },
+                { 0 }
+            };
 
             if (!op->utils[OPENSSL]) {
                 ui_error(op, "Unable to generate key pair: openssl not "
@@ -1340,7 +1325,7 @@ guess_fail:
                                " -", x509_hash, NULL);
             nvfree(x509_hash);
 
-            ret = run_command(op, cmdline, NULL, TRUE, 8, TRUE);
+            ret = run_command(op, cmdline, NULL, TRUE, output_match, TRUE);
 
             nvfree(cmdline);
 
@@ -1405,7 +1390,7 @@ generate_done:
         cmdline = nvstrcat(op->utils[OPENSSL], " x509 -noout -fingerprint ",
                            "-inform DER -in ", op->module_signing_public_key,
                            NULL);
-        ret = run_command(op, cmdline, &result, FALSE, 0, FALSE);
+        ret = run_command(op, cmdline, &result, FALSE, NULL, FALSE);
         nvfree(cmdline);
 
         /* Format: "SHA1 Fingerprint=00:00:00:00:..." */
@@ -1419,7 +1404,7 @@ generate_done:
                  * incorrectly; try to get a sha1sum of the DER certificate */
                 cmdline = nvstrcat(sha1sum, " ", op->module_signing_public_key,
                                    NULL);
-                ret = run_command(op, cmdline, &result, FALSE, 0, FALSE);
+                ret = run_command(op, cmdline, &result, FALSE, NULL, FALSE);
                 nvfree(sha1sum);
                 nvfree(cmdline);
 

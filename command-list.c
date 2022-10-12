@@ -209,16 +209,18 @@ CommandList *build_command_list(Options *op, Package *p)
 
     /* find any possibly conflicting modules and/or libraries */
 
-    if (!op->no_kernel_modules || op->dkms) {
+    if (!op->no_kernel_modules) {
         find_conflicting_kernel_modules(op, l);
     }
 
     /* check the conflicting file list for any installed kernel modules */
 
     if (op->kernel_modules_only) {
-        if (dkms_module_installed(op, p->version)) {
+        const char *kernel = get_kernel_name(op);
+
+        if (dkms_module_installed(op, p->version, kernel)) {
             ui_error(op, "DKMS kernel modules with version %s are already "
-                     "installed.", p->version);
+                     "installed for the %s kernel.", p->version, kernel);
             free_file_list(l);
             free_command_list(op,c);
             return NULL;
@@ -489,7 +491,7 @@ static inline int execute_run_command(Options *op, float percent, const char *cm
     ui_expert(op, "Executing: %s", cmd);
     ui_status_update(op, percent, "Executing: `%s` "
                      "(this may take a moment...)", cmd);
-    ret = run_command(op, cmd, &data, TRUE, 0, TRUE);
+    ret = run_command(op, cmd, &data, TRUE, NULL, TRUE);
     if (ret != 0) {
         ui_error(op, "Failed to execute `%s`: %s", cmd, data);
         ret = continue_after_error(op, "Failed to execute `%s`", cmd);

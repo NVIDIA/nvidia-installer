@@ -536,16 +536,15 @@ static const NVGetoptOption __options[] = {
     { "no-kernel-module-source", NO_KERNEL_MODULE_SOURCE_OPTION, 0, NULL,
       "Skip installation of the kernel module source."},
 
-    { "dkms", DKMS_OPTION, 0, NULL,
+    { "dkms", DKMS_OPTION, NVGETOPT_IS_BOOLEAN, NULL,
       "nvidia-installer can optionally register the NVIDIA kernel module "
       "sources, if installed, with DKMS, then build and install a kernel "
       "module using the DKMS-registered sources.  This will allow the DKMS "
       "infrastructure to automatically build a new kernel module when "
       "changing kernels.  During installation, if DKMS is detected, "
       "nvidia-installer will ask the user if they wish to register the "
-      "module with DKMS; the default response is 'no'.  This option will "
-      "bypass the detection of DKMS, and cause the installer to attempt a "
-      "DKMS-based installation regardless of whether DKMS is present."},
+      "module with DKMS; the default response is 'yes' unless the --no-dkms "
+      "option is set, in which case the default response is 'no'." },
 
     { "module-signing-secret-key", MODULE_SIGNING_SECRET_KEY_OPTION, 
       NVGETOPT_STRING_ARGUMENT, NULL,

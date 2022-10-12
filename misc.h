@@ -50,13 +50,27 @@ typedef enum {
     ELF_ARCHITECTURE_64,
 } ElfFileType;
 
+/*
+ * An { 0 }-terminated array of RunCommandOutputMatch records may be passed
+ * to run_command to have it update a progress bar as the command prints output.
+ */
+typedef struct {
+    /* The number of expected matching output lines */
+    int lines;
+    /*
+     * If set to non-NULL, lines must begin with initial_match to match.
+     * If set to NULL, all lines will match.
+     */
+    char *initial_match;
+} RunCommandOutputMatch;
+
 char *read_next_word (char *buf, char **e);
 
 int check_euid(Options *op);
 int adjust_cwd(Options *op, const char *program_name);
 char *get_next_line(char *buf, char **e, char *start, int length);
 int run_command(Options *op, const char *cmd, char **data,
-                int output, int status, int redirect);
+                int output, const RunCommandOutputMatch *match, int redirect);
 int read_text_file(const char *filename, char **buf);
 char *find_system_util(const char *util);
 int find_system_utils(Options *op);
@@ -75,7 +89,6 @@ void should_install_optional_modules(Options *op, Package *p,
 void check_installed_files_from_package(Options *op, Package *p);
 int check_installed_file(Options*, const char*, const mode_t, const uint32,
                          ui_message_func *logwarn);
-void collapse_multiple_slashes(char *s);
 int check_for_running_x(Options *op);
 void query_xorg_version(Options *op);
 void check_for_nvidia_graphics_devices(Options *op, Package *p);
@@ -83,8 +96,8 @@ int run_nvidia_xconfig(Options *op, int restore, const char *question, int answe
 HookScriptStatus run_distro_hook(Options *op, const char *hook);
 int check_for_alternate_install(Options *op);
 int check_for_nouveau(Options *op);
-int dkms_module_installed(Options *op, const char *version);
-int dkms_install_module(Options *op, const char *version, const char *kernel);
+int dkms_module_installed(Options *op, const char *module, const char *kernel);
+void dkms_register_module(Options *op, Package *p, const char *kernel);
 int dkms_remove_module(Options *op, const char *version);
 int verify_crc(Options *op, const char *filename, unsigned int crc,
                unsigned int *actual_crc);
@@ -94,5 +107,8 @@ void set_concurrency_level(Options *op);
 char *get_pkg_config_variable(Options *op,
                               const char *pkg, const char *variable);
 int check_systemd(Options *op);
+int option_is_supported(Options *op, const char *cmd, const char *help,
+                        const char *option);
+void check_for_vulkan_loader(Options *op);
 
 #endif /* __NVIDIA_INSTALLER_MISC_H__ */

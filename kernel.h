@@ -43,6 +43,7 @@ int load_kernel_module                             (Options*, const char*);
 int check_for_unloaded_kernel_module               (Options*);
 PrecompiledInfo *find_precompiled_kernel_interface (Options*, Package*);
 char *get_kernel_name                              (Options*);
+const char *get_machine_arch                       (Options*);
 KernelConfigOptionStatus test_kernel_config_option (Options*, Package*,
                                                     const char*);
 int sign_kernel_module                             (Options*, const char*, 

@@ -57,11 +57,11 @@ static PrecompiledInfo *scan_dir(Options *op, Package *p,
 
 static char *build_distro_precompiled_kernel_interface_dir(Options *op);
 static char *convert_include_path_to_source_path(const char *inc);
-static char *get_machine_arch(Options *op);
 static int run_conftest(Options *op, const char *dir, const char *args,
                         char **result);
-static int run_make(Options *op, Package *p, const char *dir, const char *target,
-                    char **vars, const char *status, int lines);
+static int run_make(Options *op, Package *p, const char *dir,
+                    const char *cli_options, const char *status,
+                    const RunCommandOutputMatch *match);
 static void load_kernel_module_quiet(Options *op, const char *module_name);
 static void modprobe_remove_kernel_module_quiet(Options *op, const char *name);
 static int kernel_configuration_conflict(Options *op, Package *p,
@@ -155,7 +155,8 @@ int determine_kernel_module_installation_path(Options *op)
 static int run_conftest(Options *op, const char *dir, const char *args,
                         char **result)
 {
-    char *cmd, *arch, *kernel_source_path, *kernel_output_path;
+    char *cmd, *kernel_source_path, *kernel_output_path;
+    const char *arch;
     int ret;
 
     if (result) {
@@ -544,6 +545,84 @@ int unpack_kernel_modules(Options *op, Package *p, const char *build_directory,
    
 }
 
+/*
+ * Estimate the number of expected lines of output that will be produced by
+ * building the kernel modules. single_module may be set to restrict the
+ * estimate to the result of building the specified module only.
+ */
+static RunCommandOutputMatch *count_lines(Options *op, Package *p,
+                                          const char *dir,
+                                          const char *single_module)
+{
+    RunCommandOutputMatch *ret = nvalloc(sizeof(*ret) * 5);
+    int conftest_count, object_count, module_count, count_success = FALSE;
+    char *data = NULL, *cmd;
+
+    /*
+     * Build the make(1) command line. run_make() is explicitly avoided here:
+     * the output from count-lines.mk shouldn't be logged or displayed.
+     */
+    cmd = nvstrcat("cd ", dir, "; ",
+                   op->utils[MAKE], " -f count-lines.mk count "
+                   "NV_EXCLUDE_KERNEL_MODULES=", p->excluded_kernel_modules,
+                   single_module ? "" : NULL,
+                   " NV_KERNEL_MODULES=", single_module,
+                   NULL);
+
+    if (run_command(op, cmd, &data, FALSE, NULL, TRUE) == 0) {
+        if (sscanf(data, "conftests:%d objects:%d modules:%d",
+                   &conftest_count, &object_count, &module_count) == 3) {
+            count_success = TRUE;
+        }
+    }
+
+    if (!count_success) {
+        /*
+         * Something went wrong, but since the counts are only used for cosmetic
+         * purposes, it is sufficient to log the error and silently fall back to
+         * approximate default values.
+         */
+        ui_log(op, "Failed to estimate output lines: %s", data);
+        conftest_count = 250; object_count = 200; module_count = 5;
+    }
+
+    /*
+     * One line each for entering and leaving each of the Kbuild source and
+     * output directories
+     */
+    ret[0].lines = 4;
+    ret[0].initial_match = "make[";
+
+    /*
+     * Each C source file that is compiled into an object file generates one
+     * line of output beginning with "  CC [M] ". Additionally, for each module
+     * a $module_name.mod.o file is compiled, outputting a line that begins with
+     * "  CC " on older kernels and "  CC [M] " on newer ones.
+     */
+    ret[1].lines = object_count + module_count;
+    ret[1].initial_match = "  CC ";
+
+    /*
+     * Each module has has a $module_name.o object linked before the MODPOST
+     * stage, and a $module_name.ko object linked after. For both linking steps,
+     * a line beginning with "  LD [M] " is printed.
+     */
+    ret[2].lines = module_count * 2;
+    ret[2].initial_match = "  LD [M] ";
+
+    /*
+     * Expect one line of output per conftest, and assume that all the conftests
+     * have already been run in the "rebuild a single module to isolate modules
+     * that failed to build" case.
+     */
+    if (single_module == NULL) {
+        ret[3].lines = conftest_count;
+        ret[3].initial_match = " CONFTEST: ";
+    }
+
+    return ret;
+}
+
 
 static int check_file(Options *op, Package *p, const char *dir,
                       const char *modname)
@@ -560,11 +639,13 @@ static int check_file(Options *op, Package *p, const char *dir,
         char *rebuild_msg = nvstrcat("Checking to see whether the ", modname,
                                      " kernel module was successfully built",
                                      NULL);
+        RunCommandOutputMatch *match = count_lines(op, p, dir, modname);
         /* Attempt to rebuild the individual module, in case the failure
          * is module-specific and due to a different module */
-        run_make(op, p, dir, single_module_list, NULL, rebuild_msg, 25);
+        run_make(op, p, dir, single_module_list, rebuild_msg, match);
         nvfree(single_module_list);
         nvfree(rebuild_msg);
+        nvfree(match);
 
         /* Check the file again */
         ret = access(path, F_OK);
@@ -590,33 +671,6 @@ int build_kernel_modules(Options *op, Package *p)
     return build_kernel_interfaces(op, p, NULL);
 }
 
-
-/*
- * Run the module_signing_script with three or four arguments.
- * Return TRUE on success.
- */
-static int try_sign_file(Options *op, const char *file, int num_args)
-{
-    char *cmd;
-    const char *arg_1;
-    int ret;
-
-    switch (num_args) {
-        case 3: arg_1 = ""; break;
-        case 4: arg_1 = op->module_signing_hash; break;
-        default: return FALSE;
-    }
-
-    cmd = nvstrcat("\"", op->module_signing_script, "\" ",
-                   arg_1, " \"",
-                   op->module_signing_secret_key, "\" \"",
-                   op->module_signing_public_key, "\" \"",
-                   file, "\"", NULL);
-    ret = run_command(op, cmd, NULL, TRUE, 1, TRUE);
-    nvfree(cmd);
-
-    return ret == 0;
-}
 
 
 /*
@@ -645,9 +699,12 @@ static char *test_sign_file(const char *dir)
  */
 int sign_kernel_module(Options *op, const char *build_directory, 
                        const char *module_filename, int status) {
-    char *file;
+    const RunCommandOutputMatch output_match[] = {
+        { .lines = 1, .initial_match = NULL },
+        { 0 }
+    };
     int success;
-    static int num_args = 3;
+    char *cmd;
 
     /* Lazily set the default value for module_signing_script. */
 
@@ -671,39 +728,27 @@ int sign_kernel_module(Options *op, const char *build_directory,
         ui_status_begin(op, "Signing kernel module:", "Signing");
     }
 
-    file = nvstrcat(build_directory, "/", module_filename, NULL);
-
-  try_sign:
-
-    success = try_sign_file(op, file, num_args);
-
-    /* If sign-file failed to run with three arguments, try running it with
-     * four arguments on all subsequent signing attempts. */
-
-    if (num_args == 3 && !success) {
-        num_args = 4;
-
-        /* The four-arg version of sign-file needs a hash. */
-
-        if (!op->module_signing_hash) {
-            op->module_signing_hash = guess_module_signing_hash(op,
-                                          build_directory);
-        }
-
-        if (op->module_signing_hash) {
-            goto try_sign;
-        } else {
-            ui_error(op, "The installer was unable to sign %s without "
-                     "specifying a hash algorithm on the command line to %s, "
-                     "and was also unable to automatically detect the hash. "
-                     "If you need to sign the NVIDIA kernel modules, please "
-                     "try again and set the '--module-signing-hash' option on "
-                     "the installer's command line.",
-                     file, op->module_signing_script);
-        }
+    if (!op->module_signing_hash) {
+        op->module_signing_hash = guess_module_signing_hash(op,
+                                                            build_directory);
     }
 
-    nvfree(file);
+    if (!op->module_signing_hash) {
+        ui_error(op, "The installer cannot sign %s without specifying a hash "
+                 "algorithm on the command line to %s, and was also unable to "
+                 "automatically detect the hash. If you need to sign the "
+                 "NVIDIA kernel modules, please try again and set the "
+                 "'--module-signing-hash' option on the installer's command "
+                 "line.", module_filename, op->module_signing_script);
+    }
+
+    cmd = nvstrcat("\"", op->module_signing_script, "\" ",
+                   op->module_signing_hash, " \"",
+                   op->module_signing_secret_key, "\" \"",
+                   op->module_signing_public_key, "\" \"",
+                   build_directory, "/", module_filename, "\"", NULL);
+    success = (run_command(op, cmd, NULL, TRUE, output_match, TRUE) == 0);
+    nvfree(cmd);
 
     if (status) {
         ui_status_end(op, success ? "done." : "Failed to sign kernel module.");
@@ -894,6 +939,7 @@ int build_kernel_interfaces(Options *op, Package *p,
 {
     char *tmpdir = NULL, *builddir;
     int ret, files_packaged = 0, i;
+    RunCommandOutputMatch *match;
 
     struct {
         const char *sanity_check_name;
@@ -957,8 +1003,11 @@ int build_kernel_interfaces(Options *op, Package *p,
     }
 
     ui_log(op, "Cleaning kernel module build directory.");
-    run_make(op, p, builddir, "clean", NULL, NULL, 0);
-    ret = run_make(op, p, builddir, "", NULL, "Building kernel modules", 25);
+    run_make(op, p, builddir, "clean", NULL, 0);
+
+    match = count_lines(op, p, builddir, NULL);
+    ret = run_make(op, p, builddir, "", "Building kernel modules", match);
+    nvfree(match);
 
     /* Test to make sure that all kernel modules were built. */
     for (i = 0; i < p->num_kernel_modules; i++) {
@@ -999,7 +1048,7 @@ int build_kernel_interfaces(Options *op, Package *p,
 
         if (module->has_separate_interface_file) {
             if (!(run_make(op, p, tmpdir, module->interface_filename,
-                           NULL, NULL, 0) &&
+                           NULL, NULL) &&
                 pack_kernel_interface(op, p, tmpdir, fileInfo,
                                       module->interface_filename,
                                       module->module_filename,
@@ -1226,7 +1275,7 @@ static int ignore_load_error(Options *op, Package *p,
                                                probable_reason,
                                                signature_related) == 0);
         } else {
-            const char *secureboot_message, *dkms_message;
+            const char *secureboot_message;
 
             secureboot_message = secureboot == 1 ?
                                      "and sign the kernel module when "
@@ -1238,14 +1287,10 @@ static int ignore_load_error(Options *op, Package *p,
                                      "enable the interactive module "
                                      "signing prompts.";
 
-            dkms_message = op->dkms ? " Module signing is incompatible "
-                                      "with DKMS, so please select the "
-                                      "non-DKMS option when building the "
-                                      "kernel module to be signed." : "";
             ui_error(op, "The kernel module failed to load%s because it "
                      "was not signed by a key that is trusted by the "
-                     "kernel. Please try installing the driver again, %s%s",
-                     probable_reason, secureboot_message, dkms_message);
+                     "kernel. Please try installing the driver again, %s",
+                     probable_reason, secureboot_message);
         }
     }
 
@@ -1321,7 +1366,7 @@ static void toggle_udev_event_queue(Options *op, int enable)
                        NULL);
         nvfree(udevadm);
 
-        cmd_ret = run_command(op, cmd, &data, FALSE, 0, TRUE) != 0;
+        cmd_ret = run_command(op, cmd, &data, FALSE, NULL, TRUE) != 0;
         nvfree(cmd);
 
         if (cmd_ret != 0) {
@@ -1452,7 +1497,7 @@ static int test_kernel_modules_helper(Options *op, Package *p, int pause_udev)
     cmd = nvstrcat(op->utils[DMESG], " | ",
                    op->utils[TAIL], " -n 25", NULL);
 
-    if (!run_command(op, cmd, &data, FALSE, 0, TRUE))
+    if (!run_command(op, cmd, &data, FALSE, NULL, TRUE))
         ui_log(op, "Kernel messages:\n%s", data);
 
     nvfree(cmd);
@@ -1526,7 +1571,7 @@ static int modprobe_helper(Options *op, const char *module_name,
 
     loglevel_set = set_loglevel(PRINTK_LOGLEVEL_KERN_ALERT, &old_loglevel);
 
-    ret = run_command(op, cmd, &data, FALSE, 0, TRUE);
+    ret = run_command(op, cmd, &data, FALSE, NULL, TRUE);
 
     if (loglevel_set) {
         set_loglevel(old_loglevel, NULL);
@@ -2084,7 +2129,7 @@ static int check_for_loaded_kernel_module(Options *op, const char *module_name)
     char *result = NULL;
     int ret, found = FALSE;
 
-    ret = run_command(op, op->utils[LSMOD], &result, FALSE, 0, TRUE);
+    ret = run_command(op, op->utils[LSMOD], &result, FALSE, NULL, TRUE);
     
     if ((ret == 0) && (result) && (result[0] != '\0')) {
         char *ptr;
@@ -2120,7 +2165,7 @@ int rmmod_kernel_module(Options *op, const char *module_name)
 
     loglevel_set = set_loglevel(PRINTK_LOGLEVEL_KERN_ALERT, &old_loglevel);
     
-    ret = run_command(op, cmd, NULL, FALSE, 0, TRUE);
+    ret = run_command(op, cmd, NULL, FALSE, NULL, TRUE);
 
     if (loglevel_set) {
         set_loglevel(old_loglevel, NULL);
@@ -2279,74 +2324,59 @@ static char *convert_include_path_to_source_path(const char *inc)
 
 
 /*
- * get_machine_arch() - get the machine architecture, substituting
- * i386 for i586 and i686 or arm for arm7l.
+ * get_machine_arch() - get the machine architecture
  */
 
-static char __machine_arch[65];
-
-char *get_machine_arch(Options *op)
+const char *get_machine_arch(Options *op)
 {
+    static char __machine_arch[65];
     struct utsname uname_buf;
+
+    if (__machine_arch[0]) {
+        return __machine_arch;
+    }
 
     if (uname(&uname_buf) == -1) {
         ui_warn(op, "Unable to determine machine architecture (%s).",
                 strerror(errno));
         return NULL;
     } else {
-        if ((strncmp(uname_buf.machine, "i586", 4) == 0) ||
-            (strncmp(uname_buf.machine, "i686", 4) == 0)) {
-            strcpy(__machine_arch, "i386");
-        } else if ((strncmp(uname_buf.machine, "armv", 4) == 0)) {
-            strcpy(__machine_arch, "arm");
-        } else {
-            strncpy(__machine_arch, uname_buf.machine,
-                    sizeof(__machine_arch));
-        }
+        strncpy(__machine_arch, uname_buf.machine, sizeof(__machine_arch) - 1);
         return __machine_arch;
     }
-
 } /* get_machine_arch() */
 
 /*
- * Run `make` with the specified target and make variables. The variables
- * are given in the form of a NULL-terminated array of alternating key
- * and value strings, e.g. { "KEY1", "value1", "KEY2", "value2", NULL }.
+ * Run `make` with the options we need for the kernel module build, plus
+ * any user-supplied command line options.
+ *
  * If a 'status' string is given, then a ui_status progress bar is shown
  * using 'status' as the initial message, expecting 'lines' lines of output
  * from the make command.
  */
-static int run_make(Options *op, Package *p, const char *dir, const char *target,
-                    char **vars, const char *status, int lines) {
+static int run_make(Options *op, Package *p, const char *dir,
+                    const char *cli_options, const char *status,
+                    const RunCommandOutputMatch *match) {
     char *cmd, *concurrency, *data = NULL;
-    int i = 0, ret;
+    int ret;
 
     concurrency = nvasprintf(" -j%d ", op->concurrency_level);
 
     cmd = nvstrcat("cd ", dir, "; ",
-                   op->utils[MAKE], " -k", concurrency, target,
+                   op->utils[MAKE], " -k", concurrency,
                    " NV_EXCLUDE_KERNEL_MODULES=\"",
                    p->excluded_kernel_modules, "\"",
                    " SYSSRC=\"", op->kernel_source_path, "\"",
-                   " SYSOUT=\"", op->kernel_output_path, "\"",
+                   " SYSOUT=\"", op->kernel_output_path, "\" ",
+                   cli_options,
                    NULL);
     nvfree(concurrency);
-
-    if (vars) {
-        while (vars[i] && vars[i+1]) {
-            char *old_cmd = cmd;
-
-            cmd = nvstrcat(old_cmd, " ", vars[i], "=\"", vars[i+1], "\"", NULL);
-            nvfree(old_cmd);
-            i += 2;
-        }
-    }
 
     if (status) {
         ui_status_begin(op, status, "");
     }
 
-    ret = (run_command(op, cmd, &data, TRUE, status ? lines : 0, TRUE) == 0);
+    ret = (run_command(op, cmd, &data, TRUE, status ? match : NULL, TRUE) == 0);
 
     if (status) {
         if (ret) {
@@ -2366,15 +2396,24 @@ static int run_make(Options *op, Package *p, const char *dir, const char *target
             status_extra = nvstrdup("");
         }
 
-        ui_error(op, "An error occurred%s. See " DEFAULT_LOG_FILE_NAME
-                     " for details.", status_extra);
+        ui_error(op, "An error occurred%s. See %s for details.",
+                 status_extra, op->log_file_name);
         ui_log(op, "The command `%s` failed with the following output:\n\n%s",
                cmd, data);
         nvfree(status_extra);
     }
 
+    /* Append the make output to the running make log */
+    if (p->kernel_make_logs) {
+        char *old_logs = p->kernel_make_logs;
+        p->kernel_make_logs = nvstrcat(old_logs, data, NULL);
+        nvfree(old_logs);
+        nvfree(data);
+    } else {
+        p->kernel_make_logs = data;
+    }
+
     nvfree(cmd);
-    nvfree(data);
 
     return ret;
 }

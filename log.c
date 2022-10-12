@@ -25,6 +25,8 @@
 #include <errno.h>
 #include <string.h>
 #include <time.h>
+#include <unistd.h>
+#include <sys/types.h>
 
 #include "nvidia-installer.h"
 #include "misc.h"
@@ -67,7 +69,21 @@ void log_init(Options *op, int argc, char * const argv[])
     int i;
 
     if (!op->logging) return;
-    
+
+    if (op->add_this_kernel && geteuid() != 0) {
+        /*
+         * Logging won't work at the default location when the user is not root,
+         * which is allowed for --add-this-kernel. Log to an alternative path
+         * which is more likely to work if the user hasn't already set one.
+         */
+        if (strcmp(DEFAULT_LOG_FILE_NAME, op->log_file_name) == 0) {
+            char *basename = nv_basename(DEFAULT_LOG_FILE_NAME);
+
+            op->log_file_name = nvdircat(op->tmpdir, basename, NULL);
+            nvfree(basename);
+        }
+    }
+
     log_file_stream = fopen(op->log_file_name, "w");
     
     if (!log_file_stream) {

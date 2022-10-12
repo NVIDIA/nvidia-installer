@@ -135,7 +135,7 @@ static Options *load_default_options(void)
     op->sigwinch_workaround = TRUE;
     op->run_distro_scripts = TRUE;
     op->no_kernel_module_source = FALSE;
-    op->dkms = FALSE;
+    op->dkms = TRUE;
     op->check_for_alternate_installs = TRUE;
     op->install_uvm = TRUE;
     op->install_drm = TRUE;
@@ -417,7 +417,7 @@ static void parse_commandline(int argc, char *argv[], Options *op)
             op->no_kernel_module_source = TRUE;
             break;
         case DKMS_OPTION:
-            op->dkms = TRUE;
+            op->dkms = boolval;
             break;
         case MODULE_SIGNING_SECRET_KEY_OPTION:
             op->module_signing_secret_key = strval;
@@ -541,17 +541,6 @@ static void parse_commandline(int argc, char *argv[], Options *op)
         exit(0);
     }
 
-    /* Disable DKMS if module signing was requested; the two options are
-     * mutually exclusive. */
-    if (op->dkms &&
-        op->module_signing_secret_key && op->module_signing_public_key) {
-        ui_warn(op, "You selected the DKMS kernel module option, and also "
-                "specified a pair of module signing keys. Keys cannot be "
-                "managed securely under the automated DKMS framework. The "
-                "DKMS option will be disabled.");
-        op->dkms = FALSE;
-    }
-
 
     /*
      * if the installer prefix was not specified, default it to the
@@ -629,7 +618,9 @@ int main(int argc, char *argv[])
     
     /* check that we're running as root */
     
-    if (!check_euid(op)) goto done;
+    if (!op->add_this_kernel && !check_euid(op)) {
+        goto done;
+    }
     
     /*
      * find the system utilities we'll need

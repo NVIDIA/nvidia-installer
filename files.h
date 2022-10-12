@@ -28,7 +28,7 @@ int touch_directory(Options *op, const char *victim);
 int copy_file(Options *op, const char *srcfile,
               const char *dstfile, mode_t mode);
 char *write_temp_file(Options *op, const int len,
-                      const unsigned char *data, mode_t perm);
+                      const void *data, mode_t perm);
 int set_destinations(Options *op, Package *p); /* XXX move? */
 int get_prefixes(Options *op); /* XXX move? */
 void add_kernel_modules_to_package(Options *op, Package *p);

@@ -55,6 +55,7 @@ typedef enum {
     OPENSSL,
     DKMS,
     SYSTEMCTL,
+    TAR,
     MAX_SYSTEM_OPTIONAL_UTILS
 } SystemOptionalUtils;
 
@@ -217,6 +218,7 @@ typedef struct __options {
     int install_peermem;
     int compat32_files_packaged;
     int x_files_packaged;
+    int vulkan_icd_json_packaged;
     int concurrency_level;
     int skip_module_load;
     int skip_depmod;
@@ -423,6 +425,7 @@ typedef struct __package {
     char *version;
     char *kernel_module_build_directory;
     char *precompiled_kernel_interface_directory;
+    char *kernel_make_logs;
 
     PackageEntry *entries; /* array of filename/checksum/bytesize entries */
     int num_entries;

@@ -678,7 +678,7 @@ static int do_uninstall(Options *op, const char *version,
 
     /* Remove any installed DKMS modules */
 
-    if (dkms_module_installed(op, version)) {
+    if (dkms_module_installed(op, version, NULL)) {
         ui_log(op, "DKMS module detected; removing...");
         if (!dkms_remove_module(op, version)) {
             ui_warn(op, "Failed to remove installed DKMS module!");
@@ -844,11 +844,11 @@ static int do_uninstall(Options *op, const char *version,
 
         if (!op->skip_depmod) {
             char *cmd = nvstrcat(op->utils[DEPMOD], " -a ", op->kernel_name, NULL);
-            status |= run_command(op, cmd, NULL, FALSE, 0, FALSE);
+            status |= run_command(op, cmd, NULL, FALSE, NULL, FALSE);
             nvfree(cmd);
         }
 
-        status |= run_command(op, op->utils[LDCONFIG], NULL, FALSE, 0, FALSE);
+        status |= run_command(op, op->utils[LDCONFIG], NULL, FALSE, NULL, FALSE);
 
         if (status == 0) {
             ui_log(op, "done.");
@@ -867,7 +867,7 @@ static int do_uninstall(Options *op, const char *version,
             char *cmd = nvstrcat(op->utils[SYSTEMCTL], " daemon-reload", NULL);
 
             ui_log(op, "Running `%s`:", cmd);
-            status = run_command(op, cmd, NULL, FALSE, 0, FALSE);
+            status = run_command(op, cmd, NULL, FALSE, NULL, FALSE);
             nvfree(cmd);
 
             if (status == 0) {
@@ -1448,7 +1448,7 @@ static int check_skip_depmod_support(Options *op, const char *uninstaller)
     char *cmd = nvstrcat(uninstaller, " -A | ", op->utils[GREP],
                          " -q '^ \\+--skip-depmod$'", NULL);
 
-    int ret = run_command(op, cmd, NULL, FALSE, 0, FALSE);
+    int ret = run_command(op, cmd, NULL, FALSE, NULL, FALSE);
 
     nvfree(cmd);
 
@@ -1473,42 +1473,56 @@ int run_existing_uninstaller(Options *op)
     int skip_depmod = !op->no_kernel_modules;
 
     if (uninstaller) {
+        char *uninstall_log_dir, *uninstall_log_file, *uninstall_log_path;
         char *uninstall_cmd = NULL;
         char *data = NULL;
         int ret;
 
         skip_depmod = skip_depmod && check_skip_depmod_support(op, uninstaller);
 
+        /*
+         * Use DEFAULT_UNINSTALL_LOG_FILE_NAME as the name for the uninstall
+         * log file, in the same directory as op->log_file_name, be it the
+         * default location or a custom one.
+         */
+        uninstall_log_dir = nv_dirname(op->log_file_name);
+        uninstall_log_file = nv_basename(DEFAULT_UNINSTALL_LOG_FILE_NAME);
+        uninstall_log_path = nvdircat(uninstall_log_dir, uninstall_log_file,
+                                      NULL);
+        nvfree(uninstall_log_dir);
+        nvfree(uninstall_log_file);
+
         /* Run the uninstaller non-interactively, and explicitly log to the
          * uninstall log location: older installers may not do so implicitly. */
-        uninstall_cmd = nvstrcat(uninstaller, " -s --log-file-name="
-                                 DEFAULT_UNINSTALL_LOG_FILE_NAME,
+        uninstall_cmd = nvstrcat(uninstaller, " -s --log-file-name=",
+                                 uninstall_log_path,
                                  skip_depmod ? " --skip-depmod" : NULL,
                                  NULL);
 
         ui_log(op, "Uninstalling the previous installation with %s.",
                uninstaller);
 
-        ret = run_command(op, uninstall_cmd, &data, FALSE, 0, TRUE);
+        ret = run_command(op, uninstall_cmd, &data, FALSE, NULL, TRUE);
 
         nvfree(uninstall_cmd);
 
         /* if nvidia-uninstall succeeded, return early; otherwise, fall back to
          * uninstalling via the backup log file. */
-        if (ret == 0) {
-            nvfree(uninstaller);
-            nvfree(data);
-            return TRUE;
-        } else {
+        if (ret != 0) {
             ui_log(op, "%s failed; see %s for more details.", uninstaller,
-                   DEFAULT_UNINSTALL_LOG_FILE_NAME);
+                   uninstall_log_path);
             if (data && strlen(data)) {
                 ui_log(op, "The output from %s was:\n%s", uninstaller, data);
             }
-            nvfree(data);
         }
 
+        nvfree(data);
         nvfree(uninstaller);
+        nvfree(uninstall_log_path);
+
+        if (ret == 0) {
+            return TRUE;
+        }
     }
 
     return uninstall_existing_driver(op, FALSE /* interactive */,
