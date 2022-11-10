@@ -73,7 +73,7 @@ uint32 compute_crc_from_buffer(const uint8 *buf, int len)
 {
     uint32 cword = ~0;
     static uint32 *crctab = NULL;
-    int i;
+    uint32 i;
 
     if (!crctab) {
         crctab = (uint32 *) nvalloc(sizeof(uint32) * 256);

@@ -306,24 +306,22 @@ int determine_kernel_source_path(Options *op, Package *p)
 
     ret = access(version_h, F_OK) == 0 || access(uapi_version_h, F_OK) == 0;
 
-    free(version_h);
-    free(uapi_version_h);
-
-    if (!ret) {
-        ui_error(op, "Neither the '" VERSION_H_PATH "' nor the '"
-                 UAPI_VERSION_H_PATH "' kernel header file exists.  "
+    if (ret) {
+        /* OK, we seem to have a path to a configured kernel source tree */
+    
+        ui_log(op, "Kernel source path: '%s'\n", op->kernel_source_path);
+        ui_log(op, "Kernel output path: '%s'\n", op->kernel_output_path);
+    } else {
+        ui_error(op, "Neither the '%s' nor the '%s' kernel header file exists. "
                  "The most likely reason for this is that the kernel "
                  "source files in '%s' have not been configured.",
-                 op->kernel_output_path);
-        return FALSE;
+                 version_h, uapi_version_h, op->kernel_output_path);
     }
 
-    /* OK, we seem to have a path to a configured kernel source tree */
+    free(version_h);
+    free(uapi_version_h);
     
-    ui_log(op, "Kernel source path: '%s'\n", op->kernel_source_path);
-    ui_log(op, "Kernel output path: '%s'\n", op->kernel_output_path);
-    
-    return TRUE;
+    return ret;
     
 } /* determine_kernel_source_path() */
 
@@ -1392,7 +1390,16 @@ static int test_kernel_modules_helper(Options *op, Package *p, int pause_udev)
 {
     char *cmd = NULL, *data = NULL;
     int insmod_ret = -1, i;
-    const char *depmods[] = { "i2c-core", "drm", "drm-kms-helper", "vfio_mdev", "vfio", "mdev" };
+    const char *depmods[] = {
+        "i2c-core",
+        "drm",
+        "drm-kms-helper",
+        "vfio_mdev",
+        "vfio",
+        "mdev",
+        "video",
+        "backlight",
+    };
 
     if (pause_udev) {
         /*

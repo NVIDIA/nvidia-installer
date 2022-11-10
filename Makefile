@@ -158,27 +158,30 @@ quiet_GEN_UI_ARRAY = GEN-UI-ARRAY $@
 # build rules
 ##############################################################################
 
-.PNONY: all install NVIDIA_INSTALLER_install MKPRECOMPILED_install \
-  MANPAGE_install MAKESELF_HELP_SCRIPT_install clean clobber
-
+.PHONY: all
 all: $(NVIDIA_INSTALLER) $(MKPRECOMPILED) $(MAKESELF_HELP_SCRIPT) \
   $(MAKESELF_HELP_SCRIPT_SH) $(MANPAGE)
 
+.PHONY: install
 install: NVIDIA_INSTALLER_install MKPRECOMPILED_install MANPAGE_install \
   MAKESELF_HELP_SCRIPT_install
 
+.PHONY: NVIDIA_INSTALLER_install
 NVIDIA_INSTALLER_install: $(NVIDIA_INSTALLER)
 	$(MKDIR) $(BINDIR)
 	$(INSTALL) $(INSTALL_BIN_ARGS) $< $(BINDIR)/$(notdir $<)
 
+.PHONY: MKPRECOMPILED_install
 MKPRECOMPILED_install: $(MKPRECOMPILED)
 	$(MKDIR) $(BINDIR)
 	$(INSTALL) $(INSTALL_BIN_ARGS) $< $(BINDIR)/$(notdir $<)
 
+.PHONY: MAKESELF_HELP_SCRIPT_install
 MAKESELF_HELP_SCRIPT_install: $(MAKESELF_HELP_SCRIPT)
 	$(MKDIR) $(BINDIR)
 	$(INSTALL) $(INSTALL_BIN_ARGS) $< $(BINDIR)/$(notdir $<)
 
+.PHONY: MANPAGE_install
 MANPAGE_install: $(MANPAGE)
 	$(MKDIR) $(MANDIR)
 	$(INSTALL) $(INSTALL_DOC_ARGS) $< $(MANDIR)/$(notdir $<)
@@ -257,6 +260,7 @@ $(CONFIG_H): $(VERSION_MK)
 $(call BUILD_OBJECT_LIST,$(ALL_SRC)) $(NCURSES6_UI_O) $(NCURSESW6_UI_O): $(CONFIG_H)
 $(call BUILD_MAKESELF_OBJECT_LIST,$(MAKESELF_HELP_SCRIPT_SRC)): $(CONFIG_H)
 
+.PHONY: clean clobber
 clean clobber:
 	rm -rf $(OUTPUTDIR)
 
@@ -297,6 +301,7 @@ $(MAKESELF_HELP_SCRIPT_SH): $(MAKESELF_HELP_SCRIPT)
 
 AUTO_TEXT = ".\\\" WARNING: THIS FILE IS AUTO-GENERATED!  Edit $< instead."
 
+.PHONY: doc
 doc: $(MANPAGE)
 
 GEN_MANPAGE_OPTS_SRC  = gen-manpage-opts.c
