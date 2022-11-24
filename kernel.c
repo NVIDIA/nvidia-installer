@@ -1347,7 +1347,16 @@ static int test_kernel_modules_helper(Options *op, Package *p, int pause_udev)
 {
     char *cmd = NULL, *data = NULL;
     int insmod_ret = -1, i;
-    const char *depmods[] = { "i2c-core", "drm", "drm-kms-helper", "vfio_mdev", "vfio", "mdev" };
+    const char *depmods[] = {
+        "i2c-core",
+        "drm",
+        "drm-kms-helper",
+        "vfio_mdev",
+        "vfio",
+        "mdev",
+        "video",
+        "backlight",
+    };
 
     if (pause_udev) {
         /*
