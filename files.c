@@ -45,7 +45,6 @@
 #include "backup.h"
 
 
-static char *get_xdg_data_dir(void);
 static void  get_x_library_and_module_paths(Options *op);
 
 
@@ -520,7 +519,6 @@ int set_destinations(Options *op, Package *p)
     char *name;
     char *dir, *path;
     const char *prefix;
-    char *xdg_data_dir;
     int i;
     if (!op->kernel_module_src_dir) {
         op->kernel_module_src_dir = nvstrcat("nvidia-", p->version, NULL);
@@ -719,15 +717,15 @@ int set_destinations(Options *op, Package *p)
             break;
 
         case FILE_TYPE_DOT_DESKTOP:
-            xdg_data_dir = get_xdg_data_dir();
-            if (xdg_data_dir) {
-                prefix = xdg_data_dir;
-                dir = nvstrdup("applications");
-            } else {
-                prefix = op->utility_prefix;
-                dir = op->dot_desktopdir;
-            }
+            prefix = op->xdg_data_dir;
+            dir = "applications";
             path = "";
+            break;
+
+        case FILE_TYPE_ICON:
+            prefix = op->icon_dir;
+            dir = "";
+            path = p->entries[i].path;
             break;
 
         case FILE_TYPE_KERNEL_MODULE:
@@ -2028,9 +2026,8 @@ done:
 
 /*
  * process_dot_desktop_files() - for any .desktop files in the
- * package, copy them to a temporary file, replacing __UTILS_PATH__
- * and __PIXMAP_PATH__ as appropriate.  Then, add the new file to
- * the package list.
+ * package, copy them to a temporary file, replacing __UTILS_PATH__ as
+ * appropriate.  Then, add the new file to the package list.
  */
 
 void process_dot_desktop_files(Options *op, Package *p)
@@ -2038,8 +2035,8 @@ void process_dot_desktop_files(Options *op, Package *p)
     int i;
     char *tmpfile;
 
-    char *tokens[3] = { "__UTILS_PATH__", "__PIXMAP_PATH__", NULL };
-    char *replacements[3] = { NULL, NULL, NULL };
+    char *tokens[2] = { "__UTILS_PATH__", NULL };
+    char *replacements[2] = { NULL, NULL };
 
     int package_num_entries = p->num_entries;
 
@@ -2055,16 +2052,6 @@ void process_dot_desktop_files(Options *op, Package *p)
             /* invalidate the template file */
 
             invalidate_package_entry(&(p->entries[i]));
-
-            nvfree(replacements[1]);
-
-            replacements[1] = nvstrcat(op->documentation_prefix,
-                                       "/", op->documentation_docdir,
-                                       "/", p->entries[i].path,
-                                       NULL);
-
-            remove_trailing_slashes(replacements[1]);
-            collapse_multiple_slashes(replacements[1]);
 
             tmpfile = process_template_file(op, &p->entries[i], tokens,
                                             replacements);
@@ -2094,7 +2081,6 @@ void process_dot_desktop_files(Options *op, Package *p)
     }
 
     nvfree(replacements[0]);
-    nvfree(replacements[1]);
 
 } /* process_dot_desktop_files() */
 
@@ -2398,8 +2384,10 @@ void get_default_prefixes_and_paths(Options *op)
     if (!op->utility_bindir)
         op->utility_bindir = DEFAULT_BINDIR;
 
-    if (!op->dot_desktopdir)
-        op->dot_desktopdir = DEFAULT_DOT_DESKTOPDIR;
+    if (!op->xdg_data_dir)
+        op->xdg_data_dir = nvstrcat(op->utility_prefix, "/",
+                                    DEFAULT_XDG_DATA_DIR, NULL);
+    op->icon_dir = nvstrcat(op->xdg_data_dir, "/icons/hicolor", NULL);
 
     if (!op->documentation_prefix)
         op->documentation_prefix = DEFAULT_DOCUMENTATION_PREFIX;
@@ -2549,26 +2537,6 @@ void get_compat32_path(Options *op)
     nvfree(ldconfig_cache);
 #endif
 }
-
-/*
- * get_xdg_data_dir() - determine if the XDG_DATA_DIRS environment
- * variable is set; if set and not empty, return the first path
- * in the list, else return NULL.
- */
-
-static char *get_xdg_data_dir(void)
-{
-    /*
-     * If XDG_DATA_DIRS is set, then derive the installation path
-     * from the first entry; complies with:
-     *   http://www.freedesktop.org/Standards/basedir-spec
-     */
-    char *xdg_data_dir = getenv("XDG_DATA_DIRS");
-    if ((xdg_data_dir != NULL) && strlen(xdg_data_dir))
-        return nvstrdup(strtok(xdg_data_dir, ":"));
-    return NULL;
-}
-
 
 
 /*

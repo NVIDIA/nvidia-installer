@@ -1379,6 +1379,24 @@ static void toggle_udev_event_queue(Options *op, int enable)
     }
 }
 
+/*
+ * log_dmesg(): display/log the last few lines of the kernel ring buffer to
+ * provide further details in case of a load failure or to capture NVRM warning
+ * messages, if any.
+ */
+static void log_dmesg(Options *op)
+{
+    char *cmd = NULL, *data = NULL;
+
+    cmd = nvstrcat(op->utils[DMESG], " | ",
+                   op->utils[TAIL], " -n 25", NULL);
+
+    if (!run_command(op, cmd, &data, FALSE, NULL, TRUE))
+        ui_log(op, "Kernel messages:\n%s", data);
+
+    nvfree(cmd);
+    nvfree(data);
+}
 
 /*
  * test_kernel_modules_helper(): test-load the kernel modules, optionally
@@ -1388,7 +1406,6 @@ static void toggle_udev_event_queue(Options *op, int enable)
  */
 static int test_kernel_modules_helper(Options *op, Package *p, int pause_udev)
 {
-    char *cmd = NULL, *data = NULL;
     int insmod_ret = -1, i;
     const char *depmods[] = {
         "i2c-core",
@@ -1410,12 +1427,24 @@ static int test_kernel_modules_helper(Options *op, Package *p, int pause_udev)
     }
 
     /*
-     * Attempt to load modules that nvidia.ko might depend on.  Silently ignore
-     * failures: if nvidia.ko doesn't depend on the module that failed, the test
-     * load below will succeed and it doesn't matter that the load here failed.
+     * Attempt to load modules that the NVIDIA kernel modules might depend on.
      */
     for (i = 0; i < ARRAY_LEN(depmods); i++) {
-        load_kernel_module_quiet(op, depmods[i]);
+        if (check_for_loaded_kernel_module(op, depmods[i])) {
+            /*
+             * The dependency kernel module is already loaded: don't attempt to
+             * unload it later.
+             */
+            depmods[i] = NULL;
+        } else {
+            /*
+             * Silently ignore failures: the test load of the NVIDIA kernel
+             * modules may succeed anyway (e.g., if the relevant code is built
+             * into the kernel rather than a module.), and it won't matter that
+             * we failed to load one of the dependency modules.
+             */
+            load_kernel_module_quiet(op, depmods[i]);
+        }
     }
 
     /*
@@ -1496,26 +1525,16 @@ static int test_kernel_modules_helper(Options *op, Package *p, int pause_udev)
 
     unload_kernel_modules(op, p);
 
-    /*
-     * display/log the last few lines of the kernel ring buffer
-     * to provide further details in case of a load failure or
-     * to capture NVRM warning messages, if any.
-     */
-    cmd = nvstrcat(op->utils[DMESG], " | ",
-                   op->utils[TAIL], " -n 25", NULL);
-
-    if (!run_command(op, cmd, &data, FALSE, NULL, TRUE))
-        ui_log(op, "Kernel messages:\n%s", data);
-
-    nvfree(cmd);
-    nvfree(data);
+    log_dmesg(op);
 
     /*
      * Unload dependencies that might have been loaded earlier.
      */
 
     for (i = 0; i < ARRAY_LEN(depmods); i++) {
-        modprobe_remove_kernel_module_quiet(op, depmods[i]);
+        if (depmods[i]) {
+            modprobe_remove_kernel_module_quiet(op, depmods[i]);
+        }
     }
 
     return insmod_ret;
@@ -1592,6 +1611,8 @@ static int modprobe_helper(Options *op, const char *module_name,
                  unload ? "unload" : "load", module_name,
                  op->expert? expert_detail : ".");
         nvfree(expert_detail);
+
+	log_dmesg(op);
     }
 
     nvfree(data);

@@ -34,6 +34,7 @@
 #include <stdio.h>
 #include <stdarg.h>
 #include <errno.h>
+#include <utime.h>
 
 #include "nvidia-installer.h"
 #include "command-list.h"
@@ -345,6 +346,17 @@ CommandList *build_command_list(Options *op, Package *p)
         nvfree(tmp);
 
         /*
+         * For icons, update the mtime on the top-level directory of the icon
+         * theme. This triggers desktop environments to invalidate their icon
+         * cache.
+         *
+         * See https://specifications.freedesktop.org/icon-theme-spec/icon-theme-spec-latest.html#implementation_notes
+         */
+        if (p->entries[i].type == FILE_TYPE_ICON) {
+            add_command(c, TOUCH_CMD, op->icon_dir);
+        }
+
+        /*
          * delete any temporary generated files
          */
 
@@ -589,6 +601,16 @@ int execute_command_list(Options *op, CommandList *c,
             ret = unlink(c->cmds[i].s0);
             if (ret == -1) {
                 ret = continue_after_error(op, "Cannot delete %s",
+                                           c->cmds[i].s0);
+                if (!ret) return FALSE;
+            }
+            break;
+
+        case TOUCH_CMD:
+            ui_expert(op, "Updating mtime: %s", c->cmds[i].s0);
+            ret = utime(c->cmds[i].s0, NULL);
+            if (ret == -1) {
+                ret = continue_after_error(op, "Cannot touch %s",
                                            c->cmds[i].s0);
                 if (!ret) return FALSE;
             }
@@ -1054,6 +1076,7 @@ static void add_command(CommandList *c, int cmd, ...)
         c->cmds[n].s1 = nvstrdup(s);
         break;
       case DELETE_CMD:
+      case TOUCH_CMD:
         s = va_arg(ap, char *);
         c->cmds[n].s0 = nvstrdup(s);
         break;

@@ -302,6 +302,8 @@ static void parse_commandline(int argc, char *argv[], Options *op)
             op->utility_prefix = strval; break;
         case UTILITY_LIBDIR_OPTION:
             op->utility_libdir = strval; break;
+        case XDG_DATA_DIR_OPTION:
+            op->xdg_data_dir = strval; break;
         case KERNEL_SOURCE_PATH_OPTION:
             op->kernel_source_path = strval; break;
         case KERNEL_OUTPUT_PATH_OPTION:

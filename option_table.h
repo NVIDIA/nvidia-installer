@@ -56,6 +56,7 @@ enum {
     ADVANCED_OPTIONS_ARGS_ONLY_OPTION,
     UTILITY_PREFIX_OPTION,
     UTILITY_LIBDIR_OPTION,
+    XDG_DATA_DIR_OPTION,
     ADD_THIS_KERNEL_OPTION,
     RPM_FILE_LIST_OPTION,
     NO_RUNLEVEL_CHECK_OPTION,
@@ -291,6 +292,11 @@ static const NVGetoptOption __options[] = {
       DEFAULT_LIBDIR "' on 32bit systems, and '" DEFAULT_64BIT_LIBDIR
       "' or '" DEFAULT_LIBDIR "' on 64bit " "systems, depending on the "
       "installed Linux distribution." },
+
+    { "xdg-data-dir", XDG_DATA_DIR_OPTION, NVGETOPT_STRING_ARGUMENT, NULL,
+      "The prefix under which XDG data files (such as application .desktop "
+      "files and icons) will be installed.  The default is '"
+      DEFAULT_UTILITY_PREFIX "/" DEFAULT_XDG_DATA_DIR "'." },
 
     { "gbm-backend-dir", GBM_BACKEND_DIR_OPTION, NVGETOPT_STRING_ARGUMENT, NULL,
       "The path relative to the OpenGL library installation prefix under "

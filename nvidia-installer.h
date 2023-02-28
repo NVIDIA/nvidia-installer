@@ -111,6 +111,7 @@ typedef enum {
     FILE_TYPE_TLS_LIB,
     FILE_TYPE_UTILITY_LIB,
     FILE_TYPE_DOT_DESKTOP,
+    FILE_TYPE_ICON,
     FILE_TYPE_UTILITY_LIB_SYMLINK,
     FILE_TYPE_XMODULE_SHARED_LIB,
     FILE_TYPE_MANPAGE,
@@ -253,7 +254,8 @@ typedef struct __options {
 
     char *gbm_backend_dir;
 
-    char *dot_desktopdir;
+    char *xdg_data_dir;
+    char *icon_dir;
 
     char *documentation_prefix;
     char *documentation_docdir;
@@ -482,7 +484,7 @@ typedef struct __package {
 #define DEFAULT_WINE_LIBDIR_SUFFIX      "nvidia/wine"
 #define DEFAULT_BINDIR                  "bin"
 #define DEFAULT_X_MODULEDIR             "modules"
-#define DEFAULT_DOT_DESKTOPDIR          "share/applications"
+#define DEFAULT_XDG_DATA_DIR            "share"
 #define DEFAULT_DOCDIR                  "share/doc"
 #define DEFAULT_MANDIR                  "share/man"
 #define DEFAULT_CONFDIR                 "X11/xorg.conf.d"

@@ -95,6 +95,7 @@ static const struct {
     { ENTRY(UTILITY_BINARY,             F, T, F, F, F, F, F, T, F) },
     { ENTRY(UTILITY_BIN_SYMLINK,        F, F, F, T, F, F, F, T, F) },
     { ENTRY(DOT_DESKTOP,                F, T, T, F, F, F, T, T, F) },
+    { ENTRY(ICON,                       F, T, T, F, F, F, F, T, F) },
     { ENTRY(XMODULE_SHARED_LIB,         F, T, T, F, T, F, F, T, F) },
     { ENTRY(GLX_MODULE_SHARED_LIB,      F, T, T, F, T, T, F, T, F) },
     { ENTRY(GLX_MODULE_SYMLINK,         F, F, T, T, F, T, F, T, F) },

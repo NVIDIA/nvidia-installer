@@ -67,6 +67,8 @@ typedef struct {
  *
  * SYMLINK - create a symbolic link named s0, pointing at the filename
  * specified in s1.
+ *
+ * TOUCH_CMD - update the mtime of the path specified in s0.
  */
 
 #define INSTALL_CMD 1
@@ -74,6 +76,7 @@ typedef struct {
 #define RUN_CMD     3
 #define SYMLINK_CMD 4
 #define DELETE_CMD  5
+#define TOUCH_CMD   6
 
 
 CommandList *build_command_list(Options*, Package *);
