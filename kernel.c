@@ -1313,7 +1313,16 @@ int test_kernel_modules(Options *op, Package *p)
 {
     char *cmd = NULL, *data = NULL;
     int ret = FALSE, i;
-    const char *depmods[] = { "i2c-core", "drm", "drm-kms-helper", "vfio_mdev", "vfio", "mdev" };
+    const char *depmods[] = {
+        "i2c-core",
+        "drm",
+        "drm-kms-helper",
+        "vfio_mdev",
+        "vfio",
+        "mdev",
+        "video",
+        "backlight",
+    };
 
     /* 
      * If we're building/installing for a different kernel, then we
