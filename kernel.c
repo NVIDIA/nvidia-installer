@@ -1416,6 +1416,7 @@ static int test_kernel_modules_helper(Options *op, Package *p, int pause_udev)
         "mdev",
         "video",
         "backlight",
+        "vfio_pci_core",
     };
 
     if (pause_udev) {
@@ -2357,20 +2358,19 @@ static char *convert_include_path_to_source_path(const char *inc)
 
 const char *get_machine_arch(Options *op)
 {
-    static char __machine_arch[65];
-    struct utsname uname_buf;
+    static struct utsname uname_buf;
 
-    if (__machine_arch[0]) {
-        return __machine_arch;
+    if (uname_buf.machine[0]) {
+        return uname_buf.machine;
     }
 
     if (uname(&uname_buf) == -1) {
         ui_warn(op, "Unable to determine machine architecture (%s).",
                 strerror(errno));
+        uname_buf.machine[0] = '\0';
         return NULL;
     } else {
-        strncpy(__machine_arch, uname_buf.machine, sizeof(__machine_arch) - 1);
-        return __machine_arch;
+        return uname_buf.machine;
     }
 } /* get_machine_arch() */
 

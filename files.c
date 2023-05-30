@@ -744,6 +744,7 @@ int set_destinations(Options *op, Package *p)
 
         case FILE_TYPE_EXPLICIT_PATH:
         case FILE_TYPE_NVIDIA_MODPROBE:
+        case FILE_TYPE_OPENGL_DATA:
             prefix = p->entries[i].path;
             dir = path = "";
             break;
