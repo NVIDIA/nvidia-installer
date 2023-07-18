@@ -1417,6 +1417,7 @@ static int test_kernel_modules_helper(Options *op, Package *p, int pause_udev)
         "video",
         "backlight",
         "vfio_pci_core",
+        "ecc",
     };
 
     if (pause_udev) {
