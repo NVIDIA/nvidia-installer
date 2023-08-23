@@ -36,4 +36,6 @@ void get_installable_file_type_list(
 void add_symlinks_to_file_type_list(
     PackageEntryFileTypeList *file_type_list);
 
+void remove_file_type_from_file_type_list(
+    PackageEntryFileTypeList *list, PackageEntryFileType type);
 #endif /* __NVIDIA_INSTALLER_MANIFEST_H__ */

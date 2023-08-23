@@ -210,7 +210,7 @@ CommandList *build_command_list(Options *op, Package *p)
 
     /* find any possibly conflicting modules and/or libraries */
 
-    if (!op->no_kernel_modules) {
+    if (!op->no_kernel_modules && !op->dkms_registered) {
         find_conflicting_kernel_modules(op, l);
     }
 
@@ -291,6 +291,17 @@ CommandList *build_command_list(Options *op, Package *p)
 
     tmp_installable_files = installable_files;
     add_symlinks_to_file_type_list(&tmp_installable_files);
+    if (op->dkms_registered) {
+        /*
+         * These files were imported from the DKMS tarball and DKMS will remove
+         * them when the kernel modules are `dkms remove`d, so nvidia-installer
+         * should not install them over the existing copies.
+         */
+        remove_file_type_from_file_type_list(&tmp_installable_files,
+                                             FILE_TYPE_DKMS_CONF);
+        remove_file_type_from_file_type_list(&tmp_installable_files,
+                                             FILE_TYPE_KERNEL_MODULE_SRC);
+    }
 
     find_existing_files(p, l, &tmp_installable_files);
     
