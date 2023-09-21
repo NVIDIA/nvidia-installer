@@ -388,11 +388,13 @@ static const NVGetoptOption __options[] = {
       "Skip installation of 'nvidia-modprobe', a setuid root utility which "
       "nvidia-installer installs by default.  nvidia-modprobe can be used by "
       "user-space NVIDIA driver components to load the NVIDIA kernel module, "
-      "and create the NVIDIA device files, when those components run without "
-      "sufficient privileges to do so on their own, e.g., the CUDA driver run "
-      "within the permissions of a non-privileged user.  This utility is only "
-      "needed if other means of loading the NVIDIA kernel module and creating "
-      "the NVIDIA device files are unavailable." },
+      "create the NVIDIA device files, and configure certain runtime settings "
+      "in the kernel when those components run without sufficient privileges "
+      "to do so on their own, e.g., the CUDA driver run within the permissions "
+      "of a non-privileged user.  This utility is only needed if other means "
+      "of performing these privileged operations are unavailable. See the "
+      "nvidia-modprobe(1) man page for full details on the tasks performed by "
+      "this utility." },
 
     { "kernel-name", 'k', NVGETOPT_STRING_ARGUMENT, NULL,
       "Build and install the NVIDIA kernel module for the "
