@@ -131,7 +131,7 @@ CFLAGS += $(common_cflags)
 HOST_CFLAGS += $(common_cflags)
 
 LDFLAGS += -L.
-LIBS += -ldl
+LIBS += -ldl -lpthread
 
 MKPRECOMPILED_SRC = crc.c mkprecompiled.c $(COMMON_UTILS_DIR)/common-utils.c \
                     precompiled.c $(COMMON_UTILS_DIR)/nvgetopt.c
@@ -207,15 +207,15 @@ $(GEN_UI_ARRAY): gen-ui-array.c $(CONFIG_H)
 
 $(NCURSES_UI_SO): $(NCURSES_UI_O)
 	$(call quiet_cmd,LINK) -shared $(NCURSES_LDFLAGS) \
-	  $(CFLAGS) $(LDFLAGS) $(BIN_LDFLAGS) $< -o $@ -lncurses $(LIBS)
+	  $(CFLAGS) $(LDFLAGS) $(BIN_LDFLAGS) $^ -o $@ -lncurses $(LIBS)
 
 $(NCURSES6_UI_SO): $(NCURSES6_UI_O)
 	$(call quiet_cmd,LINK) -shared $(NCURSES6_LDFLAGS) \
-	  $(CFLAGS) $(LDFLAGS) $(BIN_LDFLAGS) $< -o $@ -lncurses $(LIBS)
+	  $(CFLAGS) $(LDFLAGS) $(BIN_LDFLAGS) $^ -o $@ -lncurses $(LIBS)
 
 $(NCURSESW6_UI_SO): $(NCURSESW6_UI_O)
 	$(call quiet_cmd,LINK) -shared $(NCURSESW6_LDFLAGS) \
-	  $(CFLAGS) $(LDFLAGS) $(BIN_LDFLAGS) $< -o $@ -lncursesw $(LIBS)
+	  $(CFLAGS) $(LDFLAGS) $(BIN_LDFLAGS) $^ -o $@ -lncursesw $(LIBS)
 
 $(NCURSES_UI_SO_C): $(GEN_UI_ARRAY) $(NCURSES_UI_SO)
 	$(call quiet_cmd,GEN_UI_ARRAY) $(NCURSES_UI_SO) ncurses_ui_array > $@

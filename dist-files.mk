@@ -41,6 +41,8 @@ SRC += user-interface.c
 SRC += sanity.c
 SRC += manifest.c
 SRC += conflicting-kernel-modules.c
+SRC += initramfs.c
+SRC += ui-status-indeterminate.c
 
 DIST_FILES := $(SRC)
 
@@ -58,6 +60,8 @@ DIST_FILES += sanity.h
 DIST_FILES += user-interface.h
 DIST_FILES += manifest.h
 DIST_FILES += conflicting-kernel-modules.h
+DIST_FILES += initramfs.h
+DIST_FILES += ui-status-indeterminate.h
 
 DIST_FILES += COPYING
 DIST_FILES += README

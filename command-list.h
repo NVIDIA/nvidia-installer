@@ -20,25 +20,16 @@
 #ifndef __NVIDIA_INSTALLER_COMMAND_LIST_H__
 #define __NVIDIA_INSTALLER_COMMAND_LIST_H__
 
-
 /*
- * Command and CommandList structures - data types for describing what
- * operations to perform to do an install.  The semantics of the s0,
- * s1, and mode fields vary, depending upon the value of the cmd field
- * (see the constants below).
+ * List of commands to process. Each command has a description which can
+ * be accessed by command list clients; the actual command structure which
+ * gets processed is opaque.
  */
 
 typedef struct {
-    int cmd;
-    char *s0;
-    char *s1;
-    char *s2;
-    mode_t mode;
-} Command;
-
-typedef struct {
     int num;
-    Command *cmds;
+    char **descriptions;
+    struct __command *cmds;
 } CommandList;
 
 
@@ -50,33 +41,6 @@ typedef struct {
     int num;
     char **filename;
 } FileList;
-
-
-
-/*
- * commands:
- *
- * INSTALL - install the file named is s0, giving it the name in s1;
- * assign s1 the permissions specified by mode; execute the string in s2 as a
- * post-install step
- *
- * BACKUP - move the file named in s0, storing it in the backup
- * directory and recording the data as appropriate.
- *
- * RUN - execute the string in s0
- *
- * SYMLINK - create a symbolic link named s0, pointing at the filename
- * specified in s1.
- *
- * TOUCH_CMD - update the mtime of the path specified in s0.
- */
-
-#define INSTALL_CMD 1
-#define BACKUP_CMD  2
-#define RUN_CMD     3
-#define SYMLINK_CMD 4
-#define DELETE_CMD  5
-#define TOUCH_CMD   6
 
 
 CommandList *build_command_list(Options*, Package *);

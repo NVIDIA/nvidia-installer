@@ -69,7 +69,7 @@ typedef struct {
 
 /*
  * DataStruct - private data structure that gets plugged into
- * Options->ui_priv.
+ * Options->ui.priv.
  */
 
 typedef struct {
@@ -91,7 +91,7 @@ typedef struct {
     
     char *progress_title;  /* cached string for the title of the
                               progress messages */
-    
+
 } DataStruct;
 
 
@@ -166,6 +166,8 @@ static void  nv_ncurses_status_begin        (Options*, const char*,
                                              const char*);
 static void  nv_ncurses_status_update       (Options*, const float,
                                              const char*);
+
+static void  nv_ncurses_update_indeterminate(Options*, const char*);
 static void  nv_ncurses_status_end          (Options*, const char*);
 static void  nv_ncurses_close               (Options*);
 
@@ -224,7 +226,6 @@ static void init_position(int p[4], int w);
 /* misc helper functions */
 
 static char *nv_ncurses_create_command_list_text(DataStruct *, CommandList *);
-static char *nv_ncurses_mode_to_permission_string(mode_t);
 
 static void nv_ncurses_free_text_rows(TextRows *);
 
@@ -255,6 +256,7 @@ InstallerUI ui_dispatch_table = {
     nv_ncurses_status_begin,
     nv_ncurses_status_update,
     nv_ncurses_status_end,
+    nv_ncurses_update_indeterminate,
     nv_ncurses_close
 };
 
@@ -354,9 +356,9 @@ static int nv_ncurses_init(Options *op, FormatTextRows format_text_rows)
                                          NV_NCURSES_FOOTER_COLOR,
                                          NV_NCURSES_FOOTER_NO_COLOR);
     
-    /* plug the DataStruct struct into the ui_priv pointer */
+    /* plug the DataStruct struct into the ui.priv pointer */
     
-    op->ui_priv = (void *) d;
+    op->ui.priv = (void *) d;
     
     /* set the initial strings in the header and footer */
     
@@ -366,7 +368,7 @@ static int nv_ncurses_init(Options *op, FormatTextRows format_text_rows)
                           NV_NCURSES_DEFAULT_FOOTER_RIGHT);
     
     wrefresh(nv_stdscr);
-    
+
     return TRUE;
     
 } /* nv_ncurses_init() */
@@ -380,7 +382,7 @@ static int nv_ncurses_init(Options *op, FormatTextRows format_text_rows)
 
 static void nv_ncurses_set_title(Options *op, const char *title)
 {
-    DataStruct *d = (DataStruct *) op->ui_priv;
+    DataStruct *d = (DataStruct *) op->ui.priv;
 
     nv_ncurses_set_header(d, title);
 
@@ -403,7 +405,7 @@ static void nv_ncurses_set_title(Options *op, const char *title)
 static char *nv_ncurses_get_input(Options *op,
                                   const char *def, const char *msg)
 {
-    DataStruct *d = (DataStruct *) op->ui_priv;
+    DataStruct *d = (DataStruct *) op->ui.priv;
     int msg_len, width, input_len, buf_len, def_len;
     int input_x, input_y, i, w, h, x, y, c, lines, ch, color, redraw;
     char *tmp, buf[MAX_BUF_LEN];
@@ -639,7 +641,7 @@ static char *nv_ncurses_get_input(Options *op,
 
 static void nv_ncurses_message(Options *op, int level, const char *msg)
 {
-    DataStruct *d = (DataStruct *) op->ui_priv;
+    DataStruct *d = (DataStruct *) op->ui.priv;
     int w, h, x, y, ch;
     char *prefix;
    
@@ -764,7 +766,7 @@ static void nv_ncurses_command_output(Options *op, const char *msg)
 static int nv_ncurses_approve_command_list(Options *op, CommandList *cl,
                                            const char *descr)
 {
-    DataStruct *d = (DataStruct *) op->ui_priv;
+    DataStruct *d = (DataStruct *) op->ui.priv;
     char *commandlist, *question;
     int ret, len;
     const char *buttons[2] = {"Yes", "No"};
@@ -829,7 +831,7 @@ static int nv_ncurses_multiple_choice(Options *op, const char *question,
 static void nv_ncurses_status_begin(Options *op,
                                     const char *title, const char *msg)
 {
-    DataStruct *d = (DataStruct *) op->ui_priv;
+    DataStruct *d = (DataStruct *) op->ui.priv;
    
     nv_ncurses_check_resize(d, FALSE);
 
@@ -860,12 +862,14 @@ static void nv_ncurses_status_begin(Options *op,
 static void nv_ncurses_status_update(Options *op, const float percent,
                                      const char *msg)
 {
-    int i, n, h, ch;
+    int i, n, h, ch, w;
     int p[4];
     char v[4];
-    DataStruct *d = (DataStruct *) op->ui_priv;
+    DataStruct *d = (DataStruct *) op->ui.priv;
+    int color_offset, color_flag;
+    char status_char;
 
-    /* 
+    /*
      * if the message region was deleted or if the window was resized,
      * redraw the entire progress bar region.
      */
@@ -898,7 +902,8 @@ static void nv_ncurses_status_update(Options *op, const float percent,
 
     /* compute the percentage */
 
-    n = ((int) (percent * (float) (d->message->w - 2)));
+    w = d->message->w - 2;
+    n = ((int) (percent * (float) w));
     n = NV_MAX(n, 2);
     
     init_position(p, d->message->w);
@@ -913,29 +918,25 @@ static void nv_ncurses_status_update(Options *op, const float percent,
     /* draw the progress bar */
 
     if (d->use_color) {
-        for (i = 1; i <= n; i++) {
-            mvwaddch(nv_stdscr, d->message->y + h - 2, d->message->x + i,
-                    choose_char(i, p, v,' ') |
-                    A_REVERSE | NV_NCURSES_INPUT_COLOR);
-        }
-
-        for (i = 0; i < 4; i++) {
-            if (p[i] >= (n+1)) {
-                mvwaddch(nv_stdscr, d->message->y + h - 2, d->message->x + p[i],
-                        (v[i] ? v[i] : ' ') | NV_NCURSES_INPUT_COLOR);
-            }
-        }
+        color_offset = 0;
+        color_flag = NV_NCURSES_INPUT_COLOR;
+        status_char = ' ';
     } else {
-        for (i = 2; i < n; i++) {
-            mvwaddch(nv_stdscr, d->message->y + h - 2, d->message->x + i,
-                    choose_char(i, p, v, ' ') | A_REVERSE);
-        }
-        
-        for (i = 0; i < 4; i++) {
-            if (p[i] >= n) {
-                mvwaddch(nv_stdscr, d->message->y + h - 2, d->message->x + p[i],
-                        v[i] ? v[i] : '-');
-            }
+        color_offset = 1;
+        color_flag = 0;
+        status_char = '-';
+    }
+
+    for (i = 1 + color_offset; i <= w - color_offset; i++) {
+        int reverse_flag = i > n - color_offset ? 0 : A_REVERSE;
+        mvwaddch(nv_stdscr, d->message->y + h - 2, d->message->x + i,
+                 choose_char(i, p, v, ' ') | reverse_flag | color_flag);
+    }
+
+    for (i = 0; i < 4; i++) {
+        if (p[i] >= n + 1 - color_offset) {
+            mvwaddch(nv_stdscr, d->message->y + h - 2, d->message->x + p[i],
+                     (v[i] ? v[i] : status_char) | color_flag);
         }
     }
 
@@ -943,6 +944,44 @@ static void nv_ncurses_status_update(Options *op, const float percent,
     
 } /* nv_ncurses_status_update() */
 
+
+static void nv_ncurses_update_indeterminate(Options *op, const char *msg)
+{
+    DataStruct *d = op->ui.priv;
+    static uint32_t pattern = 0x7ff;
+    int x;
+
+    if (nv_ncurses_check_resize(d, FALSE) || !d->message) {
+        if (d->message) nv_ncurses_destroy_region(d->message);
+        nv_ncurses_do_progress_bar_region(d);
+    }
+
+    nv_ncurses_do_progress_bar_message(d, msg, d->message->h - 3,
+                                       d->message->w - 2);
+
+    for (x = 1; x < d->message->w - 1; x++) {
+        int color_flag;
+
+        if (d->use_color) {
+            color_flag = NV_NCURSES_INPUT_COLOR;
+        } else {
+            color_flag = 0;
+        }
+
+        if (pattern & (1 << (x % 32))) {
+            color_flag |= A_REVERSE;
+        }
+
+        mvwaddch(nv_stdscr, d->message->y + d->message->h - 2,
+                 d->message->x + x, ' ' | color_flag);
+    }
+
+    wrefresh(nv_stdscr);
+
+    pattern = pattern << 1 | (pattern >> 31 & 1);
+
+    usleep(100000);
+}
 
 
 
@@ -955,7 +994,7 @@ static void nv_ncurses_status_end(Options *op, const char *msg)
     int i, n, h;
     int p[4];
     char v[4];
-    DataStruct *d = (DataStruct *) op->ui_priv;  
+    DataStruct *d = (DataStruct *) op->ui.priv;
 
     /* 
      * if the message region was deleted or if the window was resized,
@@ -1018,7 +1057,7 @@ static void nv_ncurses_close(Options *op)
 
         /* XXX op may be NULL if we get called from a signal handler */
 
-        d = (DataStruct *) op->ui_priv;  
+        d = (DataStruct *) op->ui.priv;
         nv_ncurses_destroy_region(d->header);
         nv_ncurses_destroy_region(d->footer);
         free(d);
@@ -1028,10 +1067,7 @@ static void nv_ncurses_close(Options *op)
     wrefresh(nv_stdscr);
     
     endwin();  /* End curses mode */
-    
-    return;
-    
-} /* nv_ncurses_close() */
+}
 
 
 
@@ -1606,7 +1642,7 @@ static int nv_ncurses_paged_prompt(Options *op, const char *question,
                                    const char * const *buttons,
                                    int num_buttons, int default_button)
 {
-    DataStruct *d = (DataStruct *) op->ui_priv;
+    DataStruct *d = (DataStruct *) op->ui.priv;
     TextRows *t_pager = NULL;
     int ch, cur = 0;
     int i, button_w = 0, button_y, button = default_button;
@@ -1823,63 +1859,11 @@ static void init_position(int p[4], int w)
 
 static char *nv_ncurses_create_command_list_text(DataStruct *d, CommandList *cl)
 {
-    int i, len;
-    Command *c;
-    char *str, *perms, *ret = strdup("");
+    char *ret = strdup("");
+    int i;
 
     for (i = 0; i < cl->num; i++) {
-        c = &cl->cmds[i];
-        
-        str = NULL;
-
-        switch (c->cmd) {
-            
-        case INSTALL_CMD:
-            perms = nv_ncurses_mode_to_permission_string(c->mode);
-            len = strlen(c->s0) + strlen(c->s1) + strlen(perms) + 64;
-            if (c->s2) {
-                len += strlen(c->s2) + 64;
-            }
-            str = (char *) malloc(len + 1);
-            snprintf(str, len, "Install the file '%s' as '%s' with "
-                     "permissions '%s'", c->s0, c->s1, perms);
-            free(perms);
-            if (c->s2) {
-                len = strlen(c->s2) + 64;
-                snprintf(str + strlen(str), len,
-                         " then execute the command `%s`", c->s2);
-            }
-            break;
-            
-        case RUN_CMD:
-            len = strlen(c->s0) + 64;
-            str = (char *) malloc(len + 1);
-            snprintf(str, len, "Execute the command `%s`", c->s0);
-            break;
-            
-        case SYMLINK_CMD:
-            len = strlen(c->s0) + strlen(c->s1) + 64;
-            str = (char *) malloc(len + 1);
-            snprintf(str, len, "Create a symbolic link '%s' to '%s'",
-                     c->s0, c->s1);
-            break;
-            
-        case BACKUP_CMD:
-            len = strlen(c->s0) + 64;
-            str = (char *) malloc(len + 1);
-            snprintf(str, len, "Back up the file '%s'", c->s0);
-            break;
-
-        case DELETE_CMD:
-            len = strlen(c->s0) + 64;
-            str = (char *) malloc(len + 1);
-            snprintf(str, len, "Delete the file '%s'", c->s0);
-            break;
-
-        default:
-            /* XXX should not get here */
-            break;
-        }
+        const char *str = cl->descriptions[i];
 
         if (str) {
             int lenret, lenstr;
@@ -1897,44 +1881,13 @@ static char *nv_ncurses_create_command_list_text(DataStruct *d, CommandList *cl)
             tmp[lenret + lenstr] = '\n';
             tmp[lenret + lenstr + 1] = 0;
 
-            free(str);
             free(ret);
             ret = tmp;
         }
     }
 
     return ret;
-
 }
-
-
-/*
- * mode_to_permission_string() - given a mode bitmask, allocate and
- * write a permission string.
- */
-
-static char *nv_ncurses_mode_to_permission_string(mode_t mode)
-{
-    char *s = (char *) malloc(10);
-    memset (s, '-', 9);
-    
-    if (mode & (1 << 8)) s[0] = 'r';
-    if (mode & (1 << 7)) s[1] = 'w';
-    if (mode & (1 << 6)) s[2] = 'x';
-    
-    if (mode & (1 << 5)) s[3] = 'r';
-    if (mode & (1 << 4)) s[4] = 'w';
-    if (mode & (1 << 3)) s[5] = 'x';
-    
-    if (mode & (1 << 2)) s[6] = 'r';
-    if (mode & (1 << 1)) s[7] = 'w';
-    if (mode & (1 << 0)) s[8] = 'x';
-    
-    s[9] = '\0';
-    return s;
-
-} /* mode_to_permission_string() */
-
 
 
 

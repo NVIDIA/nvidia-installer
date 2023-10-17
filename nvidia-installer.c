@@ -44,6 +44,7 @@
 #include "option_table.h"
 #include "msg.h"
 #include "manifest.h"
+#include "initramfs.h"
 
 static void print_version(void);
 static void print_help(const char* name, int is_uninstall, int advanced);
@@ -146,6 +147,8 @@ static Options *load_default_options(void)
     op->external_platform_json_path = DEFAULT_EGL_EXTERNAL_PLATFORM_JSON_PATH;
     op->skip_depmod = FALSE;
     op->use_systemd = NV_OPTIONAL_BOOL_DEFAULT;
+    op->rebuild_initramfs = NV_OPTIONAL_BOOL_DEFAULT;
+    op->disable_nouveau = TRUE;
 
     return op;
 
@@ -227,7 +230,7 @@ static void parse_commandline(int argc, char *argv[], Options *op)
         case 'd': op->debug = TRUE; break;
         case 'i':
             op->driver_info = TRUE;
-            op->ui_str = "none";
+            op->ui.name = "none";
             break;
         case 'n': op->no_precompiled_interface = TRUE; break;
         case 'c': op->no_ncurses_color = TRUE; break;
@@ -245,10 +248,10 @@ static void parse_commandline(int argc, char *argv[], Options *op)
         case 'X': op->run_nvidia_xconfig = TRUE; break;
         case 's':
             op->silent = op->no_questions = TRUE;
-            op->ui_str = "none";
+            op->ui.name = "none";
             break;
         case 'z': op->no_nouveau_check = TRUE; break;
-        case 'Z': op->disable_nouveau = TRUE; break;
+        case 'Z': op->disable_nouveau = boolval; break;
         case 'k':
             op->kernel_name = strval;
             op->no_precompiled_interface = TRUE;
@@ -319,7 +322,7 @@ static void parse_commandline(int argc, char *argv[], Options *op)
         case PROC_MOUNT_POINT_OPTION:
             op->proc_mount_point = strval; break;
         case USER_INTERFACE_OPTION:
-            op->ui_str = strval; break;
+            op->ui.name = strval; break;
         case LOG_FILE_NAME_OPTION:
             op->log_file_name = strval; break;
         case HELP_ARGS_ONLY_OPTION:
@@ -520,6 +523,13 @@ static void parse_commandline(int argc, char *argv[], Options *op)
         case 'm':
             op->kernel_module_build_directory_override = strval;
             break;
+        case ALLOW_INSTALLATION_WITH_RUNNING_DRIVER_OPTION:
+            op->allow_installation_with_running_driver = boolval;
+            break;
+        case REBUILD_INITRAMFS_OPTION:
+            op->rebuild_initramfs = boolval ? NV_OPTIONAL_BOOL_TRUE :
+                                              NV_OPTIONAL_BOOL_FALSE;
+            break;
         default:
             goto fail;
         }
@@ -613,6 +623,10 @@ int main(int argc, char *argv[])
     
     if (!ui_init(op)) return 1;
 
+    if (!begin_initramfs_scan(op)) {
+        ui_log(op, "Failed to initiate initramfs scan");
+    }
+
     /* determine the concurrency level: do this early on, to allow for
      * parallelization of as much of the install as possible. */
 
@@ -673,6 +687,10 @@ int main(int argc, char *argv[])
     
     else {
         ret = install_from_cwd(op);
+    }
+
+    if (ret) {
+        suggest_reboot(op);
     }
 
  done:

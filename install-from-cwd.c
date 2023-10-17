@@ -190,6 +190,27 @@ int install_from_cwd(Options *op)
         ran_pre_install_hook = TRUE;
     }
 
+    if (!op->no_kernel_modules) {
+        PrecompiledInfo *info = find_precompiled_kernel_interface(op, p);
+
+        if (info) {
+            free_precompiled(info);
+
+            /*
+             * make sure the required development tools are present on
+             * this system before trying to link the kernel interface.
+             */
+            if (!check_precompiled_kernel_interface_tools(op)) return FALSE;
+        } else {
+            /*
+             * make sure the required development tools are present on
+             * this system before attempting to verify the compiler and
+             * trying to build a custom kernel interface.
+             */
+            if (!check_development_tools(op, p)) return FALSE;
+        }
+    }
+
     /* fail if the nouveau driver is currently in use */
 
     if (!check_for_nouveau(op)) goto failed;
@@ -477,15 +498,6 @@ static int install_kernel_modules(Options *op,  Package *p)
         int i, precompiled_success = TRUE;
 
         /*
-         * make sure the required development tools are present on
-         * this system before trying to link the kernel interface.
-         */
-        if (!check_precompiled_kernel_interface_tools(op)) {
-            precompiled_success = FALSE;
-            goto precompiled_done;
-        }
-
-        /*
          * we have a prebuilt kernel interface package, so now link the
          * kernel interface files to produce the kernel module.
          *
@@ -499,22 +511,15 @@ static int install_kernel_modules(Options *op,  Package *p)
             if (!unpack_kernel_modules(op, p, p->kernel_module_build_directory,
                                        &(precompiled_info->files[i]))) {
                 precompiled_success = FALSE;
-                goto precompiled_done;
+                break;
             }
         }
-precompiled_done:
+
         free_precompiled(precompiled_info);
         if (!precompiled_success) {
             return FALSE;
         }
     } else {
-        /*
-         * make sure the required development tools are present on
-         * this system before attempting to verify the compiler and
-         * trying to build a custom kernel interface.
-         */
-        if (!check_development_tools(op, p)) return FALSE;
-
         /*
          * we do not have a prebuilt kernel interface; thus we'll need
          * to compile the kernel interface, so determine where the
@@ -781,19 +786,17 @@ static Package *parse_manifest (Options *op)
     p->excluded_kernel_modules = nvstrdup("");
 
     /*
-     * ignore the fifth and sixth lines
+     * ignore the fifth through eigth lines
      */
 
     line++;
     nvfree(get_next_line(ptr, &ptr, manifest, len));
     line++;
     nvfree(get_next_line(ptr, &ptr, manifest, len));
-
-    /* the seventh line is the kernel module build directory */
-
     line++;
-    p->kernel_module_build_directory = get_next_line(ptr, &ptr, manifest, len);
-    if (!p->kernel_module_build_directory) goto invalid_manifest_file;
+    nvfree(get_next_line(ptr, &ptr, manifest, len));
+    line++;
+    nvfree(get_next_line(ptr, &ptr, manifest, len));
 
     /*
      * allow the kernel module build directory to be overridden from the command
@@ -801,24 +804,13 @@ static Package *parse_manifest (Options *op)
      */
 
     if (op->kernel_module_build_directory_override) {
-        nvfree(p->kernel_module_build_directory);
         p->kernel_module_build_directory =
             nvstrdup(op->kernel_module_build_directory_override);
+    } else {
+        p->kernel_module_build_directory = nvstrdup("kernel");
     }
 
     remove_trailing_slashes(p->kernel_module_build_directory);
-
-    /*
-     * the eighth line is the directory containing precompiled kernel
-     * interfaces
-     */
-
-    line++;
-    p->precompiled_kernel_interface_directory =
-        get_next_line(ptr, &ptr, manifest, len);
-    if (!p->precompiled_kernel_interface_directory)
-        goto invalid_manifest_file;
-    remove_trailing_slashes(p->precompiled_kernel_interface_directory);
 
     /* the rest of the file is file entries */
 
@@ -1095,8 +1087,6 @@ static void free_package(Package *p)
     
     nvfree(p->kernel_module_build_directory);
 
-    nvfree(p->precompiled_kernel_interface_directory);
-
     for (i = 0; i < p->num_kernel_modules; i++) {
         free_kernel_module_info(p->kernel_modules[i]);
     }
@@ -1221,7 +1211,7 @@ static int assisted_module_signing(Options *op, Package *p)
                                             "one?") == 1);
 
         if (generate_keys) {
-            char *cmdline, *x509_hash, *private_key_path, *public_key_path;
+            char *x509_hash, *private_key_path, *public_key_path;
             int ret, generate_failed = FALSE;
             const RunCommandOutputMatch output_match[] = {
                 { .lines = 8, .initial_match = NULL },
@@ -1309,18 +1299,15 @@ guess_fail:
              * in DER format; if this changes in the future we will need
              * to be able to accommodate the actual required format. */
 
-            cmdline = nvstrcat("cd ", p->kernel_module_build_directory, "; ",
-                               op->utils[OPENSSL], " req -new -x509 -newkey "
-                               "rsa:2048 -days 7300 -nodes -subj "
-                               "\"/CN=nvidia-installer generated signing key/\""
-                               " -keyout ", private_key_path,
-                               " -outform DER -out ", public_key_path,
-                               " -", x509_hash, NULL);
+            ret = run_command(op, NULL, TRUE, output_match, TRUE,
+                              "cd ", p->kernel_module_build_directory, "; ",
+                              op->utils[OPENSSL], " req -new -x509 -newkey "
+                              "rsa:2048 -days 7300 -nodes -subj "
+                              "\"/CN=nvidia-installer generated signing key/\""
+                              " -keyout ", private_key_path,
+                              " -outform DER -out ", public_key_path,
+                              " -", x509_hash, NULL);
             nvfree(x509_hash);
-
-            ret = run_command(op, cmdline, NULL, TRUE, output_match, TRUE);
-
-            nvfree(cmdline);
 
             if (ret != 0) {
                 ui_error(op, "Failed to generate key pair!");
@@ -1368,7 +1355,7 @@ generate_done:
         /* If keys were generated, we should install the verification cert
          * so that the user can make the kernel trust it, and either delete
          * or install the private signing key. */
-        char *name, *result = NULL, *fingerprint, *cmdline;
+        char *name, *result = NULL, *fingerprint;
         char short_fingerprint[9];
         int ret, delete_secret_key;
 
@@ -1380,11 +1367,10 @@ generate_done:
         /* Get the fingerprint of the X.509 certificate. We already used 
            openssl to create a key pair at this point, so we know we have it;
            otherwise, we would have already returned by now. */
-        cmdline = nvstrcat(op->utils[OPENSSL], " x509 -noout -fingerprint ",
-                           "-inform DER -in ", op->module_signing_public_key,
-                           NULL);
-        ret = run_command(op, cmdline, &result, FALSE, NULL, FALSE);
-        nvfree(cmdline);
+        ret = run_command(op, &result, FALSE, NULL, FALSE,
+                          op->utils[OPENSSL], " x509 -noout -fingerprint ",
+                          "-inform DER -in ", op->module_signing_public_key,
+                          NULL);
 
         /* Format: "SHA1 Fingerprint=00:00:00:00:..." */
         fingerprint = strchr(result, '=') + 1;
@@ -1395,11 +1381,10 @@ generate_done:
             if (sha1sum) {
                 /* the openssl command failed, or we parsed its output
                  * incorrectly; try to get a sha1sum of the DER certificate */
-                cmdline = nvstrcat(sha1sum, " ", op->module_signing_public_key,
-                                   NULL);
-                ret = run_command(op, cmdline, &result, FALSE, NULL, FALSE);
+                ret = run_command(op, &result, FALSE, NULL, FALSE,
+                                  sha1sum, " ", op->module_signing_public_key,
+                                  NULL);
                 nvfree(sha1sum);
-                nvfree(cmdline);
 
                 fingerprint = result;
             }

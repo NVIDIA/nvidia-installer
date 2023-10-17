@@ -69,8 +69,10 @@ char *read_next_word (char *buf, char **e);
 int check_euid(Options *op);
 int adjust_cwd(Options *op, const char *program_name);
 char *get_next_line(char *buf, char **e, char *start, int length);
-int run_command(Options *op, const char *cmd, char **data,
-                int output, const RunCommandOutputMatch *match, int redirect);
+__attribute__((sentinel))
+int run_command(Options *op, char **data, int output,
+                const RunCommandOutputMatch *match, int redirect,
+                const char *cmd_start, ...);
 int read_text_file(const char *filename, char **buf);
 char *find_system_util(const char *util);
 int find_system_utils(Options *op);
@@ -110,5 +112,8 @@ int check_systemd(Options *op);
 int option_is_supported(Options *op, const char *cmd, const char *help,
                         const char *option);
 void check_for_vulkan_loader(Options *op);
+void add_bullet_list_item(const char *new, char **orig);
+void suggest_reboot(Options *op);
+int nouveau_is_present(void);
 
 #endif /* __NVIDIA_INSTALLER_MISC_H__ */

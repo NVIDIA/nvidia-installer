@@ -48,6 +48,8 @@
 #include "nvLegacy.h"
 #include "manifest.h"
 #include "nvpci-utils.h"
+#include "conflicting-kernel-modules.h"
+#include "initramfs.h"
 #include "detect-self-hosted.h"
 
 static int check_symlink(Options*, const char*, const char*, const char*);
@@ -247,16 +249,29 @@ char *get_next_line(char *buf, char **end, char *start, int length)
  * command to run?
  */
 
-int run_command(Options *op, const char *cmd, char **data, int output,
-                const RunCommandOutputMatch *output_match, int redirect)
+int run_command(Options *op, char **data, int output,
+                const RunCommandOutputMatch *output_match, int redirect,
+                const char *cmd_start, ...)
 {
-    int n, len, buflen, ret, total_lines;
-    char *cmd2, *buf, *tmpbuf;
+    int n = 0; /* output line counter */
+    int len = 0; /* length of what has actually been read */
+    int buflen = 0; /* length of destination buffer */
+    int ret, total_lines;
+    char *cmd, *buf = NULL;
     FILE *stream = NULL;
     struct sigaction act, old_act;
     float percent;
     int *match_sizes = NULL;
-    
+    va_list ap;
+
+    va_start(ap, cmd_start);
+    cmd = nvvstrcat(cmd_start, ap);
+    va_end(ap);
+
+    if (!cmd) {
+        return 1;
+    }
+
     if (data) *data = NULL;
 
     /*
@@ -269,9 +284,9 @@ int run_command(Options *op, const char *cmd, char **data, int output,
     /* redirect stderr to stdout */
 
     if (redirect) {
-        cmd2 = nvstrcat(cmd, " 2>&1", NULL);
-    } else {
-        cmd2 = nvstrdup(cmd);
+        char *tmp = cmd;
+        cmd = nvstrcat(cmd, " 2>&1", NULL);
+        nvfree(tmp);
     }
     
     /*
@@ -304,24 +319,24 @@ int run_command(Options *op, const char *cmd, char **data, int output,
      * command.
      */
     
-    stream = popen(cmd2, "r");
-    nvfree(cmd2);
+    stream = popen(cmd, "r");
 
     if (stream == NULL) {
+        ret = errno;
         ui_error(op, "Failure executing command '%s' (%s).",
                  cmd, strerror(errno));
-        return errno;
+    }
+
+    nvfree(cmd);
+
+    if (stream == NULL) {
+        return ret;
     }
 
     /*
      * read from the stream, filling and growing buf, until we hit
      * EOF.  Send each line to the ui as it is read.
      */
-    
-    len = 0;    /* length of what has actually been read */
-    buflen = 0; /* length of destination buffer */
-    buf = NULL;
-    n = 0;      /* output line counter */
 
     if (output_match) {
         int match_count, i;
@@ -356,12 +371,7 @@ int run_command(Options *op, const char *cmd, char **data, int output,
         
         if ((buflen - len) < NV_MIN_LINE_LEN) {
             buflen += NV_LINE_LEN;
-            tmpbuf = (char *) nvalloc(buflen);
-            if (buf) {
-                memcpy(tmpbuf, buf, len);
-                free(buf);
-            }
-            buf = tmpbuf;
+            buf = nvrealloc(buf, buflen);
         }
         
         if (fgets(buf + len, buflen - len, stream) == NULL) break;
@@ -386,8 +396,16 @@ int run_command(Options *op, const char *cmd, char **data, int output,
              * XXX: manually call the SIGWINCH handler, if set, to
              * handle window resizes while we ignore the signal.
              */
-            if (op->sigwinch_workaround)
-                if (old_act.sa_handler) old_act.sa_handler(SIGWINCH);
+            if (op->sigwinch_workaround) {
+                /* Only call into the handler if it isn't one of the special
+                 * pointer values from bits/signum-generic.h */
+                if (old_act.sa_handler != NULL &&
+                    old_act.sa_handler != SIG_DFL &&
+                    old_act.sa_handler != SIG_IGN &&
+                    old_act.sa_handler != SIG_ERR) {
+                    old_act.sa_handler(SIGWINCH);
+                }
+            }
 
             ui_status_update(op, percent, NULL);
         }
@@ -1323,11 +1341,8 @@ static int unprelink(Options *op, const char *filename)
 
     cmd = find_system_util("prelink");
     if (cmd) {
-        char *cmdline;
-        cmdline = nvstrcat(cmd, " -u ", filename, NULL);
-        ret = run_command(op, cmdline, NULL, FALSE, NULL, TRUE);
+        ret = run_command(op, NULL, FALSE, NULL, TRUE, cmd, " -u ", filename, NULL);
         nvfree(cmd);
-        nvfree(cmdline);
     }
     return ret;
 } /* unprelink() */
@@ -1528,15 +1543,14 @@ static int get_xserver_information(Options *op,
 
 void query_xorg_version(Options *op)
 {
-    char *cmd = NULL, *data = NULL;
+    char *data = NULL;
     int ret = FALSE;
 
     if (!op->utils[XSERVER])
         goto done;
 
-    cmd = nvstrcat(op->utils[XSERVER], " -version", NULL);
-
-    if (run_command(op, cmd, &data, FALSE, NULL, TRUE) ||
+    if (run_command(op, &data, FALSE, NULL, TRUE,
+                    op->utils[XSERVER], " -version", NULL) ||
         (data == NULL)) {
         goto done;
     }
@@ -1565,7 +1579,6 @@ done:
     }
 
     nvfree(data);
-    nvfree(cmd);
 }
 
 
@@ -1576,8 +1589,9 @@ done:
  * /tmp/.X[n]-lock files, where [n] is the number of the X Display
  * (we'll just check for 0-7). Get the pid contained in this X lock file,
  * this is the pid of the running X server. If any X server is running, 
- * print an error message and return FALSE.  If no X server is running, 
- * return TRUE.
+ * print a warning message and set op->running_x_server_detected. If X is
+ * detected, give the user a choice whether to continue installing (return TRUE)
+ * or abort (return FALSE).
  */
 
 int check_for_running_x(Options *op)
@@ -1620,13 +1634,26 @@ int check_for_running_x(Options *op)
                 if (op->no_x_check) {
                     ui_log(op, "Continuing per the '--no-x-check' option.");
                 } else {
-                    ui_error(op, "You appear to be running an X server; please "
-                                 "exit X before installing.  For further details, "
-                                 "please see the section INSTALLING THE NVIDIA "
-                                 "DRIVER in the README available on the Linux driver "
-                                 "download page at www.nvidia.com.");
-                    return FALSE;
+                    int choice = ui_multiple_choice(op, CONTINUE_ABORT_CHOICES,
+                        NUM_CONTINUE_ABORT_CHOICES, ABORT_CHOICE,
+                        "You appear to be running an X server.  Installing the "
+                        "NVIDIA driver while X is running is not recommended, "
+                        "as doing so may prevent the installer from detecting "
+                        "some potential installation problems, and it may not "
+                        "be possible to start new graphics applications after "
+                        "a new driver is installed.  If you choose to continue "
+                        "installation, it is highly recommended that you "
+                        "reboot your computer after installation to use the "
+                        "newly installed driver.");
+                    if (choice == CONTINUE_CHOICE) {
+                        op->running_x_server_detected = TRUE;
+                    } else {
+                        return FALSE;
+                    }
                 }
+
+                /* We found a running X server; no need to check for others. */
+                break;
             }
         }
     }
@@ -1785,9 +1812,9 @@ int check_selinux(Options *op)
     case SELINUX_FORCE_NO:
         if (selinux_available == TRUE) {
             char *data = NULL;
-            int ret = run_command(op, op->utils[GETENFORCE], &data, 
-                                  FALSE, NULL, TRUE);
-            
+            int ret = run_command(op, &data, FALSE, NULL, TRUE,
+                                  op->utils[GETENFORCE], NULL);
+
             if ((ret != 0) || (!data)) {
                 ui_warn(op, "Cannot check the current mode of SELinux; "
                              "Command getenforce() failed"); 
@@ -1806,8 +1833,8 @@ int check_selinux(Options *op)
     case SELINUX_DEFAULT:
         op->selinux_enabled = FALSE;
         if (selinux_available == TRUE) {
-            int ret = run_command(op, op->utils[SELINUX_ENABLED], NULL, 
-                                  FALSE, NULL, TRUE);
+            int ret = run_command(op, NULL, FALSE, NULL, TRUE,
+                                  op->utils[SELINUX_ENABLED], NULL);
             if (ret == 0) {
                 op->selinux_enabled = TRUE;
             }
@@ -1903,7 +1930,7 @@ int run_nvidia_xconfig(Options *op, int restore, const char *question,
 
         cmd = nvstrcat(nvidia_xconfig, args, NULL);
 
-        cmd_ret = run_command(op, cmd, &data, FALSE, NULL, TRUE);
+        cmd_ret = run_command(op, &data, FALSE, NULL, TRUE, cmd, NULL);
 
         if (cmd_ret != 0) {
             ui_error(op, "Failed to run `%s`:\n%s", cmd, data);
@@ -1965,7 +1992,7 @@ HookScriptStatus run_distro_hook(Options *op, const char *hook)
     }
 
     ui_status_begin(op, "Running distribution scripts", "Executing %s", cmd);
-    status = run_command(op, cmd, NULL, TRUE, NULL, TRUE);
+    status = run_command(op, NULL, TRUE, NULL, TRUE, cmd, NULL);
     ui_status_end(op, "done.");
 
     ret = (status == 0) ? HOOK_SCRIPT_SUCCESS : HOOK_SCRIPT_FAIL;
@@ -2097,7 +2124,7 @@ int check_for_alternate_install(Options *op)
 
 #define SYSFS_DEVICES_PATH "/sys/bus/pci/devices"
 
-static int nouveau_is_present(void)
+int nouveau_is_present(void)
 {
     DIR *dir;
     struct dirent * ent;
@@ -2158,22 +2185,22 @@ static const char* modprobe_directories[] = { "/etc/modprobe.d",
 
 /*
  * this checksum is the result of compute_crc() for the file contents
- * written in blacklist_nouveau()
+ * written in disable_nouveau()
  */
 
 #define DISABLE_NOUVEAU_FILE_CKSUM 3728279991U
 
 /*
- * blacklist_filename() - generate the filename of a blacklist file. The
- * caller should ensure that the directory exists, or be able to handle
+ * disable_nouveau_filename() - generate the filename of a configuration file.
+ * The caller should ensure that the directory exists, or be able to handle
  * failures correctly if the directory does not exist.
  */
-static char *blacklist_filename(const char *directory)
+static char *disable_nouveau_filename(const char *directory)
 {
     return nvstrcat(directory, DISABLE_NOUVEAU_FILE, NULL);
 }
 
-static char *write_blacklist_file(const char *directory)
+static char *write_disable_nouveau_file(const char *directory)
 {
     int ret;
     struct stat stat_buf;
@@ -2186,7 +2213,7 @@ static char *write_blacklist_file(const char *directory)
         return NULL;
     }
 
-    filename = blacklist_filename(directory);
+    filename = disable_nouveau_filename(directory);
     file = fopen(filename, "w+");
 
     if (!file) {
@@ -2211,28 +2238,19 @@ static char *write_blacklist_file(const char *directory)
 
 /*
  * Write modprobe configuration fragments to disable loading of
- * nouveau:
- *
- *  for directory in /etc/modprobe.d /usr/lib/modprobe.d; do
- *      if [ -d $directory ]; then
- *          name=$directory/nvidia-installer-nouveau-blacklist.conf
- *          echo "# generated by nvidia-installer" > $name
- *          echo "blacklist nouveau" >> $name
- *          echo "options nouveau modeset=0" >> $name
- *      fi
- *  done
+ * nouveau.
  *
  * Returns a list of written configuration files if successful; 
  * returns NULL if there was a failure.
  */
 
-static char *blacklist_nouveau(void)
+static char *disable_nouveau(void)
 {
     int i;
     char *filelist = NULL;
 
     for (i = 0; i < ARRAY_LEN(modprobe_directories); i++) {
-        char *filename = write_blacklist_file(modprobe_directories[i]);
+        char *filename = write_disable_nouveau_file(modprobe_directories[i]);
         if (filename) {
             filelist = nv_prepend_to_string_list(filelist, filename, ", ");
             nvfree(filename);
@@ -2245,26 +2263,33 @@ static char *blacklist_nouveau(void)
 
 
 /*
- * Check if any nouveau blacklist file is already present with the
+ * Check if any disable nouveau file is already present with the
  * contents that we expect, and return the paths to any found files,
  * or NULL if no matching files were found
  */
 
-static char *nouveau_blacklist_file_is_present(Options *op)
+static char *disable_nouveau_file_is_present(Options *op,
+                                             int *present_at_all_paths)
 {
-    int i;
+    int i, directory_count = 0, file_count = 0;
     char *filelist = NULL;
 
     for (i = 0; i < ARRAY_LEN(modprobe_directories); i++) {
-        char *filename = blacklist_filename(modprobe_directories[i]);
+        char *filename = disable_nouveau_filename(modprobe_directories[i]);
+
+        if (directory_exists(modprobe_directories[i])) {
+            directory_count++;
+        }
 
         if ((access(filename, R_OK) == 0) &&
             (compute_crc(op, filename) == DISABLE_NOUVEAU_FILE_CKSUM)) {
+            file_count++;
             filelist = nv_prepend_to_string_list(filelist, filename, ", ");
         }
         nvfree(filename);
     }
 
+    *present_at_all_paths = directory_count == file_count;
     return filelist;
 }
 
@@ -2274,15 +2299,14 @@ static char *nouveau_blacklist_file_is_present(Options *op)
  * Check if the nouveau kernel driver is in use.  If it is, provide an
  * appropriate error message and offer to try to disable nouveau.
  *
- * Returns FALSE if the nouveau kernel driver is in use (cause
- * installation to abort); returns TRUE if the nouveau driver is not
- * in use, or if the nouveau check is to be skipped.
+ * Returns FALSE if the user chooses to abort the installation due to
+ * the presence of Nouveau; TRUE otherwise.
  */
 
 int check_for_nouveau(Options *op)
 {
-    int ret, nouveau_detected;
-    char *blacklist_files;
+    int ret, nouveau_detected, all_files_written;
+    char *disable_files;
 
 #define NOUVEAU_POINTER_MESSAGE                                         \
     "Please consult the NVIDIA driver README and your Linux "           \
@@ -2294,63 +2318,86 @@ int check_for_nouveau(Options *op)
     nouveau_detected = nouveau_is_present();
 
     if (nouveau_detected) {
-        ui_error(op, "The Nouveau kernel driver is currently in use "
-                 "by your system.  This driver is incompatible with the NVIDIA "
-                 "driver, and must be disabled before proceeding.  "
-                 NOUVEAU_POINTER_MESSAGE);
-    } else if (!op->disable_nouveau) {
-        /* If nouveau isn't loaded, we can return early, unless the user
-         * explicitly requested for the blacklist file to be written. */
-        return !nouveau_detected;
+        ui_warn(op, "The Nouveau kernel driver is currently in use "
+                "by your system.  This driver is incompatible with the NVIDIA "
+                "driver, and must be disabled before proceeding.");
+    } else {
+        return TRUE;
     }
 
-    blacklist_files = nouveau_blacklist_file_is_present(op);
+    disable_files = disable_nouveau_file_is_present(op, &all_files_written);
 
-    if (blacklist_files) {
+    if (disable_files) {
         ui_warn(op, "One or more modprobe configuration files to disable "
                 "Nouveau are already present at: %s.  Please be "
                 "sure you have rebooted your system since these files were "
                 "written.  If you have rebooted, then Nouveau may be enabled "
                 "for other reasons, such as being included in the system "
                 "initial ramdisk or in your X configuration file.  "
-                NOUVEAU_POINTER_MESSAGE, blacklist_files);
-        nvfree(blacklist_files);
-        if (!op->disable_nouveau) {
-            /* If the user explicitly requested that the blacklist files be
-             * written, don't return early, so that the files can be written
-             * again, e.g. in case a file is present, but not in the right
-             * place for this particular system. */
-            return !nouveau_detected;
+                NOUVEAU_POINTER_MESSAGE, disable_files);
+        nvfree(disable_files);
+        if (all_files_written) {
+            /* If all of the possible disable files are already present,
+             * don't offer to write any more. */
+            goto continue_or_abort;
         }
     }
 
-    ret = ui_yes_no(op, op->disable_nouveau, "For some distributions, Nouveau "
-                    "can be disabled by adding a file in the modprobe "
-                    "configuration directory.  Would you like nvidia-installer "
-                    "to attempt to create this modprobe file for you?");
+    /* Disable files were missing from at least one of the expected locations:
+     * offer to create additional ones. */
+    ret = ui_yes_no(op, op->disable_nouveau,
+                    "Nouveau can usually be disabled by adding files "
+                    "to the modprobe configuration directories and rebuilding "
+                    "the initramfs.\n\n"
+                    "Would you like nvidia-installer to attempt to create "
+                    "these modprobe configuration files for you?");
 
     if (ret) {
-        blacklist_files = blacklist_nouveau();
+        disable_files = disable_nouveau();
 
-        if (blacklist_files) {
+        if (disable_files) {
             ui_message(op, "One or more modprobe configuration files to "
-                       "disable Nouveau have been written.  "
-                       "For some distributions, this may be sufficient to "
-                       "disable Nouveau; other distributions may require "
-                       "modification of the initial ramdisk.  Please reboot "
-                       "your system and attempt NVIDIA driver installation "
-                       "again.  Note if you later wish to re-enable Nouveau, "
-                       "you will need to delete these files: %s",
-                       blacklist_files);
-            nvfree(blacklist_files);
+                       "disable Nouveau have been written.  You will need "
+                       "to reboot your system and possibly rebuild the initramfs "
+                       "before these changes can take effect.  Note if you "
+                       "later wish to reenable Nouveau, you will need to "
+                       "delete these files: %s",
+                       disable_files);
+            nvfree(disable_files);
         } else {
             ui_warn(op, "Unable to alter the nouveau modprobe configuration.  "
                     NOUVEAU_POINTER_MESSAGE);
         }
+    } else {
+        ui_message(op, "Please disable Nouveau manually and attempt to install "
+                   "the NVIDIA driver again later.");
+        return FALSE;
     }
 
-    /* Allow installation to continue if nouveau was not detected. */
-    return !nouveau_detected;
+continue_or_abort:
+
+    ret = ui_multiple_choice(op, CONTINUE_ABORT_CHOICES,
+        NUM_CONTINUE_ABORT_CHOICES,
+        op->allow_installation_with_running_driver ?
+        CONTINUE_CHOICE : ABORT_CHOICE,
+        "nvidia-installer is not able to perform some of the sanity checks "
+        "which detect potential installation problems while Nouveau is loaded. "
+        "Would you like to continue installation without these sanity "
+        "checks, or abort installation, confirm that Nouveau has been "
+        "properly disabled, and attempt installation again later?");
+
+    if (ret == ABORT_CHOICE) {
+        /* Offer to update the initramfs: normally, this happens before
+         * installing files, but the user is explicitly bailing out. */
+        update_initramfs(op);
+        return FALSE;
+    }
+
+    op->skip_module_load = TRUE;
+    ui_log(op, "Proceeding with installation despite the presence of Nouveau. "
+               "Kernel module load tests will be skipped.");
+
+    return TRUE;
 }
 
 #define DKMS_STATUS  " status"
@@ -2413,7 +2460,7 @@ static int run_dkms(Options *op, const char* verb, const char *version,
                        kernopt_all, kernopt, NULL);
 
     /* Run DKMS */
-    ret = run_command(op, cmdline, &output, FALSE, NULL, TRUE);
+    ret = run_command(op, &output, FALSE, NULL, TRUE, cmdline, NULL);
     if (ret != 0) {
         ui_error(op, "Failed to run `%s`: %s", cmdline, output);
     }
@@ -2478,6 +2525,7 @@ static char *dkms_gen_tarball(Options *op, Package *p, const char *kernel)
 {
     char *tmpdir, *sourcedir, *treedir, *builddir, *logdir, *moduledir, *dst;
     char *tarball = NULL;
+    const char *log;
     int ret, i;
 
     tmpdir = make_tmpdir(op);
@@ -2501,7 +2549,15 @@ static char *dkms_gen_tarball(Options *op, Package *p, const char *kernel)
 
     /* Write the build log to the tarball staging directory */
     dst = nvdircat(logdir, "make.log", NULL);
-    ret = nv_string_to_file(dst, p->kernel_make_logs);
+
+    if (p->kernel_make_logs) {
+        log = p->kernel_make_logs;
+    } else {
+        log = "This driver was linked from precompiled interfaces and directly "
+              "registered with DKMS. This process did not preserve build logs.";
+    }
+
+    ret = nv_string_to_file(dst, log);
     nvfree(dst);
     if (!ret) goto done;
 
@@ -2571,12 +2627,11 @@ static char *dkms_gen_tarball(Options *op, Package *p, const char *kernel)
     /* Reserve a name for a temporary file and run tar(1) to create a tarball */
     tarball = write_temp_file(op, 0, NULL, 0644);
     if (tarball) {
-        char *cmd = nvstrcat(op->utils[TAR], " -C ", tmpdir, " -cf ", tarball,
-                             " .", NULL);
         char *output;
 
-        ret = run_command(op, cmd, &output, FALSE, 0, TRUE);
-        nvfree(cmd);
+        ret = run_command(op, &output, FALSE, 0, TRUE,
+                          op->utils[TAR], " -C ", tmpdir, " -cf ", tarball,
+                          " .", NULL);
 
         if (ret != 0) {
             ui_error(op, "Failed to create a DKMS tarball: %s", output);
@@ -2640,13 +2695,12 @@ void dkms_register_module(Options *op, Package *p, const char *kernel)
     /* Create a DKMS tarball */
     tarball = dkms_gen_tarball(op, p, kernel);
     if (tarball) {
-        char *cmd, *output;
+        char *output;
 
         /* Load the tarball into the DKMS tree */
         ui_status_update(op, .5, "Importing DKMS tarball");
-        cmd = nvstrcat(op->utils[DKMS], " ldtarball ", tarball, NULL);
-        ret = run_command(op, cmd, &output, FALSE, 0, TRUE);
-        nvfree(cmd);
+        ret = run_command(op, &output, FALSE, 0, TRUE,
+                          op->utils[DKMS], " ldtarball ", tarball, NULL);
 
         if (ret != 0) {
             ui_error(op, "Failed to load DKMS tarball: %s", output);
@@ -2869,18 +2923,17 @@ char *
 get_pkg_config_variable(Options *op,
                         const char *pkg, const char *variable)
 {
-    char *cmd, *prefix = NULL;
+    char *prefix = NULL;
     int ret;
 
     if (!op->utils[PKG_CONFIG]) {
         return NULL;
     }
 
-    cmd = nvstrcat(op->utils[PKG_CONFIG],
-                   " --variable=", variable, " ", pkg,
-                   NULL);
-    ret = run_command(op, cmd, &prefix, FALSE, NULL, TRUE);
-    nvfree(cmd);
+    ret = run_command(op, &prefix, FALSE, NULL, TRUE,
+                      op->utils[PKG_CONFIG],
+                      " --variable=", variable, " ", pkg,
+                      NULL);
 
     if (ret != 0 ||
         /*
@@ -2962,14 +3015,13 @@ int option_is_supported(Options *op, const char *cmd, const char *help,
                         const char *option)
 {
     int option_found = FALSE, option_len = strlen(option);
-    char *cmdline = nvstrcat(cmd, " ", help, NULL);
     char *helptext, *match;
 
     /* Ignore the return value: some programs lack a dedicated "help" option
      * and will simply print a help message and return failure when an invalid
      * command line option is specified. */
-    run_command(op, cmdline, &helptext, FALSE, 0, TRUE);
-    nvfree(cmdline);
+    run_command(op, &helptext, FALSE, 0, TRUE,
+                cmd, " ", help, NULL);
 
     for (match = helptext; match && *match; match = strstr(match + 1, option)) {
         int before_clear;
@@ -3056,4 +3108,53 @@ void check_for_vulkan_loader(Options *op)
                 "the \"vulkan-loader\", \"vulkan-icd-loader\", or "
                 "\"libvulkan1\" package.");
     }
+}
+
+
+void add_bullet_list_item(const char *new, char **orig)
+{
+    char *tmp = *orig;
+
+    *orig = nvstrcat(*orig, "  * ", new, "\n", NULL);
+    nvfree(tmp);
+}
+
+
+/*
+ * suggest_reboot() - Give the user a suggestion to reboot the computer if
+ * the conditions during installation call for one.
+ */
+
+void suggest_reboot(Options *op)
+{
+    char *reason = nvstrdup("");
+
+    if (op->loaded_kernel_module_detected) {
+        add_bullet_list_item("Existing NVIDIA kernel modules were loaded "
+                             "during installation, and are likely still "
+                             "loaded.", &reason);
+    }
+
+    if (op->running_x_server_detected) {
+        add_bullet_list_item("A running X server was detected during "
+                             "installation.", &reason);
+    }
+
+    if (nouveau_is_present()) {
+        add_bullet_list_item("Nouveau is running: any attempt to disable it "
+                             "will not take effect until after a reboot.",
+                             &reason);
+    }
+
+    if (reason[0]) {
+        ui_warn(op, "It is strongly recommended that you reboot your computer "
+                    "after exiting the installer, due to the following "
+                    "condition(s) which the installer detected: \n\n%s\n"
+                    "If you continue to use the computer without rebooting, "
+                    "you may not be able to start new programs which use the "
+                    "NVIDIA GPU(s) until after you reboot or reload the NVIDIA "
+                    "kernel modules.", reason);
+    }
+
+    nvfree(reason);
 }

@@ -155,7 +155,7 @@ int determine_kernel_module_installation_path(Options *op)
 static int run_conftest(Options *op, const char *dir, const char *args,
                         char **result)
 {
-    char *cmd, *kernel_source_path, *kernel_output_path;
+    char *kernel_source_path, *kernel_output_path;
     const char *arch;
     int ret;
 
@@ -180,15 +180,14 @@ static int run_conftest(Options *op, const char *dir, const char *args,
         kernel_output_path = op->kernel_output_path;
     }
 
-    cmd = nvstrcat("sh \"", dir, "/conftest.sh\" \"",
-                   op->utils[CC], "\" \"",
-                   arch, "\" \"",
-                   kernel_source_path, "\" \"",
-                   kernel_output_path, "\" ",
-                   args, NULL);
 
-    ret = run_command(op, cmd, result, FALSE, 0, TRUE);
-    nvfree(cmd);
+    ret = run_command(op, result, FALSE, 0, TRUE,
+                      "sh \"", dir, "/conftest.sh\" \"",
+                      op->utils[CC], "\" \"",
+                      arch, "\" \"",
+                      kernel_source_path, "\" \"",
+                      kernel_output_path, "\" ",
+                      args, NULL);
 
     return ret == 0;
 } /* run_conftest() */
@@ -493,7 +492,6 @@ static int attach_signature(Options *op, Package *p,
 int unpack_kernel_modules(Options *op, Package *p, const char *build_directory,
                           const PrecompiledFileInfo *fileInfo)
 {
-    char *cmd;
     int ret;
     uint32 attrmask;
 
@@ -513,16 +511,13 @@ int unpack_kernel_modules(Options *op, Package *p, const char *build_directory,
         return TRUE;
     }
 
-    cmd = nvstrcat("cd ", build_directory,
-                   "; ", op->utils[LD], " ", LD_OPTIONS, " -o ",
-                   fileInfo->linked_module_name, " ",
-                   fileInfo->target_directory, "/", fileInfo->name, " ",
-                   fileInfo->target_directory, "/", fileInfo->core_object_name,
-                   NULL);
-
-    ret = run_command(op, cmd, NULL, TRUE, 0, TRUE);
-
-    free(cmd);
+    ret = run_command(op, NULL, TRUE, 0, TRUE,
+                     "cd ", build_directory,
+                     "; ", op->utils[LD], " ", LD_OPTIONS, " -o ",
+                     fileInfo->linked_module_name, " ",
+                     fileInfo->target_directory, "/", fileInfo->name, " ",
+                     fileInfo->target_directory, "/", fileInfo->core_object_name,
+                     NULL);
 
     if (ret != 0) {
         ui_error(op, "Unable to link kernel module.");
@@ -554,20 +549,20 @@ static RunCommandOutputMatch *count_lines(Options *op, Package *p,
 {
     RunCommandOutputMatch *ret = nvalloc(sizeof(*ret) * 5);
     int conftest_count, object_count, module_count, count_success = FALSE;
-    char *data = NULL, *cmd;
+    char *data = NULL;
 
     /*
      * Build the make(1) command line. run_make() is explicitly avoided here:
      * the output from count-lines.mk shouldn't be logged or displayed.
      */
-    cmd = nvstrcat("cd ", dir, "; ",
-                   op->utils[MAKE], " -f count-lines.mk count "
-                   "NV_EXCLUDE_KERNEL_MODULES=", p->excluded_kernel_modules,
-                   single_module ? "" : NULL,
-                   " NV_KERNEL_MODULES=", single_module,
-                   NULL);
 
-    if (run_command(op, cmd, &data, FALSE, NULL, TRUE) == 0) {
+    if (run_command(op, &data, FALSE, NULL, TRUE,
+                    "cd ", dir, "; ",
+                    op->utils[MAKE], " -f count-lines.mk count "
+                    "NV_EXCLUDE_KERNEL_MODULES=", p->excluded_kernel_modules,
+                    single_module ? "" : NULL,
+                    " NV_KERNEL_MODULES=", single_module,
+                    NULL) == 0) {
         if (sscanf(data, "conftests:%d objects:%d modules:%d",
                    &conftest_count, &object_count, &module_count) == 3) {
             count_success = TRUE;
@@ -702,7 +697,6 @@ int sign_kernel_module(Options *op, const char *build_directory,
         { 0 }
     };
     int success;
-    char *cmd;
 
     /* Lazily set the default value for module_signing_script. */
 
@@ -740,13 +734,12 @@ int sign_kernel_module(Options *op, const char *build_directory,
                  "line.", module_filename, op->module_signing_script);
     }
 
-    cmd = nvstrcat("\"", op->module_signing_script, "\" ",
-                   op->module_signing_hash, " \"",
-                   op->module_signing_secret_key, "\" \"",
-                   op->module_signing_public_key, "\" \"",
-                   build_directory, "/", module_filename, "\"", NULL);
-    success = (run_command(op, cmd, NULL, TRUE, output_match, TRUE) == 0);
-    nvfree(cmd);
+    success = (run_command(op, NULL, TRUE, output_match, TRUE,
+                           "\"", op->module_signing_script, "\" ",
+                           op->module_signing_hash, " \"",
+                           op->module_signing_secret_key, "\" \"",
+                           op->module_signing_public_key, "\" \"",
+                           build_directory, "/", module_filename, "\"", NULL) == 0);
 
     if (status) {
         ui_status_end(op, success ? "done." : "Failed to sign kernel module.");
@@ -1357,15 +1350,13 @@ static void toggle_udev_event_queue(Options *op, int enable)
          * so udevadm(8) can return right away.
          */
         const char *timeout = enable ? " --timeout=0" : NULL;
-        char *cmd, *data;
+        char *data;
         int cmd_ret;
 
-        cmd = nvstrcat(udevadm, " control --", verb, "-exec-queue", timeout,
-                       NULL);
+        cmd_ret = run_command(op, &data, FALSE, NULL, TRUE,
+                              udevadm, " control --", verb, "-exec-queue", timeout,
+                              NULL);
         nvfree(udevadm);
-
-        cmd_ret = run_command(op, cmd, &data, FALSE, NULL, TRUE) != 0;
-        nvfree(cmd);
 
         if (cmd_ret != 0) {
             ui_warn(op, "Failed to %s the udev event queue:\n\n%s",
@@ -1386,15 +1377,13 @@ static void toggle_udev_event_queue(Options *op, int enable)
  */
 static void log_dmesg(Options *op)
 {
-    char *cmd = NULL, *data = NULL;
+    char *data = NULL;
 
-    cmd = nvstrcat(op->utils[DMESG], " | ",
-                   op->utils[TAIL], " -n 25", NULL);
-
-    if (!run_command(op, cmd, &data, FALSE, NULL, TRUE))
+    if (!run_command(op, &data, FALSE, NULL, TRUE,
+                     op->utils[DMESG], " | ", op->utils[TAIL], " -n 25", NULL)) {
         ui_log(op, "Kernel messages:\n%s", data);
+    }
 
-    nvfree(cmd);
     nvfree(data);
 }
 
@@ -1585,27 +1574,24 @@ static int modprobe_helper(Options *op, const char *module_name,
                            int quiet, int unload)
 {
     int ret = 0, old_loglevel, loglevel_set;
-    char *cmd, *data;
+    char *data;
 
     if (op->skip_module_load) {
         return TRUE;
     }
 
-    cmd = nvstrcat(op->utils[MODPROBE],
-                   quiet ? " -q" : "",
-                   unload ? " -r" : "",
-                   " ", module_name,
-                   NULL);
-
     loglevel_set = set_loglevel(PRINTK_LOGLEVEL_KERN_ALERT, &old_loglevel);
 
-    ret = run_command(op, cmd, &data, FALSE, NULL, TRUE);
+    ret = run_command(op, &data, FALSE, NULL, TRUE,
+                      op->utils[MODPROBE],
+                      quiet ? " -q" : "",
+                      unload ? " -r" : "",
+                      " ", module_name,
+                      NULL);
 
     if (loglevel_set) {
         set_loglevel(old_loglevel, NULL);
     }
-
-    nvfree(cmd);
 
     if (!quiet && ret != 0) {
         char *expert_detail = nvstrcat(": '", data, "'", NULL);
@@ -1695,27 +1681,54 @@ int check_for_unloaded_kernel_module(Options *op)
         /* check again */
 
         if (check_for_loaded_kernel_module(op, conflicting_kernel_modules[n])) {
-            ui_error(op,  "An NVIDIA kernel module '%s' appears to already "
-                     "be loaded in your kernel.  This may be because it is "
-                     "in use (for example, by an X server, a CUDA program, "
-                     "or the NVIDIA Persistence Daemon), but this may also "
-                     "happen if your kernel was configured without support "
-                     "for module unloading.  Please be sure to exit any "
-                     "programs that may be using the GPU(s) before attempting "
-                     "to upgrade your driver.  If no GPU-based programs are "
-                     "running, you know that your kernel supports module "
-                     "unloading, and you still receive this message, then an "
-                     "error may have occurred that has corrupted an NVIDIA "
-                     "kernel module's usage count, for which the simplest "
-                     "remedy is to reboot your computer.",
-                     conflicting_kernel_modules[n]);
+            int choice;
 
-            return FALSE;
+            op->loaded_kernel_module_detected = TRUE;
+
+            ui_warn(op, "An NVIDIA kernel module '%s' appears to be already "
+                "loaded in your kernel.  This may be because it is in use (for "
+                "example, by an X server, a CUDA program, or the NVIDIA "
+                "Persistence Daemon), but this may also happen if your kernel "
+                "was configured without support for module unloading.  Some of "
+                "the sanity checks that nvidia-installer performs to detect "
+                "potential installation problems are not possible while an "
+                "NVIDIA kernel module is running.",
+                conflicting_kernel_modules[n]);
+
+            choice = ui_multiple_choice(op, CONTINUE_ABORT_CHOICES,
+                NUM_CONTINUE_ABORT_CHOICES,
+                op->allow_installation_with_running_driver ?
+                CONTINUE_CHOICE : ABORT_CHOICE,
+                "Would you like to continue installation and skip the sanity "
+                "checks? If not, please abort the installation, then close "
+                "any programs which may be using the NVIDIA GPU(s), and "
+                "attempt installation again.");
+
+            if (choice == CONTINUE_CHOICE) {
+                ui_warn(op, "Continuing installation despite the presence of a "
+                    "loaded NVIDIA kernel module.  Some sanity checks will not "
+                    "be performed.  It is strongly recommended that you reboot "
+                    "your computer after installation is complete.  If the "
+                    "installation is not successful after rebooting the "
+                    "computer, you can run `nvidia-uninstall` to attempt to "
+                    "remove the NVIDIA driver.");
+
+                op->skip_module_load = TRUE;
+                ui_log(op, "Kernel module load tests will be skipped.");
+            }
+
+            return choice == CONTINUE_CHOICE;
         }
     }
 
     return TRUE;
 
+}
+
+
+char *precompiled_kernel_interface_path(const Package *p)
+{
+    return nvdircat(p->kernel_module_build_directory, "precompiled", NULL);
 }
 
 
@@ -1794,8 +1807,9 @@ PrecompiledInfo *find_precompiled_kernel_interface(Options *op, Package *p)
      */
 
     if (!info) {
-        info = scan_dir(op, p, p->precompiled_kernel_interface_directory,
-                        proc_version_string, search_filelist);
+        char *dir = precompiled_kernel_interface_path(p);
+        info = scan_dir(op, p, dir, proc_version_string, search_filelist);
+        nvfree(dir);
     }
     
     /* If we found one, ask expert users if they really want to use it */
@@ -2159,8 +2173,8 @@ static int check_for_loaded_kernel_module(Options *op, const char *module_name)
     char *result = NULL;
     int ret, found = FALSE;
 
-    ret = run_command(op, op->utils[LSMOD], &result, FALSE, NULL, TRUE);
-    
+    ret = run_command(op, &result, FALSE, NULL, TRUE, op->utils[LSMOD], NULL);
+
     if ((ret == 0) && (result) && (result[0] != '\0')) {
         char *ptr;
         int len = strlen(module_name);
@@ -2189,20 +2203,16 @@ static int check_for_loaded_kernel_module(Options *op, const char *module_name)
 int rmmod_kernel_module(Options *op, const char *module_name)
 {
     int ret, old_loglevel, loglevel_set;
-    char *cmd;
     
-    cmd = nvstrcat(op->utils[RMMOD], " ", module_name, NULL);
-
     loglevel_set = set_loglevel(PRINTK_LOGLEVEL_KERN_ALERT, &old_loglevel);
-    
-    ret = run_command(op, cmd, NULL, FALSE, NULL, TRUE);
+
+    ret = run_command(op, NULL, FALSE, NULL, TRUE,
+                      op->utils[RMMOD], " ", module_name, NULL);
 
     if (loglevel_set) {
         set_loglevel(old_loglevel, NULL);
     }
 
-    free(cmd);
-    
     return ret ? FALSE : TRUE;
     
 } /* rmmod_kernel_module() */
@@ -2405,7 +2415,7 @@ static int run_make(Options *op, Package *p, const char *dir,
         ui_status_begin(op, status, "");
     }
 
-    ret = (run_command(op, cmd, &data, TRUE, status ? match : NULL, TRUE) == 0);
+    ret = (run_command(op, &data, TRUE, status ? match : NULL, TRUE, cmd, NULL) == 0);
 
     if (status) {
         if (ret) {

@@ -27,6 +27,7 @@
 #include <string.h>
 #include <ctype.h>
 #include <signal.h>
+#include <unistd.h>
 
 #include "nvidia-installer.h"
 #include "nvidia-installer-ui.h"
@@ -52,6 +53,7 @@ int   stream_paged_prompt        (Options *op, const char *, const char *,
 void  stream_status_begin        (Options*, const char*, const char*);
 void  stream_status_update       (Options*, const float, const char*);
 void  stream_status_end          (Options*, const char*);
+void  stream_update_indeterminate(Options*, const char*);
 void  stream_close               (Options*);
 
 InstallerUI stream_ui_dispatch_table = {
@@ -68,13 +70,13 @@ InstallerUI stream_ui_dispatch_table = {
     stream_status_begin,
     stream_status_update,
     stream_status_end,
+    stream_update_indeterminate,
     stream_close
 };
 
 
 typedef struct {
-    int status_active;
-    char *status_label;
+    float percent;
 } Data;
 
 
@@ -82,6 +84,7 @@ typedef struct {
 #define STATUS_BEGIN 0
 #define STATUS_UPDATE 1
 #define STATUS_END 2
+#define STATUS_INDETERMINATE 3
 
 #define STATUS_BAR_WIDTH 30
 
@@ -94,21 +97,48 @@ static void print_status_bar(Data *d, int status, float percent)
     int i;
     float val;
     
-    if (status != STATUS_BEGIN) printf("\r");
-    
-    if (d->status_label) {
-        printf("  %s: [", d->status_label);
-    } else {
-        printf("  [");
+    static int indeterminate_position;
+
+    switch (status) {
+    case STATUS_BEGIN:
+        /* reset the position of the indeterminate progress indicator */
+        indeterminate_position = 0;
+        break;
+    case STATUS_UPDATE:
+    case STATUS_END:
+    case STATUS_INDETERMINATE:
+    default:
+        printf("\r");
+        break;
     }
+
+    printf("  [");
 
     val = ((float) STATUS_BAR_WIDTH * percent);
 
     for (i = 0; i < STATUS_BAR_WIDTH; i++) {
-        printf("%c", ((float) i < val) ? '#' : ' ');
+        char c;
+
+        if (status == STATUS_INDETERMINATE) {
+            c = (i == indeterminate_position % STATUS_BAR_WIDTH) ? '#' : ' ';
+        } else {
+            c = (float) i < val ? '#' : ' ';
+        }
+
+        printf("%c", c);
     }
 
-    printf("] %3d%%", (int) (percent * 100.0));
+    indeterminate_position++;
+
+    printf("] ");
+    if (status == STATUS_INDETERMINATE) {
+        /* Clear any existing percentage display and rewind the cursor to
+         * just after the ']' printed above */
+        printf("    \b\b\b\b\b");
+    } else {
+        /* Display the current percentage */
+        printf("%3d%%", (int) (percent * 100.0));
+    }
 
     if (status == STATUS_END) printf("\n");
     
@@ -145,8 +175,7 @@ int stream_init(Options *op, FormatTextRows format_text_rows)
 {
     Data *d = nvalloc(sizeof(Data));
 
-    d->status_active = FALSE;
-    op->ui_priv = d;
+    op->ui.priv = d;
 
     if (!op->silent) {
 
@@ -225,12 +254,10 @@ void stream_message(Options *op, const int level, const char *msg)
         { "WARNING: ", stderr, TRUE  }, /* NV_MSG_LEVEL_WARNING */
         { "ERROR: ",   stderr, TRUE  }  /* NV_MSG_LEVEL_ERROR */
     };
-    
-    Data *d = op->ui_priv;
 
     /* don't print log messages if we're currently displaying a status */
 
-    if ((level == NV_MSG_LEVEL_LOG) && (d->status_active)) return;
+    if ((level == NV_MSG_LEVEL_LOG) && (op->ui.status_active)) return;
 
     if (msg_attrs[level].newline) {
         nv_info_msg_to_file(msg_attrs[level].stream, NULL, "");
@@ -255,9 +282,7 @@ void stream_message(Options *op, const int level, const char *msg)
 
 void stream_command_output(Options *op, const char *msg)
 {
-    Data *d = op->ui_priv;
-    
-    if ((!op->expert) || (d->status_active)) return;
+    if ((!op->expert) || (op->ui.status_active)) return;
 
     nv_info_msg("   ", "%s", msg);
     
@@ -274,8 +299,6 @@ int stream_approve_command_list(Options *op, CommandList *cl,
                                 const char *descr)
 {
     int i;
-    Command *c;
-    char *perms;
     const char *prefix = " --> ";
 
     nv_info_msg(NULL, "");
@@ -284,50 +307,11 @@ int stream_approve_command_list(Options *op, CommandList *cl,
     nv_info_msg(NULL, "");
     
     for (i = 0; i < cl->num; i++) {
-        c = &cl->cmds[i];
-
-        switch (c->cmd) {
-        
-          case INSTALL_CMD:
-            perms = mode_to_permission_string(c->mode);
-            nv_info_msg(prefix, "install the file '%s' as '%s' with "
-                        "permissions '%s'", c->s0, c->s1, perms);
-            free(perms);
-            if (c->s2) {
-                nv_info_msg(prefix, "execute the command `%s`", c->s2);
-            }
-            break;
-            
-          case RUN_CMD:
-            nv_info_msg(prefix, "execute the command `%s`", c->s0);
-            break;
-            
-          case SYMLINK_CMD:
-            nv_info_msg(prefix, "create a symbolic link '%s' to '%s'",
-                        c->s0, c->s1);
-            break;
-            
-          case BACKUP_CMD:
-            nv_info_msg(prefix, "back up the file '%s'", c->s0);
-            break;
-
-          case DELETE_CMD:
-            nv_info_msg(prefix, "delete file '%s'", c->s0);
-            break;
-
-          default:
-
-            nv_error_msg("Error in CommandList! (cmd: %d; s0: '%s';"
-                         "s1: '%s'; s2: '%s'; mode: %04o)",
-                         c->cmd, c->s0, c->s1, c->s2, c->mode);
-            nv_error_msg("Aborting installation.");
-            return FALSE;
-            break;
-        }
+        nv_info_msg(prefix, "%s", cl->descriptions[i]);
     }
-    
+
     fflush(stdout);
-    
+
     if (!stream_yes_no(op, TRUE, "\nIs this acceptable? (answering 'no' will "
                        "abort installation)")) {
         nv_error_msg("Command list not accepted; exiting installation.");
@@ -335,7 +319,7 @@ int stream_approve_command_list(Options *op, CommandList *cl,
     }
 
     return TRUE;
-    
+
 } /* stream_approve_command_list() */
 
 
@@ -486,15 +470,14 @@ int stream_paged_prompt(Options *op, const char *question,
 
 void stream_status_begin(Options *op, const char *title, const char *msg)
 {
-    Data *d = op->ui_priv;
+    Data *d = op->ui.priv;
     
-    d->status_active = TRUE;
-    
-    nv_info_msg(NULL, "%s", title);
-    d->status_label = nvstrdup(msg);
-    
+    d->percent = 0;
+
+    nv_info_msg(NULL, "%s: %s\n", title, msg ? msg : "");
+
     print_status_bar(d, STATUS_BEGIN, 0.0);
-    
+
 } /* stream_status_begin() */
 
 
@@ -505,10 +488,23 @@ void stream_status_begin(Options *op, const char *title, const char *msg)
 
 void stream_status_update(Options *op, const float percent, const char *msg)
 {
-    print_status_bar(op->ui_priv, STATUS_UPDATE, percent);
+    Data *d = op->ui.priv;
+
+    if (d->percent != percent) {
+        d->percent = percent;
+        print_status_bar(op->ui.priv, STATUS_UPDATE, percent);
+    }
 
 } /* stream_status_update() */
 
+
+void stream_update_indeterminate(Options *op, const char *msg)
+{
+    Data *d = op->ui.priv;
+
+    print_status_bar(d, STATUS_INDETERMINATE, 0.0);
+    usleep(250000);
+}
 
 
 /*
@@ -517,13 +513,7 @@ void stream_status_update(Options *op, const float percent, const char *msg)
 
 void stream_status_end(Options *op, const char *msg)
 {
-    Data *d = op->ui_priv;
-    
-    print_status_bar(op->ui_priv, STATUS_END, 1.0);
-    
-    nvfree(d->status_label);
-    d->status_active = FALSE;
-
+    print_status_bar(op->ui.priv, STATUS_END, 1.0);
 } /* stream_status_end() */
 
 
@@ -534,6 +524,7 @@ void stream_status_end(Options *op, const char *msg)
 
 void stream_close(Options *op)
 {
-    return;
-    
-} /* stream_close() */
+    if (op) {
+        nvfree(op->ui.priv);
+    }
+}

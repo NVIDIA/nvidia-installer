@@ -171,7 +171,7 @@ typedef uint32_t uint32;
 typedef uint16_t uint16;
 typedef uint8_t uint8;
 
-
+typedef struct __indeterminate_data IndeterminateData;
 
 /*
  * Options structure; malloced by and initialized by
@@ -224,10 +224,14 @@ typedef struct __options {
     int concurrency_level;
     int skip_module_load;
     int skip_depmod;
+    int allow_installation_with_running_driver;
+    int loaded_kernel_module_detected;
+    int running_x_server_detected;
 
     NVOptionalBool install_libglx_indirect;
     NVOptionalBool install_libglvnd_libraries;
     NVOptionalBool install_compat32_libs;
+    NVOptionalBool rebuild_initramfs;
 
     char *file_type_destination_overrides[FILE_TYPE_MAX];
 
@@ -276,7 +280,6 @@ typedef struct __options {
     char *utils[MAX_UTILS];
 
     char *proc_mount_point;
-    char *ui_str;
     char *log_file_name;
 
     char *tmpdir;
@@ -299,8 +302,6 @@ typedef struct __options {
     int kernel_module_signed;
     int dkms_registered;
 
-    void *ui_priv; /* for use by the ui's */
-
     NVOptionalBool use_systemd;
     char *systemd_unit_prefix;
     char *systemd_sleep_prefix;
@@ -308,6 +309,12 @@ typedef struct __options {
 
     char *kernel_module_build_directory_override;
 
+    struct {
+        char *name;
+        void *priv;
+        int status_active;
+        IndeterminateData *indeterminate_data;
+    } ui;
 } Options;
 
 typedef enum {
@@ -428,7 +435,6 @@ typedef struct __package {
     char *description;
     char *version;
     char *kernel_module_build_directory;
-    char *precompiled_kernel_interface_directory;
     char *kernel_make_logs;
 
     PackageEntry *entries; /* array of filename/checksum/bytesize entries */

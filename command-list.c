@@ -45,7 +45,65 @@
 #include "kernel.h"
 #include "manifest.h"
 #include "conflicting-kernel-modules.h"
+#include "initramfs.h"
 
+
+/*
+ * commands:
+ *
+ * INSTALL - install the file named in 'path', giving it the name in 'target';
+ * assign 'target' the permissions specified by 'mode'; execute the string in
+ * 'command' as a post-install step
+ *
+ * BACKUP - move the file named in 'path', storing it in the backup
+ * directory and recording the data as appropriate.
+ *
+ * RUN - execute the string in 'command'
+ *
+ * RUN_CMD_LONG - execute the string in 'command' and display an indeterminate
+ * progress bar while it is running.
+ *
+ * SYMLINK - create a symbolic link named 'path', pointing at the filename
+ * specified in 'target'.
+ *
+ * DELETE - delete the file named in 'path'.
+ *
+ * TOUCH_CMD - update the mtime of the path specified in 'path'.
+ *
+ * FUNCTION_CMD - Call the function pointed to by 'function', with a pointer
+ * to the Options structure passed as an argument.
+ */
+
+typedef enum {
+    INVALID_CMD = 0, /* Default value with nvalloc() or memset(..., '0', ...) */
+    INSTALL_CMD,
+    BACKUP_CMD,
+    RUN_CMD,
+    RUN_CMD_LONG,
+    SYMLINK_CMD,
+    DELETE_CMD,
+    TOUCH_CMD,
+    FUNCTION_CMD,
+} CommandID;
+
+
+typedef int (*CommandFunction)(Options *);
+
+
+/*
+ * Command structure - data type for describing what  operations to perform
+ * to do an install.  Some of the fields may be unset, depending upon the
+ * value of the cmd field (see the constants above).
+ */
+
+typedef struct __command {
+    CommandID cmd;
+    char *path;
+    char *target;
+    char *command;
+    mode_t mode;
+    CommandFunction function;
+} Command;
 
 static void free_file_list(FileList* l);
 
@@ -56,7 +114,7 @@ static void find_existing_files(Package *p, FileList *l,
 
 static void condense_file_list(Package *p, FileList *l);
 
-static void add_command (CommandList *c, int cmd, ...);
+static void add_command (CommandList *c, CommandID cmd, ...);
 
 static void add_file_to_list(const char*, const char*, FileList*);
 
@@ -198,7 +256,8 @@ CommandList *build_command_list(Options *op, Package *p)
 {
     FileList *l;
     CommandList *c;
-    int i, cmd;
+    CommandID cmd;
+    int i;
     PackageEntryFileTypeList installable_files;
     PackageEntryFileTypeList tmp_installable_files;
     char *tmp;
@@ -318,7 +377,11 @@ CommandList *build_command_list(Options *op, Package *p)
     
     for (i = 0; i < l->num; i++)
         add_command(c, cmd, l->filename[i], NULL, 0);
-    
+
+    if (!op->no_kernel_modules) {
+        add_command(c, FUNCTION_CMD, update_initramfs, "Rebuilding initramfs");
+    }
+
     /* Add all the installable files to the list */
     
     for (i = 0; i < p->num_entries; i++) {
@@ -435,7 +498,7 @@ CommandList *build_command_list(Options *op, Package *p)
     
     if (!op->no_kernel_modules && !op->skip_depmod) {
         tmp = nvstrcat(op->utils[DEPMOD], " -a ", op->kernel_name, NULL);
-        add_command(c, RUN_CMD, tmp);
+        add_command(c, RUN_CMD_LONG, tmp);
         nvfree(tmp);
     }
 
@@ -491,13 +554,15 @@ void free_command_list(Options *op, CommandList *cl)
 
     for (i = 0; i < cl->num; i++) {
         c = &cl->cmds[i];
-        if (c->s0) free(c->s0);
-        if (c->s1) free(c->s1);
-        if (c->s2) free(c->s2);
+        free(c->path);
+        free(c->target);
+        free(c->command);
+        free(cl->descriptions[i]);
     }
 
-    if (cl->cmds) free(cl->cmds);
-    
+    free(cl->cmds);
+    free(cl->descriptions);
+
     free(cl);
 
 } /* free_command_list() */
@@ -506,15 +571,28 @@ void free_command_list(Options *op, CommandList *cl)
  * execute_run_command() - execute a RUN_CMD from the command list.
  */
 
+#define __RUN_CMD_FORMAT_STRING__ "Executing: %s (this may take a moment...)"
+
 static inline int execute_run_command(Options *op, float percent, const char *cmd)
 {
+    int indeterminate = percent < 0;
     int ret;
     char *data;
 
     ui_expert(op, "Executing: %s", cmd);
-    ui_status_update(op, percent, "Executing: `%s` "
-                     "(this may take a moment...)", cmd);
-    ret = run_command(op, cmd, &data, TRUE, NULL, TRUE);
+
+    if (indeterminate) {
+        ui_indeterminate_begin(op, __RUN_CMD_FORMAT_STRING__, cmd);
+    } else {
+        ui_status_update(op, percent, __RUN_CMD_FORMAT_STRING__, cmd);
+    }
+
+    ret = run_command(op, &data, TRUE, NULL, TRUE, cmd, NULL);
+
+    if (indeterminate) {
+        ui_indeterminate_end(op);
+    }
+
     if (ret != 0) {
         ui_error(op, "Failed to execute `%s`: %s", cmd, data);
         ret = continue_after_error(op, "Failed to execute `%s`", cmd);
@@ -549,84 +627,96 @@ int execute_command_list(Options *op, CommandList *c,
                 
         case INSTALL_CMD:
             ui_expert(op, "Installing: %s --> %s",
-                      c->cmds[i].s0, c->cmds[i].s1);
-            ui_status_update(op, percent, "Installing: %s", c->cmds[i].s1);
+                      c->cmds[i].path, c->cmds[i].target);
+            ui_status_update(op, percent, "Installing: %s", c->cmds[i].target);
             
-            ret = install_file(op, c->cmds[i].s0, c->cmds[i].s1,
+            ret = install_file(op, c->cmds[i].path, c->cmds[i].target,
                                c->cmds[i].mode);
             if (!ret) {
                 ret = continue_after_error(op, "Cannot install %s",
-                                           c->cmds[i].s1);
+                                           c->cmds[i].target);
                 if (!ret) return FALSE;
             } else {
                 /*
                  * perform post-install step before logging the backup
                  */
-                if (c->cmds[i].s2 &&
-                    !execute_run_command(op, percent, c->cmds[i].s2)) {
+                if (c->cmds[i].command &&
+                    !execute_run_command(op, percent, c->cmds[i].command)) {
                     return FALSE;
                 }
 
-                log_install_file(op, c->cmds[i].s1);
+                log_install_file(op, c->cmds[i].target);
                 append_to_rpm_file_list(op, &c->cmds[i]);
             }
             break;
             
         case RUN_CMD:
-            if (!execute_run_command(op, percent, c->cmds[i].s0)) {
+            if (!execute_run_command(op, percent, c->cmds[i].command)) {
+                return FALSE;
+            }
+            break;
+        case RUN_CMD_LONG:
+            if (!execute_run_command(op, c->cmds[i].cmd == RUN_CMD_LONG ? -1 : percent, c->cmds[i].command)) {
                 return FALSE;
             }
             break;
 
         case SYMLINK_CMD:
             ui_expert(op, "Creating symlink: %s -> %s",
-                      c->cmds[i].s0, c->cmds[i].s1);
+                      c->cmds[i].path, c->cmds[i].target);
             ui_status_update(op, percent, "Creating symlink: %s",
-                             c->cmds[i].s1);
+                             c->cmds[i].target);
 
-            ret = install_symlink(op, c->cmds[i].s1, c->cmds[i].s0);
+            ret = install_symlink(op, c->cmds[i].target, c->cmds[i].path);
 
             if (!ret) {
                 ret = continue_after_error(op, "Cannot create symlink %s (%s)",
-                                           c->cmds[i].s0, strerror(errno));
+                                           c->cmds[i].path, strerror(errno));
                 if (!ret) return FALSE;
             } else {
-                log_create_symlink(op, c->cmds[i].s0, c->cmds[i].s1);
+                log_create_symlink(op, c->cmds[i].path, c->cmds[i].target);
             }
             break;
 
         case BACKUP_CMD:
-            ui_expert(op, "Backing up: %s", c->cmds[i].s0);
-            ui_status_update(op, percent, "Backing up: %s", c->cmds[i].s0);
+            ui_expert(op, "Backing up: %s", c->cmds[i].path);
+            ui_status_update(op, percent, "Backing up: %s", c->cmds[i].path);
 
-            ret = do_backup(op, c->cmds[i].s0);
+            ret = do_backup(op, c->cmds[i].path);
             if (!ret) {
                 ret = continue_after_error(op, "Cannot backup %s",
-                                           c->cmds[i].s0);
+                                           c->cmds[i].path);
                 if (!ret) return FALSE;
             }
             break;
 
         case DELETE_CMD:
-            ui_expert(op, "Deleting: %s", c->cmds[i].s0);
-            ret = unlink(c->cmds[i].s0);
+            ui_expert(op, "Deleting: %s", c->cmds[i].path);
+            ret = unlink(c->cmds[i].path);
             if (ret == -1) {
                 ret = continue_after_error(op, "Cannot delete %s",
-                                           c->cmds[i].s0);
+                                           c->cmds[i].path);
                 if (!ret) return FALSE;
             }
             break;
 
         case TOUCH_CMD:
-            ui_expert(op, "Updating mtime: %s", c->cmds[i].s0);
-            ret = utime(c->cmds[i].s0, NULL);
+            ui_expert(op, "Updating mtime: %s", c->cmds[i].path);
+            ret = utime(c->cmds[i].path, NULL);
             if (ret == -1) {
                 ret = continue_after_error(op, "Cannot touch %s",
-                                           c->cmds[i].s0);
+                                           c->cmds[i].path);
                 if (!ret) return FALSE;
             }
             break;
-
+        case FUNCTION_CMD:
+            ui_expert(op, "%s:", c->descriptions[i]);
+            ret = c->cmds[i].function(op);
+            if (!ret) {
+                ret = continue_after_error(op, "%s failed", c->descriptions[i]);
+                if (!ret) return FALSE;
+            }
+            break;
         default:
             /* XXX should never get here */
             return FALSE;
@@ -1041,61 +1131,115 @@ static void condense_file_list(Package *p, FileList *l)
 
 
 
+static char *get_command_description(const Command *c)
+{
+    char *ret = NULL;
+    char *perms;
+
+    switch (c->cmd) {
+    case INSTALL_CMD:
+        perms = mode_to_permission_string(c->mode);
+        ret = nvasprintf("Install the file '%s' as '%s' with permissions '%s'",
+                         c->path, c->target, perms);
+        if (c->command) {
+            char *newret  = nvstrcat(ret, " then execute the command `",
+                                     c->command, "`", NULL);
+            nvfree(ret);
+            ret = newret;
+        }
+        nvfree(perms);
+        break;
+
+    case RUN_CMD:
+        ret = nvasprintf("Execute the command `%s`", c->command);
+        break;
+
+    case SYMLINK_CMD:
+        ret = nvasprintf("Create a symbolic link '%s' to '%s'",
+                         c->path, c->target);
+        break;
+
+    case BACKUP_CMD:
+        ret = nvasprintf("Back up the file '%s'", c->path);
+        break;
+
+    case DELETE_CMD:
+        ret = nvasprintf("Delete the file '%s'", c->path);
+        break;
+
+    case FUNCTION_CMD:
+        /* FUNCTION_CMD descriptions get set by the caller */
+        break;
+
+    default:
+        /* XXX should not get here */
+        break;
+    }
+
+    return ret;
+}
+
+
 /*
  * add_command() - grow the commandlist and append the new command,
  * parsing the variable argument list.
  */
 
-static void add_command(CommandList *c, int cmd, ...)
+static void add_command(CommandList *c, CommandID cmd, ...)
 {
     int n = c->num;
     char *s;
     va_list ap;
     
     c->cmds = (Command *) nvrealloc(c->cmds, sizeof(Command) * (n + 1));
- 
+    c->descriptions = nvrealloc(c->descriptions, sizeof(char *) * (n + 1));
+
+    memset(c->cmds + n, 0, sizeof(Command));
     c->cmds[n].cmd  = cmd;
-    c->cmds[n].s0   = NULL;
-    c->cmds[n].s1   = NULL;
-    c->cmds[n].s2   = NULL;
-    c->cmds[n].mode = 0x0;
-    
+    c->descriptions[n] = NULL;
+
     va_start(ap, cmd);
 
     switch (cmd) {
       case INSTALL_CMD:
-        s = va_arg(ap, char *);
-        c->cmds[n].s0 = nvstrdup(s);
-        s = va_arg(ap, char *);
-        c->cmds[n].s1 = nvstrdup(s);
-        s = va_arg(ap, char *);
-        c->cmds[n].s2 = nvstrdup(s);
-        c->cmds[n].mode = va_arg(ap, mode_t);
-        break;
-      case BACKUP_CMD:
-        s = va_arg(ap, char *);
-        c->cmds[n].s0 = nvstrdup(s);
-        break;
-      case RUN_CMD:
-        s = va_arg(ap, char *);
-        c->cmds[n].s0 = nvstrdup(s);
-        break;
       case SYMLINK_CMD:
         s = va_arg(ap, char *);
-        c->cmds[n].s0 = nvstrdup(s);
+        c->cmds[n].path = nvstrdup(s);
         s = va_arg(ap, char *);
-        c->cmds[n].s1 = nvstrdup(s);
+        c->cmds[n].target = nvstrdup(s);
+
+        if (cmd == INSTALL_CMD) {
+            s = va_arg(ap, char *);
+            c->cmds[n].command = nvstrdup(s);
+            c->cmds[n].mode = va_arg(ap, mode_t);
+        }
+
         break;
+      case BACKUP_CMD:
       case DELETE_CMD:
       case TOUCH_CMD:
         s = va_arg(ap, char *);
-        c->cmds[n].s0 = nvstrdup(s);
+        c->cmds[n].path = nvstrdup(s);
+        break;
+      case RUN_CMD:
+      case RUN_CMD_LONG:
+        s = va_arg(ap, char *);
+        c->cmds[n].command = nvstrdup(s);
+        break;
+      case FUNCTION_CMD:
+        c->cmds[n].function = va_arg(ap, CommandFunction);
+        s = va_arg(ap, char *);
+        c->descriptions[n] = nvstrdup(s);
         break;
       default:
         break;
     }
 
     va_end(ap);
+
+    if (!c->descriptions[n]) {
+        c->descriptions[n] = get_command_description(c->cmds + n);
+    }
 
     c->num++;
 
@@ -1135,6 +1279,6 @@ static void append_to_rpm_file_list(Options *op, Command *c)
     if (!op->rpm_file_list) return;
 
     file = fopen(op->rpm_file_list, "a");
-    fprintf(file, "%%attr (%04o, root, root) %s\n", c->mode, c->s1);
+    fprintf(file, "%%attr (%04o, root, root) %s\n", c->mode, c->target);
     fclose(file);
 }

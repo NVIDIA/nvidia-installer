@@ -56,6 +56,7 @@ int package_includes_kernel_module                 (const Package*,
 int rmmod_kernel_module                            (Options*, const char *);
 int conftest_sanity_check                          (Options*, const char *,
                                                     const char *, const char *);
+char *precompiled_kernel_interface_path            (const Package*);
 
 #ifndef ENOKEY
 #define	ENOKEY		126	/* Required key not available */

@@ -147,15 +147,24 @@ typedef struct __nv_installer_ui {
                         int default_answer);
 
     /*
-     * status_begin(), status_update(), status_end() - these three
-     * functions display the status of some process.  It is expected
+     * status_begin(), status_update(), status_end() -
+     * these functions display the status of some process.  It is expected
      * that status_begin() would be called, followed by some number of
-     * status_update() calls, followed by a status_end() call.
+     * status_update() and/or ui_indeterminate_begin/end() calls, followed by
+     * a status_end() call.
      */
 
     void (*status_begin)(Options *op, const char *title, const char *msg);
     void (*status_update)(Options *op, const float percent, const char *msg);
     void (*status_end)(Options *op, const char *msg);
+
+    /*
+     * update_indeterminate() - this is called in a loop by a worker thread
+     * which is started by ui_indeterminate_begin. The worker stays alive as
+     * long as the indeterminate state is active. The loop breaks when the next
+     * ui_indeterminate_end() call sets the state to inactive.
+     */
+    void (*update_indeterminate)(Options *, const char *msg);
 
     /*
      * close - close down the ui.

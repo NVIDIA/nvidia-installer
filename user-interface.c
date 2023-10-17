@@ -38,6 +38,7 @@
 #include "misc.h"
 #include "files.h"
 #include "user-interface.h"
+#include "ui-status-indeterminate.h"
 
 /*
  * global user interface pointer
@@ -124,15 +125,15 @@ int ui_init(Options *op)
     __ui = NULL;
 
     if (!op->silent) {
-        if (op->ui_str) {
+        if (op->ui.name) {
             for (i = 0; i < ARRAY_LEN(ui_list); i++) {
-                if (strcmp(op->ui_str, ui_list[i].name) == 0) {
+                if (strcmp(op->ui.name, ui_list[i].name) == 0) {
                     break;
                 }
             }
 
             if (i == ARRAY_LEN(ui_list)) {
-                log_printf(op, NULL, "Invalid \"ui\" option: %s", op->ui_str);
+                log_printf(op, NULL, "Invalid \"ui\" option: %s", op->ui.name);
                 i = 0;
             }
         } else {
@@ -179,6 +180,8 @@ int ui_init(Options *op)
      */
 
     if (!__ui->init(op, nv_format_text_rows)) return FALSE;
+
+    op->ui.indeterminate_data = indeterminate_init();
 
     /* handle some common signals */
 
@@ -463,6 +466,15 @@ int ui_paged_prompt (Options *op, const char *question, const char *pager_title,
 }
 
 
+/*
+ * ui_status_begin(): create a new status indicator and displays it immediately
+ *
+ * title: a title that will be displayed for the life of the status indicator.
+ * fmt, ...: a printf(3)-style message which may be replaced by other messages
+ *          during the life of the status indicator. This argument is optional
+ *          and may be passed NULL.
+ */
+
 void ui_status_begin(Options *op, const char *title, const char *fmt, ...)
 {
     char *msg;
@@ -473,11 +485,20 @@ void ui_status_begin(Options *op, const char *title, const char *fmt, ...)
  
     NV_VSNPRINTF(msg, fmt);
 
+    op->ui.status_active = TRUE;
+
     __ui->status_begin(op, title, msg);
     free(msg);
 }
 
-
+/*
+ * ui_status_update(): update the position of the status indicator
+ *
+ * percent: a number from 0.0 to 1.0 indicating the level of completion
+ * fmt, ...: replaces any previously displayed status message; note that some
+ *           UI implementations (e.g. stream) may only display the initial
+ *           message, if any, that was provided with ui_status_begin().
+ */
 
 void ui_status_update(Options *op, const float percent, const char *fmt, ...)
 {
@@ -491,8 +512,62 @@ void ui_status_update(Options *op, const float percent, const char *fmt, ...)
     free(msg);
 }
 
+struct indeterminate_args {
+    Options *op;
+    char *msg;
+};
+
+static void *indeterminate_worker(void *p)
+{
+    struct indeterminate_args *args = p;
+    Options *op = args->op;
+    char *msg = nvstrdup(args->msg);
+    IndeterminateData *id = op->ui.indeterminate_data;
+
+    while (indeterminate_get(id) == INDETERMINATE_ACTIVE) {
+        __ui->update_indeterminate(op, msg);
+    }
+
+    nvfree(msg);
+    return NULL;
+}
 
 
+/*
+ * ui_indeterminate_begin(): display an "indeterminate" status indicator for
+ * a task with an unknown completion point. This indicator will be shown until
+ * it is ended with ui_indeterminate_end();
+ *
+ * fmt, ...: same as ui_status_update()
+ */
+
+void ui_indeterminate_begin(Options *op, const char *fmt, ...)
+{
+    IndeterminateData *id = op->ui.indeterminate_data;
+    static struct indeterminate_args args;
+    char *msg;
+
+    if (!op->silent && fmt != NULL) {
+        NV_VSNPRINTF(msg, fmt);
+        args.op = op;
+        args.msg = msg;
+
+        indeterminate_begin(id, indeterminate_worker, &args);
+    }
+}
+
+/*
+ * ui_indeterminate_end(): terminate an indeterminate status indicator
+ */
+
+void ui_indeterminate_end(Options *op)
+{
+    indeterminate_end(op->ui.indeterminate_data);
+}
+
+/*
+ * ui_status_end(): finish the progress indicator created with ui_status_begin()
+ */
 void ui_status_end(Options *op, const char *fmt, ...)
 {
     char *msg;
@@ -502,6 +577,8 @@ void ui_status_end(Options *op, const char *fmt, ...)
     if (!op->silent) __ui->status_end(op, msg);
     log_printf(op, NV_BULLET_STR, "%s", msg);
     free(msg);
+
+    op->ui.status_active = FALSE;
 }
 
 
@@ -516,6 +593,8 @@ void ui_close (Options *op)
 
     __ui = NULL;
 
+    indeterminate_destroy(op->ui.indeterminate_data);
+    op->ui.indeterminate_data = NULL;
 } /* ui_close() */
 
 

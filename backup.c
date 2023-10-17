@@ -843,12 +843,12 @@ static int do_uninstall(Options *op, const char *version,
         ui_log(op, "Running %sldconfig:", op->skip_depmod ? "" : "depmod and ");
 
         if (!op->skip_depmod) {
-            char *cmd = nvstrcat(op->utils[DEPMOD], " -a ", op->kernel_name, NULL);
-            status |= run_command(op, cmd, NULL, FALSE, NULL, FALSE);
-            nvfree(cmd);
+            status |= run_command(op, NULL, FALSE, NULL, FALSE,
+                                  op->utils[DEPMOD], " -a ", op->kernel_name, NULL);
         }
 
-        status |= run_command(op, op->utils[LDCONFIG], NULL, FALSE, NULL, FALSE);
+        status |= run_command(op, NULL, FALSE, NULL, FALSE,
+                              op->utils[LDCONFIG], NULL);
 
         if (status == 0) {
             ui_log(op, "done.");
@@ -867,7 +867,7 @@ static int do_uninstall(Options *op, const char *version,
             char *cmd = nvstrcat(op->utils[SYSTEMCTL], " daemon-reload", NULL);
 
             ui_log(op, "Running `%s`:", cmd);
-            status = run_command(op, cmd, NULL, FALSE, NULL, FALSE);
+            status = run_command(op, NULL, FALSE, NULL, FALSE, cmd, NULL);
             nvfree(cmd);
 
             if (status == 0) {
@@ -1445,15 +1445,11 @@ int uninstall_existing_driver(Options *op, const int interactive,
  */
 static int check_skip_depmod_support(Options *op, const char *uninstaller)
 {
-    char *cmd = nvstrcat(uninstaller, " -A | ", op->utils[GREP],
-                         " -q '^ \\+--skip-depmod$'", NULL);
-
-    int ret = run_command(op, cmd, NULL, FALSE, NULL, FALSE);
-
-    nvfree(cmd);
 
     /* exit status is 0 in case of success, so invert here */
-    return !ret;
+    return !run_command(op, NULL, FALSE, NULL, FALSE,
+                        uninstaller, " -A | ", op->utils[GREP],
+                        " -q '^ \\+--skip-depmod$'", NULL);
 }
 
 
@@ -1474,7 +1470,6 @@ int run_existing_uninstaller(Options *op)
 
     if (uninstaller) {
         char *uninstall_log_dir, *uninstall_log_file, *uninstall_log_path;
-        char *uninstall_cmd = NULL;
         char *data = NULL;
         int ret;
 
@@ -1494,21 +1489,19 @@ int run_existing_uninstaller(Options *op)
 
         /* Run the uninstaller non-interactively, and explicitly log to the
          * uninstall log location: older installers may not do so implicitly. */
-        uninstall_cmd = nvstrcat(uninstaller, " -s --log-file-name=",
-                                 uninstall_log_path,
-                                 skip_depmod ? " --skip-depmod" : NULL,
-                                 NULL);
-
-        ui_log(op, "Uninstalling the previous installation with %s.",
-               uninstaller);
-
-        ret = run_command(op, uninstall_cmd, &data, FALSE, NULL, TRUE);
-
-        nvfree(uninstall_cmd);
+        ui_status_begin(op, "Uninstalling the previous installation", "");
+        ui_indeterminate_begin(op, "Running `%s...`", uninstaller);
+        ret = run_command(op, &data, FALSE, NULL, TRUE,
+                          uninstaller, " -s --log-file-name=",
+                          uninstall_log_path,
+                          skip_depmod ? " --skip-depmod" : NULL,
+                          NULL);
+        ui_indeterminate_end(op);
 
         /* if nvidia-uninstall succeeded, return early; otherwise, fall back to
          * uninstalling via the backup log file. */
         if (ret != 0) {
+            ui_status_end(op, "failed.");
             ui_log(op, "%s failed; see %s for more details.", uninstaller,
                    uninstall_log_path);
             if (data && strlen(data)) {
@@ -1521,6 +1514,7 @@ int run_existing_uninstaller(Options *op)
         nvfree(uninstall_log_path);
 
         if (ret == 0) {
+            ui_status_end(op, "done.");
             return TRUE;
         }
     }

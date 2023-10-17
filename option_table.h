@@ -116,6 +116,8 @@ enum {
     SYSTEMD_SLEEP_PREFIX_OPTION,
     SYSTEMD_SYSCONF_PREFIX_OPTION,
     GBM_BACKEND_DIR_OPTION,
+    ALLOW_INSTALLATION_WITH_RUNNING_DRIVER_OPTION,
+    REBUILD_INITRAMFS_OPTION,
 };
 
 static const NVGetoptOption __options[] = {
@@ -474,11 +476,11 @@ static const NVGetoptOption __options[] = {
       "Normally, nvidia-installer aborts installation if the nouveau kernel "
       "driver is in use.  Use this option to disable this check." },
 
-    { "disable-nouveau", 'Z', 0, NULL,
-      "If the nouveau kernel module is detected by nvidia-installer, the "
-      "installer offers to attempt to disable nouveau. The default action "
-      "is to not attempt to disable nouveau; use this option to change the "
-      "default action to attempt to disable nouveau."},
+    { "disable-nouveau", 'Z', NVGETOPT_IS_BOOLEAN, NULL,
+      "nvidia-installer will attempt to disable the nouveau kernel driver "
+      "by default, if it is in use during installation. Use "
+      "'--no-disable-nouveau to prevent nvidia-installer from disabling "
+      "nouveau by default."},
 
     { "run-nvidia-xconfig", 'X', 0, NULL,
       "nvidia-installer can optionally invoke the nvidia-xconfig utility.  "
@@ -713,6 +715,22 @@ static const NVGetoptOption __options[] = {
       "The path within the driver package that contains the kernel module "
       "build files is normally 'kernel/'.  This option can be used to "
       "override this value." },
+
+    { "allow-installation-with-running-driver",
+      ALLOW_INSTALLATION_WITH_RUNNING_DRIVER_OPTION, NVGETOPT_IS_BOOLEAN, NULL,
+      "Proceed with installation even if an NVIDIA driver is already installed "
+      "and running."
+    },
+
+    { "rebuild-initramfs",
+      REBUILD_INITRAMFS_OPTION, NVGETOPT_IS_BOOLEAN, NULL,
+      "Rebuild the initramfs after installation is complete, regardless of the "
+      "default action recommended by nvidia-installer.  --no-rebuild-initramfs "
+      "skips rebuilding the initramfs after installation is complete.  These "
+      "options are useful for non-interactive installations when a specific "
+      "behavior is desired, regardless of what nvidia-installer would "
+      "recommend by default in an interactive installation."
+    },
 
     /* Orphaned options: These options were in the long_options table in
      * nvidia-installer.c but not in the help. */

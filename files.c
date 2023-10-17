@@ -43,6 +43,7 @@
 #include "misc.h"
 #include "precompiled.h"
 #include "backup.h"
+#include "kernel.h"
 
 
 static void  get_x_library_and_module_paths(Options *op);
@@ -227,7 +228,17 @@ int copy_file(Options *op, const char *srcfile,
                   srcfile, strerror (errno));
         goto done;
     }
-    if ((dst_fd = open(dstfile, O_RDWR | O_CREAT | O_TRUNC, mode)) == -1) {
+    if (stat(dstfile, &stat_buf) == 0) {
+        /* Unlink any existing destination file first, to ensure that the
+          destination file will be newly created, rather than overwriting
+          the contents of a file which may be in use by another program. */
+        if (unlink(dstfile) == -1 && errno != ENOENT) {
+            ui_error (op, "Unable to delete existing file '%s' (%s)",
+                      dstfile, strerror (errno));
+            goto done;
+        }
+    }
+    if ((dst_fd = open(dstfile, O_RDWR | O_CREAT, mode)) == -1) {
         ui_error (op, "Unable to create '%s' for copying (%s)",
                   dstfile, strerror (errno));
         goto done;
@@ -1613,7 +1624,7 @@ int check_for_existing_rpms(Options *op)
 
     const char *rpms[2] = { "NVIDIA_GLX", "NVIDIA_kernel" };
 
-    char *data, *cmd;
+    char *data;
     int i, ret;
 
     if (op->no_rpms) {
@@ -1622,11 +1633,9 @@ int check_for_existing_rpms(Options *op)
     }
 
     for (i = 0; i < 2; i++) {
-        
-        cmd = nvstrcat("env LD_KERNEL_ASSUME=2.2.5 rpm --query ",
-                       rpms[i], NULL);
-        ret = run_command(op, cmd, NULL, FALSE, NULL, TRUE);
-        nvfree(cmd);
+        ret = run_command(op, NULL, FALSE, NULL, TRUE,
+                          "env LD_KERNEL_ASSUME=2.2.5 rpm --query ",
+                          rpms[i], NULL);
 
         if (ret == 0) {
             if (ui_multiple_choice(op, CONTINUE_ABORT_CHOICES,
@@ -1641,11 +1650,10 @@ int check_for_existing_rpms(Options *op)
                 ui_log(op, "Installation aborted.");
                 return FALSE;
             }
-            
-            cmd = nvstrcat("rpm --erase --nodeps ", rpms[i], NULL);
-            ret = run_command(op, cmd, &data, op->expert, NULL, TRUE);
-            nvfree(cmd);
-            
+
+            ret = run_command(op, &data, op->expert, NULL, TRUE,
+                              "rpm --erase --nodeps ", rpms[i], NULL);
+
             if (ret == 0) {
                 ui_log(op, "Removed %s.", rpms[i]);
             } else {
@@ -1736,21 +1744,20 @@ int pack_precompiled_files(Options *op, Package *p, int num_files,
                            PrecompiledFileInfo *files)
 {
     char time_str[256], *proc_version_string;
-    char *outfile, *descr;
+    char *outfile = NULL, *descr = NULL;
+    char *precompiled_dir = precompiled_kernel_interface_path(p);
     time_t t;
     struct utsname buf;
-    int ret;
-    PrecompiledInfo *info;
+    int ret = FALSE;
+    PrecompiledInfo *info = NULL;
 
     ui_log(op, "Packaging precompiled kernel interface.");
 
-    /* make sure the precompiled_kernel_interface_directory exists */
+    /* make sure the precompiled kernel interface directory exists */
 
-    if (!mkdir_recursive(op, p->precompiled_kernel_interface_directory, 0755,
-                         FALSE)) {
-        ui_error(op, "Failed to create the directory '%s'!",
-                 p->precompiled_kernel_interface_directory);
-        return FALSE;
+    if (!mkdir_recursive(op, precompiled_dir, 0755, FALSE)) {
+        ui_error(op, "Failed to create the directory '%s'!", precompiled_dir);
+        goto done;
     }
     
     /* use the time in the output string... should be fairly unique */
@@ -1777,7 +1784,7 @@ int pack_precompiled_files(Options *op, Package *p, int num_files,
 
     info = nvalloc(sizeof(PrecompiledInfo));
 
-    outfile = nvstrcat(p->precompiled_kernel_interface_directory, "/",
+    outfile = nvstrcat(precompiled_dir, "/",
                        PRECOMPILED_PACKAGE_FILENAME, "-", p->version,
                        ".", time_str, NULL);
 
@@ -1789,17 +1796,17 @@ int pack_precompiled_files(Options *op, Package *p, int num_files,
 
     ret = precompiled_pack(info, outfile);
 
+done:
+
+    nvfree(precompiled_dir);
     nvfree(outfile);
     free_precompiled(info);
 
-    if (ret) {
-        return TRUE;
-    }
-    else {
-        /* XXX precompiled_pack() never fails */
+    if (!ret) {
         ui_error(op, "Unable to package precompiled kernel interface.");
-        return FALSE;
     }
+
+    return ret;
 }
 
 
@@ -2167,25 +2174,24 @@ void process_dkms_conf(Options *op, Package *p)
 
 /*
  * set_security_context() - set the security context of the file to 'type'
- * Returns TRUE on success or if SELinux is disabled, FALSE otherwise
+ * Returns TRUE on success or if SELinux is disabled, FALSE otherwise.
+ * This relies on chcon(1), which might not work on some idiosyncratic
+ * systems: a possible alternative would be to directly use the xattr(7)
+ * API, but for now, chcon(1) is better for abstracting away the intimate
+ * details of the "security.selinux" xattr format. (See bug 3876232)
  */
 int set_security_context(Options *op, const char *filename, const char *type)
 {
-    char *cmd = NULL;
     int ret = FALSE;
     
     if (op->selinux_enabled == FALSE) {
         return TRUE;
     } 
-    
-    cmd = nvstrcat(op->utils[CHCON], " -t ", type, " ", filename, NULL);
-    
-    ret = run_command(op, cmd, NULL, FALSE, NULL, TRUE);
-    
-    ret = ((ret == 0) ? TRUE : FALSE);
-    nvfree(cmd);
-    
-    return ret;
+
+    ret = run_command(op, NULL, FALSE, NULL, TRUE,
+                      op->utils[CHCON], " -t ", type, " ", filename, NULL);
+
+    return ret == 0;
 }
 
 
@@ -2238,12 +2244,11 @@ static char * const compat_libdirs[] = {
 
 static char *get_ldconfig_cache(Options *op)
 {
-    char *data, *cmd;
+    char *data;
     int ret;
 
-    cmd = nvstrcat(op->utils[LDCONFIG], " -p", NULL);
-    ret = run_command(op, cmd, &data, FALSE, NULL, FALSE);
-    nvfree(cmd);
+    ret = run_command(op, &data, FALSE, NULL, FALSE,
+                      op->utils[LDCONFIG], " -p", NULL);
 
     if (ret != 0) {
         nvfree(data);
@@ -2618,7 +2623,7 @@ static int get_x_paths_helper(Options *op,
                               char **path,
                               int require_existing_directory)
 {
-    char *dirs, *cmd, *dir, *next;
+    char *dirs, *dir, *next;
     int ret, guessed = 0;
 
     /*
@@ -2641,9 +2646,8 @@ static int get_x_paths_helper(Options *op,
     if (op->utils[XSERVER] && xserver_cmd) {
 
         dirs = NULL;
-        cmd = nvstrcat(op->utils[XSERVER], " ", xserver_cmd, NULL);
-        ret = run_command(op, cmd, &dirs, FALSE, NULL, TRUE);
-        nvfree(cmd);
+        ret = run_command(op, &dirs, FALSE, NULL, TRUE,
+                          op->utils[XSERVER], " ", xserver_cmd, NULL);
 
         if ((ret == 0) && dirs) {
             
@@ -2687,10 +2691,8 @@ static int get_x_paths_helper(Options *op,
     if (op->utils[PKG_CONFIG]) {
 
         dirs = NULL;
-        cmd = nvstrcat(op->utils[PKG_CONFIG], " ",
-                pkg_config_cmd, NULL);
-        ret = run_command(op, cmd, &dirs, FALSE, NULL, TRUE);
-        nvfree(cmd);
+        ret = run_command(op, &dirs, FALSE, NULL, TRUE,
+                          op->utils[PKG_CONFIG], " ", pkg_config_cmd, NULL);
 
         if ((ret == 0) && dirs) {
 
@@ -2876,7 +2878,7 @@ int secure_delete(Options *op, const char *file)
         int ret;
         char *cmdline = nvstrcat(cmd, " -u \"", file, "\"", NULL);
 
-        ret = run_command(op, cmdline, NULL, FALSE, NULL, TRUE);
+        ret = run_command(op, NULL, FALSE, NULL, TRUE, cmdline, NULL);
         log_printf(op, NULL, "%s: %s", cmdline, ret == 0 ? "" : "failed!");
 
         nvfree(cmd);
@@ -3072,7 +3074,7 @@ static LibglvndInstallCheckResult run_libglvnd_script(Options *op, Package *p,
                                                       char **missing_libs)
 {
     const char *scriptPath = "./libglvnd_install_checker/check-libglvnd-install.sh";
-    char *cmdline = NULL, *output = NULL;
+    char *output = NULL;
     int status;
     LibglvndInstallCheckResult result = LIBGLVND_CHECK_RESULT_ERROR;
 
@@ -3089,8 +3091,8 @@ static LibglvndInstallCheckResult run_libglvnd_script(Options *op, Package *p,
         goto done;
     }
 
-    cmdline = nvasprintf("/bin/sh %s", scriptPath);
-    status = run_command(op, cmdline, &output, TRUE, NULL, FALSE);
+    status = run_command(op, &output, TRUE, NULL, FALSE,
+                         "/bin/sh ", scriptPath, NULL);
     if (WIFEXITED(status)) {
         result = WEXITSTATUS(status);
     } else {
@@ -3124,7 +3126,6 @@ static LibglvndInstallCheckResult run_libglvnd_script(Options *op, Package *p,
 
 done:
     nvfree(output);
-    nvfree(cmdline);
     return result;
 }
 
