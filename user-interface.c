@@ -586,15 +586,18 @@ void ui_status_end(Options *op, const char *fmt, ...)
 void ui_close (Options *op)
 {
     if (__ui) __ui->close(op);
-                       
+
     if (__extracted_user_interface_filename) {
         unlink(__extracted_user_interface_filename);
     }
 
     __ui = NULL;
 
-    indeterminate_destroy(op->ui.indeterminate_data);
-    op->ui.indeterminate_data = NULL;
+    if (op) {
+        /* ui_close() may be called with NULL op from a signal handler */
+        indeterminate_destroy(op->ui.indeterminate_data);
+        op->ui.indeterminate_data = NULL;
+    }
 } /* ui_close() */
 
 
