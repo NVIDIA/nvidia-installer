@@ -197,6 +197,10 @@ void get_installable_file_type_list(
             continue;
         }
 
+        if (type == FILE_TYPE_KERNEL_MODULE && op->dkms_registered) {
+            continue;
+        }
+
         if (((type == FILE_TYPE_NVIDIA_MODPROBE) ||
              (type == FILE_TYPE_NVIDIA_MODPROBE_MANPAGE)) &&
             !op->nvidia_modprobe) {
@@ -234,4 +238,10 @@ void add_symlinks_to_file_type_list(PackageEntryFileTypeList *file_type_list)
 
         file_type_list->types[type] = 1;
     }
+}
+
+void remove_file_type_from_file_type_list(PackageEntryFileTypeList *list,
+                                          PackageEntryFileType type)
+{
+    list->types[type] = 0;
 }

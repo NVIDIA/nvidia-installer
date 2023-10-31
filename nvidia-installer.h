@@ -294,6 +294,7 @@ typedef struct __options {
     char *external_platform_json_path;
 
     int kernel_module_signed;
+    int dkms_registered;
 
     void *ui_priv; /* for use by the ui's */
 

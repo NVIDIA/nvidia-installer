@@ -285,19 +285,26 @@ int install_from_cwd(Options *op)
     if (!op->kernel_modules_only && !op->no_opengl_files) {
         add_libgl_abi_symlink(op, p);
     }
-    
-    /*
-     * uninstall the existing driver; this needs to be done before
-     * building the command list.
-     *
-     * XXX if we uninstall now, then build the command list, and
-     * then ask the user if they really want to execute the
-     * command list, if the user decides not to execute the
-     * command list, they'll be left with no driver installed.
-     */
 
     if (!op->kernel_modules_only) {
+        /*
+         * uninstall the existing driver; this needs to be done before
+         * building the command list.
+         *
+         * XXX if we uninstall now, then build the command list, and
+         * then ask the user if they really want to execute the
+         * command list, if the user decides not to execute the
+         * command list, they'll be left with no driver installed.
+         */
         if (!run_existing_uninstaller(op)) goto failed;
+
+        /* initialize the backup log */
+        if (!init_backup(op, p)) goto failed;
+    }
+
+    if (!op->no_kernel_modules) {
+        /*  Import the modules into DKMS, if requested */
+        dkms_register_module(op, p, get_kernel_name(op));
     }
 
     if (!check_libglvnd_files(op, p)) {
@@ -312,12 +319,6 @@ int install_from_cwd(Options *op)
     
     if (!ui_approve_command_list(op, c, "%s", p->description)) {
         goto exit_install;
-    }
-    
-    /* initialize the backup log file */
-
-    if (!op->kernel_modules_only) {
-        if (!init_backup(op, p)) goto failed;
     }
 
     /* execute the command list */
@@ -353,14 +354,6 @@ int install_from_cwd(Options *op)
      */
 
     check_installed_files_from_package(op, p);
-
-    /*
-     * Import the kernel modules into DKMS, if requested. This is done after
-     * the post-install sanity check because DKMS may move or rename files
-     */
-
-    dkms_register_module(op, p, get_kernel_name(op));
-
 
     /* done */
 

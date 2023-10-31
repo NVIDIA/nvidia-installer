@@ -2458,19 +2458,18 @@ int dkms_module_installed(Options* op, const char *driver, const char *kernel)
 
 
 /*
- * Generate a tar archive conforming to the `dkms mktarball --binaries-only`
- * export format.
+ * Generate a tar archive conforming to the `dkms mktarball` export format.
  */
 static char *dkms_gen_tarball(Options *op, Package *p, const char *kernel)
 {
-    char *tmpdir, *binariesdir, *treedir, *builddir, *logdir, *moduledir, *dst;
+    char *tmpdir, *sourcedir, *treedir, *builddir, *logdir, *moduledir, *dst;
     char *tarball = NULL;
     int ret, i;
 
     tmpdir = make_tmpdir(op);
     if (!tmpdir) return NULL;
 
-    binariesdir = nvdircat(tmpdir, "dkms_binaries_only", NULL);
+    sourcedir = nvdircat(tmpdir, "dkms_source_tree", NULL);
     treedir = nvdircat(tmpdir, "dkms_main_tree", NULL);
     builddir = nvdircat(treedir, kernel, get_machine_arch(op), NULL);
     logdir = nvdircat(builddir, "log", NULL);
@@ -2492,33 +2491,57 @@ static char *dkms_gen_tarball(Options *op, Package *p, const char *kernel)
     nvfree(dst);
     if (!ret) goto done;
 
-    /* Write the "binaries_only" metadata to the tarball staging directory */
-    dst = nvdircat(binariesdir, "PACKAGE_NAME", NULL);
-    ret = nv_string_to_file(dst, "nvidia");
-    nvfree(dst);
-    if (!ret) goto done;
-
-    dst = nvdircat(binariesdir, "PACKAGE_VERSION", NULL);
-    ret = nv_string_to_file(dst, p->version);
-    nvfree(dst);
-    if (!ret) goto done;
-
-    /* Copy the (already installed) dkms.conf file to the staging directory */
+    /* Copy the module sources and dkms.conf to the staging directory */
     ret = FALSE;
-    dst = nvdircat(binariesdir, "dkms.conf", NULL);
     for (i = 0; i < p->num_entries; i++) {
-        if (p->entries[i].type == FILE_TYPE_DKMS_CONF) {
-            ret = copy_file(op, p->entries[i].dst, dst, 0644);
+        char *dst_copy, *dstdir;
+        char *dkms_dstdir, *dkms_srcdir;
+
+        switch (p->entries[i].type) {
+        case FILE_TYPE_DKMS_CONF:
+        case FILE_TYPE_KERNEL_MODULE_SRC:
+            dst = nvdircat(sourcedir, p->entries[i].path, p->entries[i].name,
+                           NULL);
+            dst_copy = nvstrdup(dst);
+            dstdir = dirname(dst_copy);
+
+            if (!directory_exists(dstdir)) {
+                ret = mkdir_recursive(op, dstdir, 0755, FALSE);
+            }
+
+            dkms_srcdir = nvstrcat("/usr/src/nvidia-", p->version, NULL);
+            dkms_dstdir = nvdircat(dkms_srcdir, p->entries[i].path, NULL);
+            nvfree(dkms_srcdir);
+
+            /*
+             * Create any missing directories which will contain the kernel
+             * module sources once the modules are installed via DKMS. This
+             * is done ahead of time, with mkdir logging enabled, so these
+             * directories can be removed upon uninstallation.
+             */
+            if (!directory_exists(dkms_dstdir)) {
+                mkdir_recursive(op, dkms_dstdir, 0755, TRUE);
+            }
+
+            nvfree(dkms_dstdir);
+
+            ret = ret && copy_file(op, p->entries[i].file, dst, 0644);
+            nvfree(dst);
+            nvfree(dst_copy);
+            if (!ret) goto done;
+            break;
+        default:
             break;
         }
     }
-    nvfree(dst);
+
+    /* If ret wasn't set to TRUE above, there are no source files */
     if (!ret) goto done;
 
     ret = mkdir_recursive(op, moduledir, 0755, FALSE);
     if (!ret) goto done;
 
-    /* Copy the (already built and installed) kernel modules */
+    /* Copy the (already built) kernel modules */
     for (i = 0; i < p->num_kernel_modules; i++) {
         char *src = nvdircat(p->kernel_module_build_directory,
                              p->kernel_modules[i].module_filename, NULL);
@@ -2557,7 +2580,7 @@ static char *dkms_gen_tarball(Options *op, Package *p, const char *kernel)
 done:
     remove_directory(op, tmpdir);
     nvfree(tmpdir);
-    nvfree(binariesdir);
+    nvfree(sourcedir);
     nvfree(treedir);
     nvfree(builddir);
     nvfree(logdir);
@@ -2600,7 +2623,7 @@ void dkms_register_module(Options *op, Package *p, const char *kernel)
     ui_status_begin(op, "Registering the kernel modules with DKMS:",
                     "Generating DKMS tarball");
 
-    /* Create a DKMS "binaries_only" tarball */
+    /* Create a DKMS tarball */
     tarball = dkms_gen_tarball(op, p, kernel);
     if (tarball) {
         char *cmd, *output;
@@ -2648,9 +2671,11 @@ done:
     } else {
         ui_status_end(op, "Error.");
         ui_warn(op, "Failed to register the NVIDIA kernel modules with DKMS. "
-                    "The NVIDIA kernel modules were installed, but will not be "
-                    "automatically rebuilt if you change your kernel.");
+                    "The NVIDIA kernel modules will be installed, but will not "
+                    "be automatically rebuilt if you change your kernel.");
     }
+
+    op->dkms_registered = ret;
 }
 
 /*
