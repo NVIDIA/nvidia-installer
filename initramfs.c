@@ -26,47 +26,46 @@
 #include "conflicting-kernel-modules.h"
 
 /*
- * get_initramfs_path() - Test well-known locations for the existence of
- * candidate initramfs files. If there is more than one candidate, prompt the
- * user to select one of them. Returns the found (if one) or selected (if more
- * than one found) file, or NULL if no file is found or the user declines to
- * select one.
+ * find_initramfs_images() - Locate initramfs image files whose names conform
+ * to well-known patterns. Returns the number of located image files. If the
+ * caller supplies a pointer to an array of strings, the list of found images
+ * will be returned in a heap-allocated NULL-terminated list via that pointer.
  */
-
-static char *get_initramfs_path(Options *op)
+static int find_initramfs_images(Options *op, char ***found_paths)
 {
-    static char *path_ret;
-    static int attempted;
-    char *kernel_name;
+    char *kernel_name  = get_kernel_name(op);
+    int num_found_paths = 0;
 
-    if (attempted) {
-        /* This function has already been called: return the cached path value
-         * (which may be NULL if no path was found previously). */
-
-        return path_ret;
+    if (found_paths) {
+        *found_paths = NULL;
     }
 
-    kernel_name = get_kernel_name(op);
     if (kernel_name) {
-        int num_found_paths = 0, found_paths_size = 8;
-        int i;
-        char **found_paths = nvalloc(found_paths_size * sizeof(char*));
+        /* This must be at least two more than the number of times the
+         * __TEST_INITRAMFS_FILE macro is invoked below. One for a NULL
+         * terminator, and another for a "none of the above" option that
+         * may be added by a caller. */
+        const int found_paths_size = 8;
         char *tmp;
+
+        if (found_paths) {
+            *found_paths = nvalloc(found_paths_size * sizeof(char*));
+        }
 
         #define __TEST_INITRAMFS_FILE(format, str) { \
             char *path = nvasprintf("/boot/" format, str); \
             if (access(path, F_OK) == 0) { \
-                if (num_found_paths + 2 > found_paths_size) { \
-                    found_paths_size *= 2; \
-                    found_paths = nvrealloc(found_paths, \
-                                  found_paths_size * sizeof(char*)); \
+                if (found_paths && num_found_paths < found_paths_size - 2) { \
+                    (*found_paths)[num_found_paths] = path; \
                 } \
-                found_paths[num_found_paths++] = path; \
+                num_found_paths++; \
             } else { \
                 nvfree(path); \
             } \
         }
 
+        /* Don't forget to increase found_paths_size, if necessary, when
+         * adding additional templates. */
         __TEST_INITRAMFS_FILE("initramfs-%s.img", kernel_name);
         __TEST_INITRAMFS_FILE("initramfs-%s.img", "linux");
         __TEST_INITRAMFS_FILE("initramfs-%s.img", "linux-lts");
@@ -95,35 +94,67 @@ static char *get_initramfs_path(Options *op)
 
             nvfree(kernel_name_copy);
         }
-
-        if (num_found_paths == 1) {
-            path_ret = found_paths[0];
-        } else if (num_found_paths > 1) {
-            int answer;
-
-            /* We ensured we have enough space in __TEST_INITRAMFS_FILE() */
-            found_paths[num_found_paths] = "Use none of these";
-
-            answer = ui_multiple_choice(op, (const char * const*)found_paths,
-                                        num_found_paths + 1, num_found_paths,
-                                        "More than one initramfs file found. "
-                                        "Which file would you like to use?");
-            if (answer < num_found_paths) {
-                /* answer == found_paths means the user opted out */
-                path_ret = found_paths[answer];
-            }
-        }
-
-        /* Clean up the paths that we're not returning */
-        for (i = 0; i < num_found_paths; i++) {
-            if (found_paths[i] != path_ret) {
-                nvfree(found_paths[i]);
-            }
-        }
-        nvfree(found_paths);
-
     }
-    attempted = TRUE;
+
+    return num_found_paths;
+}
+
+/*
+ * get_initramfs_path() - Test well-known locations for the existence of
+ * candidate initramfs files. If there is more than one candidate, optionally
+ * prompt the user to select one of them. Returns the found (if one) or
+ * selected (if more than one found, and function is run interactively) file,
+ * or NULL if no file is found or multiple candidates exist and the user does
+ * not select one (either because the function is run non-interactively or the
+ * user declines to select one when prompted.
+ */
+
+static char *get_initramfs_path(Options *op, int interactive)
+{
+    static char *path_ret = NULL;
+    static int attempted = FALSE;
+    int num_found_paths;
+    char **found_paths;
+    int i;
+
+    if (attempted) {
+        /* This function has already been called: return the cached path value
+         * (which may be NULL if no path was found previously). */
+
+        return path_ret;
+    }
+
+    num_found_paths = find_initramfs_images(op, &found_paths);
+
+    if (num_found_paths == 1) {
+        path_ret = found_paths[0];
+    } else if (num_found_paths > 1 && interactive) {
+        int answer;
+
+        /* We ensured we have enough space in find_initramfs_images() */
+        found_paths[num_found_paths] = "Use none of these";
+
+        answer = ui_multiple_choice(op, (const char * const*)found_paths,
+                                    num_found_paths + 1, num_found_paths,
+                                    "More than one initramfs file found. "
+                                    "Which file would you like to use?");
+        if (answer < num_found_paths) {
+            /* answer == found_paths means the user opted out */
+            path_ret = found_paths[answer];
+        }
+    }
+
+    /* Clean up the paths that we're not returning */
+    for (i = 0; i < num_found_paths; i++) {
+        if (found_paths[i] != path_ret) {
+            nvfree(found_paths[i]);
+        }
+    }
+    nvfree(found_paths);
+
+    /* If a path is not found in non-interactive mode, allow trying again in
+     * interactive mode later. */
+    attempted = path_ret || interactive;
 
     return path_ret;
 }
@@ -224,7 +255,7 @@ static int get_tool_index(Options *op, const InitramfsTool *tool)
         return -1;
     }
 
-    if (tool->requires_path && get_initramfs_path(op) == NULL) {
+    if (tool->requires_path && find_initramfs_images(op, NULL) == 0) {
         return -1;
     }
 
@@ -416,10 +447,12 @@ static int run_initramfs_tool(Options *op, int tool, char **data,
 
     /* Run with only the initramfs path, if a kernel is not required. */
     if (ret != 0 && !kernel_required) {
+        char *initramfs_path = get_initramfs_path(op, interactive);
+
         if (data) {
             nvfree(*data);
         }
-        ret = initramfs_tool_helper(op, tool, NULL, get_initramfs_path(op),
+        ret = initramfs_tool_helper(op, tool, NULL, initramfs_path,
                                     data, interactive);
     }
 
@@ -434,11 +467,13 @@ static int run_initramfs_tool(Options *op, int tool, char **data,
 
     /* Run with both the kernel and initramfs path. */
     if (ret != 0) {
+        char *initramfs_path = get_initramfs_path(op, interactive);
+
         if (data) {
             nvfree(*data);
         }
         ret = initramfs_tool_helper(op, tool, get_kernel_name(op),
-                                    get_initramfs_path(op), data, interactive);
+                                    initramfs_path, data, interactive);
     }
 
     return ret;
@@ -447,18 +482,31 @@ static int run_initramfs_tool(Options *op, int tool, char **data,
 static pthread_t scan_thread;
 
 typedef struct {
+    /* Index into initramfs_tools[] for the initramfs scanning tool. A negative
+     * index indicates that no suitable tool was found. The index should be
+     * initialized with either the return value of find_initramfs_tool() or a
+     * negative value. */
     int tool;
+
+    /* Flags to indicate the reults of an attempted initramfs scan. These flags
+     * should all be zero-initialized before the first scan attempt. */
+
+    /* Initramfs scan detected Nouveau in the initramfs */
     int nouveau_ko_detected;
+    /* Initramfs scan detected NVIDIA kernel modules in the initramfs */
     int nvidia_ko_detected;
-    int scan_attempted;
-    int scan_succeeded;
+    /* A non-interactive scan was attempted, but interaction is required to
+     * complete the scan (e.g. because the user needs to make a choice between
+     * more than one available candidate tool). */
+    int try_scan_again;
+    /* The initramfs was successfully scanned and the *_ko_detected flags can
+     * be trusted to accurately reflect the contents of the initramfs. */
+    int scan_complete;
 } ScanThreadData;
 
 static void scan_initramfs(Options *op, ScanThreadData *data, int interactive)
 {
-    if (data->tool < 0) {
-        ui_log(op, "Unable to scan initramfs: no tool found");
-    } else {
+    if (data->tool >= 0) {
         char *listing;
         int ret;
 
@@ -466,8 +514,7 @@ static void scan_initramfs(Options *op, ScanThreadData *data, int interactive)
                initramfs_tools[data->tool].name);
 
         ret = run_initramfs_tool(op, data->tool, &listing, interactive);
-        data->scan_attempted = TRUE;
-        data->scan_succeeded = FALSE;
+        data->scan_complete = FALSE;
 
         if (ret == 0) {
             int i;
@@ -494,17 +541,22 @@ static void scan_initramfs(Options *op, ScanThreadData *data, int interactive)
                 }
             }
 
-            data->scan_succeeded = TRUE;
+            data->scan_complete = TRUE;
         }
         nvfree(listing);
 
+        /* If the scan failed in non-interactive mode, we'll want to try again
+         * in interactive mode later. */
+        data->try_scan_again = !interactive && !data->scan_complete;
         ui_log(op, "Initramfs scan %s.", ret == 0 ? "complete" : "failed");
+    } else {
+        ui_log(op, "Unable to scan initramfs: no tool found");
     }
 }
 
 static void *initramfs_scan_worker(void *arg)
 {
-    static ScanThreadData data;
+    static ScanThreadData data = {};
     Options *op = arg;
 
     data.tool = find_initramfs_tool(op, INITRAMFS_LIST_TOOL, NON_INTERACTIVE);
@@ -577,7 +629,7 @@ int update_initramfs(Options *op)
         data_pointer = &data;
     }
 
-    if (!data_pointer->scan_attempted) {
+    if (data_pointer->try_scan_again) {
         data_pointer->tool = find_initramfs_tool(op, INITRAMFS_LIST_TOOL,
                                                  INTERACTIVE);
 
@@ -611,13 +663,13 @@ int update_initramfs(Options *op)
                                          "condition(s):\n%s\n"
                                          "Would you like to rebuild the "
                                          "initramfs?", reason);
-        } else if (data_pointer->tool < 0 || !data_pointer->scan_succeeded) {
+        } else if (data_pointer->scan_complete) {
+            ui_log(op, "No NVIDIA modules detected in the initramfs.");
+            ret = TRUE;
+        } else {
             rebuild = ui_multiple_choice(op, choices, 2, 0,
                                          "%s Would you like to rebuild "
                                          "the initramfs?", no_listing);
-        } else {
-            ui_log(op, "No NVIDIA modules detected in the initramfs.");
-            ret = TRUE;
         }
 
         if (rebuild) {
@@ -638,10 +690,10 @@ int update_initramfs(Options *op)
                     "due to the following condition(s):\n%s\n"
                     "Please consult your distribution's documentation for "
                     "instructions on how to rebuild the initramfs.", reason);
-	ret = TRUE;
-    } else if (data_pointer->tool < 0 || !data_pointer->scan_succeeded) {
+        ret = TRUE;
+    } else if (!data_pointer->scan_complete) {
         ui_message(op, "%s", no_listing);
-	ret = TRUE;
+        ret = TRUE;
     }
 
     nvfree(reason);
