@@ -41,8 +41,6 @@ NCURSES6_CFLAGS       ?=
 NCURSES6_LDFLAGS      ?=
 NCURSESW6_CFLAGS      ?=
 NCURSESW6_LDFLAGS     ?=
-PCIACCESS_CFLAGS      ?=
-PCIACCESS_LDFLAGS     ?=
 
 BUILD_NCURSES6 = $(if $(NCURSES6_CFLAGS)$(NCURSES6_LDFLAGS),1,)
 BUILD_NCURSESW6 = $(if $(NCURSESW6_CFLAGS)$(NCURSESW6_LDFLAGS),1,)
@@ -63,15 +61,23 @@ NVIDIA_INSTALLER_VERSION := $(NVIDIA_VERSION)
 NCURSES_UI_C       = ncurses-ui.c
 NCURSES_UI_O       = $(call BUILD_OBJECT_LIST,$(NCURSES_UI_C))
 NCURSES_UI_SO      = $(OUTPUTDIR)/nvidia-installer-ncurses-ui.so
-NCURSES_UI_SO_C    = $(OUTPUTDIR)/g_$(notdir $(NCURSES_UI_SO:.so=.c))
 NCURSES6_UI_O      = $(OUTPUTDIR)/ncurses6-ui.o
 NCURSES6_UI_SO     = $(OUTPUTDIR)/nvidia-installer-ncurses6-ui.so
-NCURSES6_UI_SO_C   = $(OUTPUTDIR)/g_$(notdir $(NCURSES6_UI_SO:.so=.c))
 NCURSESW6_UI_O     = $(OUTPUTDIR)/ncursesw6-ui.o
 NCURSESW6_UI_SO    = $(OUTPUTDIR)/nvidia-installer-ncursesw6-ui.so
-NCURSESW6_UI_SO_C  = $(OUTPUTDIR)/g_$(notdir $(NCURSESW6_UI_SO:.so=.c))
 
-GEN_UI_ARRAY       = $(OUTPUTDIR)/gen-ui-array
+# user-interface.o depends on the generated UI headers
+NCURSES_UI_HEADERS = $(NCURSES_UI_SO).h
+NCURSES_UI_HEADERS += $(if $(BUILD_NCURSES6),$(NCURSES6_UI_SO).h,)
+NCURSES_UI_HEADERS += $(if $(BUILD_NCURSESW6),$(NCURSESW6_UI_SO).h,)
+$(call BUILD_OBJECT_LIST,user-interface.c): $(NCURSES_UI_HEADERS)
+
+UI_SOS = $(NCURSES_UI_SO)
+UI_SOS += $(if $(BUILD_NCURSES6),$(NCURSES6_UI_SO),)
+UI_SOS += $(if $(BUILD_NCURSESW6),$(NCURSESW6_UI_SO),)
+
+UI_OBJS = $(addprefix $(OUTPUTDIR)/,$(addsuffix .o,$(notdir $(UI_SOS))))
+
 CONFIG_H           = $(OUTPUTDIR)/config.h
 
 MANPAGE            = $(OUTPUTDIR)/nvidia-installer.1.gz
@@ -108,16 +114,10 @@ include dist-files.mk
 include $(COMMON_UTILS_DIR)/src.mk
 SRC += $(addprefix $(COMMON_UTILS_DIR)/,$(COMMON_UTILS_SRC))
 
-NCURSES_UI_SO_SRC = $(NCURSES_UI_SO_C)
-
-NCURSES_UI_SO_SRC += $(if $(BUILD_NCURSES6),$(NCURSES6_UI_SO_C),)
-NCURSES_UI_SO_SRC += $(if $(BUILD_NCURSESW6),$(NCURSESW6_UI_SO_C),)
 CFLAGS += $(if $(BUILD_NCURSES6),-DNV_INSTALLER_NCURSES6,)
 CFLAGS += $(if $(BUILD_NCURSESW6),-DNV_INSTALLER_NCURSESW6,)
 
-INSTALLER_SRC = $(SRC) $(NCURSES_UI_SO_SRC)
-
-INSTALLER_OBJS = $(call BUILD_OBJECT_LIST,$(INSTALLER_SRC))
+INSTALLER_OBJS = $(call BUILD_OBJECT_LIST,$(SRC)) $(UI_OBJS)
 
 common_cflags  = -I.
 common_cflags += -imacros $(CONFIG_H)
@@ -148,10 +148,7 @@ BUILD_MAKESELF_OBJECT_LIST = \
 MAKESELF_HELP_SCRIPT_OBJS = \
   $(call BUILD_MAKESELF_OBJECT_LIST,$(MAKESELF_HELP_SCRIPT_SRC))
 
-ALL_SRC = $(sort $(INSTALLER_SRC) $(NCURSES_UI_C) $(MKPRECOMPILED_SRC))
-
-# define a quiet rule for GEN-UI-ARRAY
-quiet_GEN_UI_ARRAY = GEN-UI-ARRAY $@
+ALL_SRC = $(sort $(SRC) $(NCURSES_UI_C) $(MKPRECOMPILED_SRC))
 
 
 ##############################################################################
@@ -197,13 +194,9 @@ $(MAKESELF_HELP_SCRIPT): $(MAKESELF_HELP_SCRIPT_OBJS)
 
 $(eval $(call DEBUG_INFO_RULES, $(NVIDIA_INSTALLER)))
 $(NVIDIA_INSTALLER).unstripped: $(INSTALLER_OBJS)
-	$(call quiet_cmd,LINK) $(CFLAGS) $(LDFLAGS) $(PCIACCESS_LDFLAGS) \
+	$(call quiet_cmd,LINK) $(CFLAGS) $(LDFLAGS) \
 	  $(BIN_LDFLAGS) $(INSTALLER_OBJS) -o $@ \
-	  $(LIBS) -Bstatic -lpciaccess -Bdynamic
-
-$(GEN_UI_ARRAY): gen-ui-array.c $(CONFIG_H)
-	$(call quiet_cmd,HOST_CC) $(HOST_CFLAGS) $(HOST_LDFLAGS) \
-	  $(HOST_BIN_LDFLAGS) $< -o $@
+	  $(PCIACCESS_LDFLAGS) $(LIBS)
 
 $(NCURSES_UI_SO): $(NCURSES_UI_O)
 	$(call quiet_cmd,LINK) -shared $(NCURSES_LDFLAGS) \
@@ -216,15 +209,6 @@ $(NCURSES6_UI_SO): $(NCURSES6_UI_O)
 $(NCURSESW6_UI_SO): $(NCURSESW6_UI_O)
 	$(call quiet_cmd,LINK) -shared $(NCURSESW6_LDFLAGS) \
 	  $(CFLAGS) $(LDFLAGS) $(BIN_LDFLAGS) $^ -o $@ -lncursesw $(LIBS)
-
-$(NCURSES_UI_SO_C): $(GEN_UI_ARRAY) $(NCURSES_UI_SO)
-	$(call quiet_cmd,GEN_UI_ARRAY) $(NCURSES_UI_SO) ncurses_ui_array > $@
-
-$(NCURSES6_UI_SO_C): $(GEN_UI_ARRAY) $(NCURSES6_UI_SO)
-	$(call quiet_cmd,GEN_UI_ARRAY) $(NCURSES6_UI_SO) ncurses6_ui_array > $@
-
-$(NCURSESW6_UI_SO_C): $(GEN_UI_ARRAY) $(NCURSESW6_UI_SO)
-	$(call quiet_cmd,GEN_UI_ARRAY) $(NCURSESW6_UI_SO) ncursesw6_ui_array > $@
 
 # misc.c includes pciaccess.h
 $(call BUILD_OBJECT_LIST,misc.c): CFLAGS += $(PCIACCESS_CFLAGS)
@@ -241,6 +225,12 @@ $(NCURSES_UI_O) $(NCURSES6_UI_O) $(NCURSESW6_UI_O): CFLAGS += -fPIC
 $(foreach src,$(ALL_SRC),$(eval $(call DEFINE_OBJECT_RULE,TARGET,$(src))))
 $(eval $(call DEFINE_OBJECT_RULE_WITH_OBJECT_NAME,TARGET,$(NCURSES_UI_C),$(NCURSES6_UI_O)))
 $(eval $(call DEFINE_OBJECT_RULE_WITH_OBJECT_NAME,TARGET,$(NCURSES_UI_C),$(NCURSESW6_UI_O)))
+
+# define the rules to pack the UI .so files into .o arrays
+$(foreach so,$(UI_SOS), \
+  $(eval $(call READ_ONLY_OBJECT_FROM_FILE_RULE,$(so))))
+$(foreach so,$(UI_SOS), \
+  $(eval $(call BINARY_DATA_HEADER_RULE,$(so))))
 
 # define a rule to build each makeself-help-script object file
 $(foreach src,$(MAKESELF_HELP_SCRIPT_SRC),\

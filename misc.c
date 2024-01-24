@@ -1662,6 +1662,84 @@ int check_for_running_x(Options *op)
 
 } /* check_for_running_x() */
 
+/*
+ * nvpci_dev_is_vgpu_gsp() - Check if 'is_vgpu_host_package.txt' file is present
+ * in the package. File 'is_vgpu_host_package.txt' is present in vGPU host
+ * packages only. Environment variables VGX_BUILD and VGX_KVM_BUILD are used to
+ * install vGPU host driver using *-internal.run on Xenserver and KVM
+ * respectively.
+ * If device_id is present in the list of devIDs of pGPUs that don't support GSP
+ * on vGPU then return FALSE, else return TRUE.
+ */
+static int nvpci_dev_is_vgpu_gsp(Package *p, unsigned int device_id)
+{
+    unsigned short vgpu_non_gsp_dev_ids[] = {
+        0x13bd, // Tesla M10,
+        0x13f2, // Tesla M60
+        0x13f3, // Tesla M6
+        0x15f7, // Tesla P100-PCIE-12GB
+        0x15f8, // Tesla P100-PCIE-16GB
+        0x15f9, // Tesla P100-SXM2-16GB
+        0x1b38, // Tesla P40
+        0x1bb3, // Tesla P4
+        0x1bb4, // Tesla P6
+        0x1db1, // Tesla V100-SXM2-16GB
+        0x1db3, // Tesla V100-FHHL-16GB
+        0x1db4, // Tesla V100-PCIE-16GB
+        0x1db5, // Tesla V100-SXM2-32GB
+        0x1db6, // Tesla V100-PCIE-32GB
+        0x1df6, // Tesla V100S-PCIE-32GB,
+        0x1e30, // Quadro RTX 8000, Quadro RTX 6000,
+        0x1e37, // PG150 SKU220, PG150 SKU215,
+        0x1e78, // Quadro RTX 8000, Quadro RTX 6000,
+        0x1eb8, // Tesla T4
+        0x20b0, // NVIDIA A100-SXM4-40GB
+        0x20b2, // NVIDIA A100-SXM4-80GB
+        0x20b5, // NVIDIA A100-PCIE-80GB, A100-PCIe-80GB LC,
+        0x20b7, // NVIDIA A30
+        0x20b8, // NVIDIA A100X,
+        0x20b9, // NVIDIA A30X,
+        0x20f1, // NVIDIA A100-PCIE-40GB
+        0x20f3, // NVIDIA A800-SXM4-80GB
+        0x20f5, // NVIDIA A800 80GB PCIe
+        0x20f6, // NVIDIA A800 PCIe 40GB Active,
+        0x20fd, // NVIDIA AX800,
+        0x2230, // NVIDIA RTX A6000
+        0x2231, // NVIDIA RTX A5000
+        0x2233, // NVIDIA RTX A5500,
+        0x2235, // NVIDIA A40
+        0x2236, // NVIDIA A10
+        0x2237, // NVIDIA A10G
+        0x2238, // NVIDIA A10M,
+        0x25b6, // NVIDIA A16, NVIDIA A2
+    };
+
+    int i, is_vgx_kvm_build = 0, is_vgx_build = 0;
+    const char *vgx_build = getenv("VGX_BUILD");
+    const char *vgx_kvm_build = getenv("VGX_KVM_BUILD");
+
+    if (vgx_build != NULL) {
+        is_vgx_build = 1;
+    }
+
+    if (vgx_kvm_build != NULL) {
+        is_vgx_kvm_build = 1;
+    }
+
+    /* Check if this is vGPU host package */
+    if ((access("./is_vgpu_host_package.txt", F_OK) == 0) || (is_vgx_build == 1) ||
+       (is_vgx_kvm_build == 1)) {
+
+        /* If device_id is present in the non-gsp devId list, return FALSE */
+        for (i = 0; i < ARRAY_LEN(vgpu_non_gsp_dev_ids); i++) {
+            if (device_id == vgpu_non_gsp_dev_ids[i]) {
+                return FALSE;
+            }
+        }
+        return TRUE;
+    }
+    return FALSE;
+}
 
 /*
  * check_for_nvidia_graphics_devices() - check if there are supported
@@ -1677,7 +1755,7 @@ void check_for_nvidia_graphics_devices(Options *op, Package *p)
     struct pci_device_iterator *iter;
     struct pci_device *dev;
     int i, found_supported_device = FALSE, found_self_hosted = FALSE;
-    int found_vga_device = FALSE;
+    int found_vga_device = FALSE, found_vgpu_gsp = FALSE, count = 0;
 
     if (pci_system_init()) {
         return;
@@ -1685,7 +1763,7 @@ void check_for_nvidia_graphics_devices(Options *op, Package *p)
 
     iter = nvpci_find_gpu_by_vendor(NV_PCI_VENDOR_ID);
 
-    for (dev = pci_device_next(iter); dev; dev = pci_device_next(iter)) {
+    for (dev = pci_device_next(iter); dev; dev = pci_device_next(iter), count++) {
         if (dev->device_id >= 0x0020 /* TNT or later */) {
             /*
              * First check if this GPU is a "legacy" GPU; if it is, print a
@@ -1753,6 +1831,11 @@ void check_for_nvidia_graphics_devices(Options *op, Package *p)
                 if (pci_devid_is_self_hosted(dev->device_id)) {
                     found_self_hosted = TRUE;
                 }
+
+                /* Check the first device in the system is vGPU GSP supported device */
+                if ((count == 0) && nvpci_dev_is_vgpu_gsp(p, dev->device_id)) {
+                    found_vgpu_gsp = TRUE;
+                }
             }
         }
     }
@@ -1773,7 +1856,7 @@ void check_for_nvidia_graphics_devices(Options *op, Package *p)
     if (!found_vga_device)
         op->no_nvidia_xconfig_question = TRUE;
 
-    if (found_self_hosted && !op->kernel_module_build_directory_override) {
+    if ((found_self_hosted || found_vgpu_gsp) && !op->kernel_module_build_directory_override) {
         ui_log(op, "This system requires use of the NVIDIA open kernel "
                "modules; these will be selected by default.");
         nvfree(p->kernel_module_build_directory);

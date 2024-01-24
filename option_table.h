@@ -44,6 +44,7 @@ enum {
     KERNEL_INSTALL_PATH_OPTION,
     UNINSTALL_OPTION,
     SKIP_MODULE_UNLOAD_OPTION,
+    SKIP_MODULE_LOAD_OPTION,
     PROC_MOUNT_POINT_OPTION,
     USER_INTERFACE_OPTION,
     LOG_FILE_NAME_OPTION,
@@ -158,6 +159,10 @@ static const NVGetoptOption __options[] = {
       NVGETOPT_OPTION_APPLIES_TO_NVIDIA_UNINSTALL, NULL,
       "When uninstalling the driver, skip unloading of the NVIDIA kernel "
       "module. This option is ignored when the driver is being installed." },
+
+    { "skip-module-load", SKIP_MODULE_LOAD_OPTION, 0, NULL,
+      "Skip the test load of the NVIDIA kernel modules after the modules are "
+      "built, and skip loading them after installation is complete."},
 
     { "sanity", SANITY_OPTION, 0, NULL,
       "Perform basic sanity tests on an existing NVIDIA "

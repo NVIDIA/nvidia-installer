@@ -71,6 +71,5 @@ DIST_FILES += nvidia-installer.1.m4
 DIST_FILES += gen-manpage-opts.c
 DIST_FILES += makeself-help-script.c
 
-DIST_FILES += gen-ui-array.c
 DIST_FILES += ncurses-ui.c
 DIST_FILES += mkprecompiled.c

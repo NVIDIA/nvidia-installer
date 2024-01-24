@@ -40,6 +40,14 @@
 #include "user-interface.h"
 #include "ui-status-indeterminate.h"
 
+#include "nvidia-installer-ncurses-ui.so.h"
+#if defined(NV_INSTALLER_NCURSES6)
+#include "nvidia-installer-ncurses6-ui.so.h"
+#endif
+#if defined(NV_INSTALLER_NCURSESW6)
+#include "nvidia-installer-ncursesw6-ui.so.h"
+#endif
+
 /*
  * global user interface pointer
  */
@@ -55,19 +63,6 @@ char *__extracted_user_interface_filename = NULL;
 /* pull in the default stream_ui dispatch table from stream_ui.c */
 
 extern InstallerUI stream_ui_dispatch_table;
-
-/* pull in the user interface data arrays and sizes */
-
-extern const char ncurses_ui_array[];
-extern const int ncurses_ui_array_size;
-#if defined(NV_INSTALLER_NCURSES6)
-extern const char ncurses6_ui_array[];
-extern const int ncurses6_ui_array_size;
-#endif
-#if defined(NV_INSTALLER_NCURSESW6)
-extern const char ncursesw6_ui_array[];
-extern const int ncursesw6_ui_array_size;
-#endif
 
 /* struct describing the ui data */
 
@@ -109,13 +104,20 @@ int ui_init(Options *op)
         /* { "nvidia-installer GTK+ user interface", NULL, NULL, 0 }, */
 #if defined(NV_INSTALLER_NCURSES6)
         { "ncurses6", "nvidia-installer ncurses v6 user interface", NULL,
-          ncurses6_ui_array, ncurses6_ui_array_size },
+          _binary_nvidia_installer_ncurses6_ui_so_start,
+          _binary_nvidia_installer_ncurses6_ui_so_end - _binary_nvidia_installer_ncurses6_ui_so_start
+        },
 #endif
         { "ncurses", "nvidia-installer ncurses user interface", NULL,
-          ncurses_ui_array, ncurses_ui_array_size },
+          _binary_nvidia_installer_ncurses_ui_so_start,
+          _binary_nvidia_installer_ncurses_ui_so_end - _binary_nvidia_installer_ncurses_ui_so_start
+        },
 #if defined(NV_INSTALLER_NCURSESW6)
         { "ncursesw6", "nvidia-installer ncurses v6 user interface (widechar)",
-          NULL, ncursesw6_ui_array, ncursesw6_ui_array_size },
+          NULL,
+          _binary_nvidia_installer_ncursesw6_ui_so_start,
+          _binary_nvidia_installer_ncursesw6_ui_so_end - _binary_nvidia_installer_ncursesw6_ui_so_start
+        },
 #endif
         { "none", NULL, NULL, NULL, 0 }
     };

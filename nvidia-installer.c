@@ -319,6 +319,8 @@ static void parse_commandline(int argc, char *argv[], Options *op)
             op->uninstall = TRUE; break;
         case SKIP_MODULE_UNLOAD_OPTION:
             op->skip_module_unload = TRUE; break;
+        case SKIP_MODULE_LOAD_OPTION:
+            op->skip_module_load = TRUE; break;
         case PROC_MOUNT_POINT_OPTION:
             op->proc_mount_point = strval; break;
         case USER_INTERFACE_OPTION:
