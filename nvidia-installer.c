@@ -520,6 +520,9 @@ static void parse_commandline(int argc, char *argv[], Options *op)
         case 'm':
             op->kernel_module_build_directory_override = strval;
             break;
+        case GBM_BACKEND_DIR_OPTION:
+            op->gbm_backend_dir = strval;
+            break;
         default:
             goto fail;
         }
