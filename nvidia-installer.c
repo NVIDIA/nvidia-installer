@@ -532,6 +532,9 @@ static void parse_commandline(int argc, char *argv[], Options *op)
             op->rebuild_initramfs = boolval ? NV_OPTIONAL_BOOL_TRUE :
                                               NV_OPTIONAL_BOOL_FALSE;
             break;
+        case GBM_BACKEND_DIR_OPTION:
+            op->gbm_backend_dir = strval;
+            break;
         default:
             goto fail;
         }
