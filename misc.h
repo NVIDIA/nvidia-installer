@@ -93,6 +93,7 @@ int check_installed_file(Options*, const char*, const mode_t, const uint32,
                          ui_message_func *logwarn);
 int check_for_running_x(Options *op);
 void query_xorg_version(Options *op);
+void pci_device_scan(Options *op);
 void check_for_nvidia_graphics_devices(Options *op, Package *p);
 int run_nvidia_xconfig(Options *op, int restore, const char *question, int answer);
 HookScriptStatus run_distro_hook(Options *op, const char *hook);

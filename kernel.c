@@ -334,7 +334,6 @@ int determine_kernel_source_path(Options *op, Package *p)
 int determine_kernel_output_path(Options *op)
 {
     char *str, *tmp;
-    int len;
 
     /* check --kernel-output-path */
 
@@ -376,11 +375,19 @@ int determine_kernel_output_path(Options *op)
     tmp = get_kernel_name(op);
 
     if (tmp) {
-        str = nvstrcat("/lib/modules/", tmp, "/source", NULL);
-        len = strlen(str);
+        char *source_path, *build_source_path;
+        int len_source_path, len_build_source_path;
 
-        if (!strncmp(op->kernel_source_path, str, len)) {
-            nvfree(str);
+        source_path = nvstrcat("/lib/modules/", tmp, "/source", NULL);
+        len_source_path = strlen(source_path);
+
+        build_source_path = nvstrcat("/lib/modules/", tmp, "/build/source", NULL);
+        len_build_source_path = strlen(build_source_path);
+
+        if ((!strncmp(op->kernel_source_path, source_path, len_source_path)) ||
+            (!strncmp(op->kernel_source_path, build_source_path, len_build_source_path))) {
+            nvfree(source_path);
+            nvfree(build_source_path);
             str = nvstrcat("/lib/modules/", tmp, "/build", NULL);
 
             if (directory_exists(str)) {
@@ -388,7 +395,10 @@ int determine_kernel_output_path(Options *op)
                 return TRUE;
             }
         }
-
+        else  {
+            nvfree(source_path);
+            nvfree(build_source_path);
+        }
         nvfree(str);
     }
 
@@ -2058,6 +2068,14 @@ static char *default_kernel_source_path(Options *op)
 
         nvfree(str);
 
+        str = nvstrcat("/lib/modules/", tmp, "/build/source", NULL);
+
+        if (directory_exists(str)) {
+            return str;
+        }
+
+        nvfree(str);
+
         str = nvstrcat("/lib/modules/", tmp, "/build", NULL);
     
         if (directory_exists(str)) {
@@ -2645,4 +2663,180 @@ static int kernel_configuration_conflict(Options *op, Package *p,
 #endif
 
     return FALSE;
+}
+
+/* These values correspond to the initial letter which will be matched using the
+ * --kernel-module-type command line option. */
+enum {
+    PROPRIETARY = 'p',
+    OPEN = 'o',
+};
+
+static struct {
+    char type;
+    char * const dir;
+    char * const license;
+} kernel_module_types[NUM_KERNEL_MODULE_TYPES] = {
+    { .type = PROPRIETARY, .dir = "kernel", .license = "NVIDIA Proprietary" },
+    { .type = OPEN, .dir = "kernel-open", .license = "MIT/GPL" },
+};
+
+int valid_kernel_module_types(Options *op, struct module_type_info *info)
+{
+    int num_valid_types = 0, i;
+
+    memset(info, 0, sizeof(*info));
+
+    for (i = 0; i < NUM_KERNEL_MODULE_TYPES; i++) {
+        if (op->open_modules.required) {
+            /* If at least one GPU requires the open modules, don't allow
+             * the proprietary ones. */
+            if (kernel_module_types[i].type == PROPRIETARY) {
+                continue;
+            }
+
+            if (op->open_modules.unsupported_gpu_present) {
+                ui_warn(op, "This system requires the open GPU kernel "
+                        "modules, but contains GPUs which are not "
+                        "supported by the open GPU kernel modules. "
+                        "The unsupported GPUs will be ignored.");
+            }
+        } else if (!op->open_modules.supported_gpu_present ||
+                   op->open_modules.unsupported_gpu_present) {
+            /* If GPUs do not support the open modules, mark them invalid:
+             * users can still forcibly install them via the command line */
+            if (kernel_module_types[i].type == OPEN) {
+                continue;
+            }
+        }
+
+        if (directory_exists(kernel_module_types[i].dir)) {
+            info->types[num_valid_types] = kernel_module_types[i].type;
+            info->dirs[num_valid_types] = kernel_module_types[i].dir;
+            info->licenses[num_valid_types] = kernel_module_types[i].license;
+
+            num_valid_types++;
+        }
+    }
+
+    if (num_valid_types == 0) {
+        ui_error(op, "This system requires a kernel module type which is "
+                 "not present in this installer package.");
+    }
+
+
+    /* Return a default selection to the caller if multiple types are valid. */
+    if (num_valid_types > 1) {
+        char default_type = PROPRIETARY;
+
+        for (i = 0; i < num_valid_types; i++) {
+            if (info->types[i] == default_type) {
+                info->default_entry = i;
+                break;
+            }
+        }
+
+        if (i == num_valid_types) {
+            ui_warn(op, "An error occurred while selecting the default kernel "
+                    "module type; using \"%s\" as the default.",
+                    info->licenses[info->default_entry]);
+        }
+    }
+
+    return num_valid_types;
+}
+
+int override_kernel_module_build_directory(Options *op, const char *directory)
+{
+    int i, num_types, ret = FALSE;
+    struct module_type_info types;
+
+    if (!directory_exists(directory)) {
+        ui_error(op, "The kernel module build directory '%s' is not present in "
+                 "this installer package.", directory);
+        return FALSE;
+    }
+
+    num_types = valid_kernel_module_types(op, &types);
+
+    for (i = 0; i < num_types; i++) {
+        if (strcmp(directory, types.dirs[i]) == 0) {
+            ret = TRUE;
+            break;
+        }
+    }
+
+    if (ret) {
+        if (op->kernel_module_build_directory_override) {
+            /* If the override has already been set, make sure the value doesn't
+             * conflict with the one being set now. */
+            if (strcmp(op->kernel_module_build_directory_override, directory)) {
+                ui_error(op, "Conflicting options set the kernel module build "
+                         "directory to both '%s' and '%s'. Please use only one.",
+                         op->kernel_module_build_directory_override, directory);
+                ret = FALSE;
+            }
+        }
+    } else {
+        /* If we failed to match, check the full kernel module type list
+         * to see if there is a matching kernel module type that happens
+         * to be invalid for this package/system. */
+        for (i = 0; i < NUM_KERNEL_MODULE_TYPES; i++) {
+            if (strcmp(directory, kernel_module_types[i].dir) == 0) {
+                if (directory_exists(directory)) {
+                    if (kernel_module_types[i].type == OPEN &&
+                        op->open_modules.supported_gpu_present &&
+                        op->open_modules.unsupported_gpu_present) {
+                        ui_warn(op, "The open GPU kernel modules are supported "
+                                "on some GPUs in this system, and unsupported "
+                                "on others. The unsupported GPUs will be "
+                                "ignored.");
+                    } else {
+                        ui_warn(op, "The '%s' kernel modules are incompatible "
+                                "with the GPU(s) detected on this system. They "
+                                "will be installed anyway, but are not "
+                                "expected to work.",
+                                kernel_module_types[i].license);
+                    }
+                    ret = TRUE;
+                } else {
+                    ui_error(op, "The '%s' kernel modules are not "
+                             "present in this installer package.",
+                             kernel_module_types[i].license);
+                }
+                break;
+            }
+        }
+
+        if (i >= NUM_KERNEL_MODULE_TYPES) {
+            ui_error(op, "'%s' is not a valid kernel module directory.",
+                     directory);
+        }
+    }
+
+    if (ret) {
+        op->kernel_module_build_directory_override = nvstrdup(directory);
+    }
+
+    return ret;
+}
+
+int override_kernel_module_type(Options *op, const char *type)
+{
+    const char *directory = NULL;
+    int i;
+
+    for (i = 0; i < NUM_KERNEL_MODULE_TYPES; i++) {
+        if (tolower(type[0]) == kernel_module_types[i].type) {
+            directory = kernel_module_types[i].dir;
+            break;
+        }
+    }
+
+    if (!directory) {
+        ui_error(op, "'%s' is not a valid kernel module type.", type);
+        return FALSE;
+    }
+
+    return override_kernel_module_build_directory(op, directory);
 }

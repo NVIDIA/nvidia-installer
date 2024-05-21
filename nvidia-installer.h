@@ -315,6 +315,26 @@ typedef struct __options {
         int status_active;
         IndeterminateData *indeterminate_data;
     } ui;
+
+    struct {
+        unsigned int found_supported   :1;
+        unsigned int found_vga         :1;
+
+        int num_legacy;
+        int legacy[16];
+    } pci_devices;
+
+    struct {
+        unsigned int required                :1;
+        unsigned int supported_gpu_present   :1;
+        unsigned int unsupported_gpu_present :1;
+    } open_modules;
+
+    int num_ui_deferred_messages;
+    struct {
+        int level;
+        char *message;
+    } *ui_deferred_messages;
 } Options;
 
 typedef enum {

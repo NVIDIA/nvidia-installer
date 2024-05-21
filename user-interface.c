@@ -88,6 +88,23 @@ const char * const CONTINUE_ABORT_CHOICES[] = {
     [ABORT_CHOICE]    = "Abort installation"
 };
 
+static const char *level_str(int level)
+{
+    switch (level) {
+        case NV_MSG_LEVEL_ERROR: return "ERROR: ";
+        case NV_MSG_LEVEL_WARNING: return "WARNING: ";
+        default: return NV_BULLET_STR;
+    }
+}
+
+static void do_print_message(Options *op, int level, const char *msg)
+{
+    /* Print all warnings/errors;  only print normal messages when not silent */
+    if (level != NV_MSG_LEVEL_MESSAGE || !op->silent) {
+        __ui->message(op, level, msg);
+    }
+}
+
 /*
  * ui_init() - initialize the user interface; we start by looping over
  * each of the possible ui shared libs (gtk, ncurses) until we find
@@ -196,6 +213,25 @@ int ui_init(Options *op)
     signal(SIGILL,  ui_signal_handler);
     signal(SIGBUS,  ui_signal_handler);
 
+    for (i = 0; i < op->num_ui_deferred_messages; i++) {
+        /* Deferred message was already printed to stdout/stderr; don't print
+         * it again if we're using the stream UI. */
+        if (__ui != &stream_ui_dispatch_table) {
+            do_print_message(op, op->ui_deferred_messages[i].level,
+                             op->ui_deferred_messages[i].message);
+        }
+
+        /* Message was deferred before the log was initialized; log it now. */
+        log_printf(op, level_str(op->ui_deferred_messages[i].level), "%s",
+                   op->ui_deferred_messages[i].message);
+
+        nvfree(op->ui_deferred_messages[i].message);
+    }
+
+    nvfree(op->ui_deferred_messages);
+    op->ui_deferred_messages = NULL;
+    op->num_ui_deferred_messages = 0;
+
     /* so far, so good */
 
     return TRUE;
@@ -251,55 +287,77 @@ char *ui_get_input(Options *op, const char *def, const char *fmt, ...)
 
 } /* ui_get_input() */
 
+static void defer_message(Options *op, int level, const char *message)
+{
+    int i = op->num_ui_deferred_messages;
+
+    op->num_ui_deferred_messages++;
+
+    op->ui_deferred_messages = nvrealloc(op->ui_deferred_messages,
+                                         op->num_ui_deferred_messages *
+                                         sizeof(op->ui_deferred_messages[0]));
+
+    op->ui_deferred_messages[i].level = level;
+    op->ui_deferred_messages[i].message = nvstrdup(message);
+
+    /* Print the message to stdout/stderr right away, so it can be displayed
+     * even if ui_init() is never called. */
+    switch (level) {
+        case NV_MSG_LEVEL_ERROR:
+            nv_error_msg("%s", message);
+            break;
+        case NV_MSG_LEVEL_WARNING:
+            nv_warning_msg("%s", message);
+            break;
+        default:
+            if (!op->silent) {
+                nv_info_msg(NULL, "%s", message);
+            }
+            break;
+    }
+}
+
+static void message_helper(Options *op, int level, const char *msg)
+{
+    if (__ui) {
+        do_print_message(op, level, msg);
+        log_printf(op, level_str(level), "%s", msg);
+    } else {
+        defer_message(op, level, msg);
+    }
+}
 
 
 /*
- * ui_error() - have the ui display an error message
+ * ui_{error,warn,message}() - have the ui display a message
  */
 
 void ui_error(Options *op, const char *fmt, ...)
 {
     char *msg;
-    
+
     NV_VSNPRINTF(msg, fmt);
-
-    __ui->message(op, NV_MSG_LEVEL_ERROR, msg);
-    log_printf(op, "ERROR: ", "%s", msg);
-    
+    message_helper(op, NV_MSG_LEVEL_ERROR, msg);
     free(msg);
-
-} /* ui_error() */
-
-
+}
 
 void ui_warn(Options *op, const char *fmt, ...)
 {
     char *msg;
 
     NV_VSNPRINTF(msg, fmt);
-
-    __ui->message(op, NV_MSG_LEVEL_WARNING, msg);
-    log_printf(op, "WARNING: ", "%s", msg);
- 
+    message_helper(op, NV_MSG_LEVEL_WARNING, msg);
     free(msg);
-    
-} /* ui_error() */
-
-
+}
 
 void ui_message(Options *op, const char *fmt, ...)
 {
     char *msg;
 
     NV_VSNPRINTF(msg, fmt);
-
-    if (!op->silent) __ui->message(op, NV_MSG_LEVEL_MESSAGE, msg);
-    
-    log_printf(op, NV_BULLET_STR, "%s", msg);
-
+    message_helper(op, NV_MSG_LEVEL_MESSAGE, msg);
     free(msg);
-
-} /* ui_message() */
+}
 
 
 void ui_log(Options *op, const char *fmt, ...)
@@ -308,7 +366,7 @@ void ui_log(Options *op, const char *fmt, ...)
 
     NV_VSNPRINTF(msg, fmt);
 
-    if (!op->silent) __ui->message(op, NV_MSG_LEVEL_LOG, msg);
+    if (__ui && !op->silent) __ui->message(op, NV_MSG_LEVEL_LOG, msg);
     log_printf(op, NV_BULLET_STR, "%s", msg);
 
     free(msg);

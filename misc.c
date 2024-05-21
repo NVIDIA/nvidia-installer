@@ -45,7 +45,7 @@
 #include "files.h"
 #include "misc.h"
 #include "crc.h"
-#include "nvLegacy.h"
+#include "nvGpus.h"
 #include "manifest.h"
 #include "nvpci-utils.h"
 #include "conflicting-kernel-modules.h"
@@ -1671,7 +1671,7 @@ int check_for_running_x(Options *op)
  * If device_id is present in the list of devIDs of pGPUs that don't support GSP
  * on vGPU then return FALSE, else return TRUE.
  */
-static int nvpci_dev_is_vgpu_gsp(Package *p, unsigned int device_id)
+static int nvpci_dev_is_vgpu_gsp(unsigned int device_id)
 {
     unsigned short vgpu_non_gsp_dev_ids[] = {
         0x13bd, // Tesla M10,
@@ -1729,7 +1729,6 @@ static int nvpci_dev_is_vgpu_gsp(Package *p, unsigned int device_id)
     /* Check if this is vGPU host package */
     if ((access("./is_vgpu_host_package.txt", F_OK) == 0) || (is_vgx_build == 1) ||
        (is_vgx_kvm_build == 1)) {
-
         /* If device_id is present in the non-gsp devId list, return FALSE */
         for (i = 0; i < ARRAY_LEN(vgpu_non_gsp_dev_ids); i++) {
             if (device_id == vgpu_non_gsp_dev_ids[i]) {
@@ -1742,6 +1741,118 @@ static int nvpci_dev_is_vgpu_gsp(Package *p, unsigned int device_id)
 }
 
 /*
+ * pci_device_scan() - Use libpciaccess to iterate over all of the PCI devices
+ * on the system to look for legacy and feature-flagged devices. The results
+ * are stored in the pci_devices sub-struct of the Options structure to inform
+ * policy decisions and targeted messages later on in the installation process.
+ */
+void pci_device_scan(Options *op)
+{
+    struct pci_device_iterator *iter;
+    struct pci_device *dev;
+
+    if (pci_system_init()) {
+        return;
+    }
+
+    iter = nvpci_find_gpu_by_vendor(NV_PCI_VENDOR_ID);
+
+    for (dev = pci_device_next(iter); dev; dev = pci_device_next(iter)) {
+        if (dev->device_id >= 0x0020 /* TNT or later */) {
+            int match = -1;
+            int i;
+
+            /*
+             * First check if this GPU is a "legacy" GPU; if it is, add it to
+             * the list of detected legacy devices.
+             *
+             * LegacyList only contains a row with a full 4-part ID (including
+             * subdevice and subvendor IDs) if its name differs from other
+             * devices with the same devid. For all other devices with the same
+             * devid and name, there is only one row, with subdevice and
+             * subvendor IDs set to 0.
+             *
+             * This loop finds the LegacyList entry for a matching 2-part devid,
+             * but continues searching for a matching 4-part ID (which would
+             * have a different name), and adds the list entry index to the
+             * running list of matched legacy devices.
+             */
+            for (i = 0; i < ARRAY_LEN(LegacyList); i++) {
+                if (dev->device_id == LegacyList[i].uiDevId) {
+                    int found_specific =
+                        (dev->subvendor_id == LegacyList[i].uiSubVendorId &&
+                         dev->subdevice_id == LegacyList[i].uiSubDevId);
+
+                    if (found_specific || LegacyList[i].uiSubDevId == 0) {
+                        match = i;
+                    }
+
+                    if (found_specific) {
+                        break;
+                    }
+                }
+            }
+
+            /* A non-negative index indicates a match found in the LegacyList
+             * table; otherwise, this GPU is a non-legacy device. */
+            if (match >= 0) {
+                int already_matched = FALSE;
+
+                if (op->pci_devices.num_legacy >=
+                    ARRAY_LEN(op->pci_devices.legacy)) {
+                    continue;
+                }
+
+                for (i = 0; i < op->pci_devices.num_legacy; i++) {
+                    if (match == op->pci_devices.legacy[i]) {
+                        already_matched = TRUE;
+                        break;
+                    }
+                }
+
+                if (!already_matched) {
+                    op->pci_devices.legacy[op->pci_devices.num_legacy] = match;
+                    op->pci_devices.num_legacy++;
+                }
+            } else {
+                op->pci_devices.found_supported = TRUE;
+
+                if (nvpci_dev_is_vga(dev)) {
+                    op->pci_devices.found_vga = TRUE;
+                }
+
+                if (pci_devid_is_self_hosted(dev->device_id) ||
+                    nvpci_dev_is_vgpu_gsp(dev->device_id)) {
+                    op->open_modules.required = TRUE;
+                    op->open_modules.supported_gpu_present = TRUE;
+                } else {
+                    /* Assume the device has GSP unless flags say otherwise */
+                    int device_has_gsp = TRUE;
+
+                    for (i = 0; i < ARRAY_LEN(GpuFlagList); i++) {
+                        if (dev->device_id == GpuFlagList[i].devId) {
+                            if (GpuFlagList[i].flags & GPU_FLAGS_NO_GSP) {
+                                device_has_gsp = FALSE;
+                            }
+                            break;
+                        }
+                    }
+
+                    if (device_has_gsp) {
+                        op->open_modules.supported_gpu_present = TRUE;
+                    } else {
+                        op->open_modules.unsupported_gpu_present = TRUE;
+                    }
+                }
+            }
+        }
+    }
+
+    pci_system_cleanup();
+}
+
+
+/*
  * check_for_nvidia_graphics_devices() - check if there are supported
  * NVIDIA graphics devices installed in this system. If no supported devices
  * are found, a warning message is printed. If legacy devices are detected
@@ -1752,97 +1863,38 @@ static int nvpci_dev_is_vgpu_gsp(Package *p, unsigned int device_id)
 
 void check_for_nvidia_graphics_devices(Options *op, Package *p)
 {
-    struct pci_device_iterator *iter;
-    struct pci_device *dev;
-    int i, found_supported_device = FALSE, found_self_hosted = FALSE;
-    int found_vga_device = FALSE, found_vgpu_gsp = FALSE, count = 0;
+    if (op->pci_devices.num_legacy > 0) {
+        char *list = nvstrdup("\n");
+        int i;
 
-    if (pci_system_init()) {
-        return;
-    }
+        for (i = 0; i < op->pci_devices.num_legacy; i++) {
+            const LEGACY_INFO *info = &LegacyList[op->pci_devices.legacy[i]];
+            char *old_list = list;
+            int j;
 
-    iter = nvpci_find_gpu_by_vendor(NV_PCI_VENDOR_ID);
-
-    for (dev = pci_device_next(iter); dev; dev = pci_device_next(iter), count++) {
-        if (dev->device_id >= 0x0020 /* TNT or later */) {
-            /*
-             * First check if this GPU is a "legacy" GPU; if it is, print a
-             * warning message and point the user to the NVIDIA Linux
-             * driver download page for.
-             *
-             * LegacyList only contains a row with a full 4-part ID (including
-             * subdevice and subvendor IDs) if its name differs from other
-             * devices with the same devid. For all other devices with the same
-             * devid and name, there is only one row, with subdevice and
-             * subvendor IDs set to 0.
-             *
-             * This loop finds the name for the matching devid, but continues
-             * searching for a matching 4-part ID with a different name, and
-             * breaks if it finds one.
-             */
-            int found_legacy_device = FALSE;
-            unsigned int branch = 0;
-            const char *dev_name = NULL;
-
-            for (i = 0; i < sizeof(LegacyList) / sizeof(LEGACY_INFO); i++) {
-                if (dev->device_id == LegacyList[i].uiDevId) {
-                    int found_specific =
-                        (dev->subvendor_id == LegacyList[i].uiSubVendorId &&
-                         dev->subdevice_id == LegacyList[i].uiSubDevId);
-
-                    if (found_specific || LegacyList[i].uiSubDevId == 0) {
-                        branch = LegacyList[i].branch;
-                        dev_name = LegacyList[i].AdapterString;
-                        found_legacy_device = TRUE;
-                    }
-
-                    if (found_specific) {
-                        break;
-                    }
+            for (j = 0; j < ARRAY_LEN(LegacyStrings); j++) {
+                if (LegacyStrings[j].branch == info->branch) {
+                    break;
                 }
             }
 
-            if (found_legacy_device) {
-                int j, nstrings;
-                const char *branch_string = "";
-                nstrings = sizeof(LegacyStrings) / sizeof(LEGACY_STRINGS);
-                for (j = 0; j < nstrings; j++) {
-                    if (LegacyStrings[j].branch == branch) {
-                        branch_string = LegacyStrings[j].description;
-                        break;
-                    }
-                }
+            if (j >= ARRAY_LEN(LegacyStrings)) continue;
 
-                ui_warn(op, "The NVIDIA %s GPU installed in this system is supported "
-                        "through the NVIDIA %s legacy Linux graphics drivers.  Please "
-                        "visit http://www.nvidia.com/object/unix.html for more "
-                        "information.  The %s NVIDIA Linux graphics driver will "
-                        "ignore this GPU.",
-                        dev_name,
-                        branch_string,
-                        p->version);
-            } else {
-                found_supported_device = TRUE;
-
-                if (nvpci_dev_is_vga(dev)) {
-                    found_vga_device = TRUE;
-                }
-
-                if (pci_devid_is_self_hosted(dev->device_id)) {
-                    found_self_hosted = TRUE;
-                }
-
-                /* Check the first device in the system is vGPU GSP supported device */
-                if ((count == 0) && nvpci_dev_is_vgpu_gsp(p, dev->device_id)) {
-                    found_vgpu_gsp = TRUE;
-                }
-            }
+            list = nvstrcat(list, info->AdapterString, " requires ",
+                            LegacyStrings[j].description, "\n", NULL);
+            nvfree(old_list);
         }
+
+        ui_warn(op, "The following NVIDIA GPUs are supported through NVIDIA "
+                    "legacy Linux graphics drivers and will be ignored by the "
+                    "NVIDIA %s Linux graphics driver:\n%s\nPlease visit "
+                    "https://www.nvidia.com/object/unix.html for more "
+                    "information.", p->version, list);
+
+        nvfree(list);
     }
 
-    pci_system_cleanup();
-
-    if (!found_supported_device) {
+    if (!op->pci_devices.found_supported) {
         /* Don't test-load the modules on a system with no supported devices */
         op->skip_module_load = TRUE;
 
@@ -1853,15 +1905,8 @@ void check_for_nvidia_graphics_devices(Options *op, Package *p)
                  "driver download page at www.nvidia.com.", p->version);
     }
 
-    if (!found_vga_device)
+    if (!op->pci_devices.found_vga)
         op->no_nvidia_xconfig_question = TRUE;
-
-    if ((found_self_hosted || found_vgpu_gsp) && !op->kernel_module_build_directory_override) {
-        ui_log(op, "This system requires use of the NVIDIA open kernel "
-               "modules; these will be selected by default.");
-        nvfree(p->kernel_module_build_directory);
-        p->kernel_module_build_directory = nvstrdup("kernel-open");
-    }
 } /* check_for_nvidia_graphics_devices() */
 
 

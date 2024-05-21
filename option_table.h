@@ -715,11 +715,18 @@ static const NVGetoptOption __options[] = {
       "install these symlinks, or '/etc/systemd/system' if pkg-config is not "
       "available. Ignored if --no-systemd is specified." },
 
+    { "kernel-module-type", 'M',
+      NVGETOPT_STRING_ARGUMENT, NULL,
+      "The type of kernel modules to build and install. Valid values are "
+      "\"open\" and \"proprietary\"."
+    },
+
     { "kernel-module-build-directory", 'm',
       NVGETOPT_STRING_ARGUMENT, NULL,
-      "The path within the driver package that contains the kernel module "
-      "build files is normally 'kernel/'.  This option can be used to "
-      "override this value." },
+      "Directly set the directory within the package from which to build the "
+      "kernel modules. This option is deprecated; use \"--kernel-module-type\" "
+      "instead."
+    },
 
     { "allow-installation-with-running-driver",
       ALLOW_INSTALLATION_WITH_RUNNING_DRIVER_OPTION, NVGETOPT_IS_BOOLEAN, NULL,

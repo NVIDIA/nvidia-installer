@@ -46,6 +46,7 @@
 #include "manifest.h"
 #include "initramfs.h"
 
+
 static void print_version(void);
 static void print_help(const char* name, int is_uninstall, int advanced);
 
@@ -258,7 +259,7 @@ static void parse_commandline(int argc, char *argv[], Options *op)
             break;
         case 'j':
             if (intval < 1) {
-                nv_error_msg("Invalid concurrency level %d: nvidia-installer "
+                ui_error(op, "Invalid concurrency level %d: nvidia-installer "
                              "will attempt to autodetect the number of CPUs.",
                              intval);
                 intval = 0;
@@ -336,13 +337,13 @@ static void parse_commandline(int argc, char *argv[], Options *op)
             op->nvidia_modprobe = FALSE; break;
         case FORCE_TLS_OPTION:
             /* This option is no longer used; ignore it. */
-            nv_warning_msg("The '--force-tls' option is deprecated:  "
-                           "nvidia-installer will ignore this option.");
+            ui_warn(op, "The '--force-tls' option is deprecated:  "
+                        "nvidia-installer will ignore this option.");
             break;
         case FORCE_TLS_COMPAT32_OPTION:
             /* This option is no longer used; ignore it. */
-            nv_warning_msg("The '--force-tls-compat32' option is deprecated:  "
-                           "nvidia-installer will ignore this option.");
+            ui_warn(op, "The '--force-tls-compat32' option is deprecated:  "
+                        "nvidia-installer will ignore this option.");
             break;
         case SANITY_OPTION:
             op->sanity = TRUE;
@@ -359,13 +360,13 @@ static void parse_commandline(int argc, char *argv[], Options *op)
             break;
         case NO_RUNLEVEL_CHECK_OPTION:
             /* This option is no longer used; ignore it. */
-            nv_warning_msg("The '--no-runlevel-check' option is deprecated:  "
-                           "nvidia-installer will ignore this option.");
+            ui_warn(op, "The '--no-runlevel-check' option is deprecated:  "
+                        "nvidia-installer will ignore this option.");
             break;
         case 'N':
             /* This option is no longer used; ignore it. */
-            nv_warning_msg("The '--no-network' option is deprecated:  "
-                           "nvidia-installer will ignore this option.");
+            ui_warn(op, "The '--no-network' option is deprecated:  "
+                        "nvidia-installer will ignore this option.");
             break;
         case PRECOMPILED_KERNEL_INTERFACES_PATH_OPTION:
             op->precompiled_kernel_interfaces_path = strval;
@@ -385,7 +386,7 @@ static void parse_commandline(int argc, char *argv[], Options *op)
             else if (strcasecmp(strval, "no") == 0)
                 op->selinux_option = SELINUX_FORCE_NO;
             else if (strcasecmp(strval, "default")) {
-                nv_error_msg("Invalid parameter for '--force-selinux'");
+                ui_error(op, "Invalid parameter for '--force-selinux'");
                 goto fail;
             }
             break;
@@ -446,7 +447,7 @@ static void parse_commandline(int argc, char *argv[], Options *op)
             break;
         case INSTALL_VDPAU_WRAPPER_OPTION:
             if (boolval) {
-                nv_error_msg("This driver package does not contain a "
+                ui_error(op, "This driver package does not contain a "
                              "pre-compiled copy of libvdpau.  Please see the "
                              "README for instructions on how to install "
                              "libvdpau.");
@@ -478,12 +479,12 @@ static void parse_commandline(int argc, char *argv[], Options *op)
         case GLVND_GLX_CLIENT_OPTION:
             /* This option is no longer used */
             if (!boolval) {
-                nv_error_msg("The --no-glvnd-glx-client option is no longer supported");
+                ui_error(op, "The --no-glvnd-glx-client option is no longer supported");
                 goto fail;
             }
 
-            nv_warning_msg("The '--glvnd-glx-client' option is deprecated:  "
-                           "nvidia-installer will ignore this option.");
+            ui_warn(op, "The '--glvnd-glx-client' option is deprecated:  "
+                        "nvidia-installer will ignore this option.");
             break;
         case GLVND_EGL_CONFIG_FILE_PATH_OPTION:
             op->libglvnd_json_path = strval;
@@ -491,12 +492,12 @@ static void parse_commandline(int argc, char *argv[], Options *op)
         case GLVND_EGL_CLIENT_OPTION:
             /* This option is no longer used */
             if (!boolval) {
-                nv_error_msg("The --no-glvnd-egl-client option is no longer supported");
+                ui_error(op, "The --no-glvnd-egl-client option is no longer supported");
                 goto fail;
             }
 
-            nv_warning_msg("The '--glvnd-egl-client' option is deprecated:  "
-                           "nvidia-installer will ignore this option.");
+            ui_warn(op, "The '--glvnd-egl-client' option is deprecated:  "
+                        "nvidia-installer will ignore this option.");
             break;
         case EGL_EXTERNAL_PLATFORM_CONFIG_FILE_PATH_OPTION:
             op->external_platform_json_path = strval;
@@ -523,7 +524,14 @@ static void parse_commandline(int argc, char *argv[], Options *op)
             op->systemd_sysconf_prefix = strval;
             break;
         case 'm':
-            op->kernel_module_build_directory_override = strval;
+            if (!override_kernel_module_build_directory(op, strval)) {
+                goto fail;
+            }
+            break;
+        case 'M':
+            if (!override_kernel_module_type(op, strval)) {
+                goto fail;
+            }
             break;
         case ALLOW_INSTALLATION_WITH_RUNNING_DRIVER_OPTION:
             op->allow_installation_with_running_driver = boolval;
@@ -584,7 +592,7 @@ static void parse_commandline(int argc, char *argv[], Options *op)
     return;
     
  fail:
-    nv_error_msg("Invalid commandline, please run `%s --help` "
+    ui_error(op, "Invalid commandline, please run `%s --help` "
                  "for usage information.", argv[0]);
     nvfree((void*)op);
     exit(1);
@@ -611,7 +619,10 @@ int main(int argc, char *argv[])
         fprintf(stderr, "\nOut of memory error.\n\n");
         return 1;
     }
-    
+
+    /* check for supported PCI devices */
+    pci_device_scan(op);
+
     /* parse the commandline options */
     
     parse_commandline(argc, argv, op);

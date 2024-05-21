@@ -29,6 +29,15 @@ typedef enum {
     KERNEL_CONFIG_OPTION_UNKNOWN
 } KernelConfigOptionStatus;
 
+#define NUM_KERNEL_MODULE_TYPES 2
+
+struct module_type_info {
+    int default_entry;
+    char types[NUM_KERNEL_MODULE_TYPES];
+    const char *dirs[NUM_KERNEL_MODULE_TYPES];
+    const char *licenses[NUM_KERNEL_MODULE_TYPES];
+};
+
 int determine_kernel_module_installation_path      (Options*);
 int determine_kernel_source_path                   (Options*, Package*);
 int determine_kernel_output_path                   (Options*);
@@ -57,6 +66,10 @@ int rmmod_kernel_module                            (Options*, const char *);
 int conftest_sanity_check                          (Options*, const char *,
                                                     const char *, const char *);
 char *precompiled_kernel_interface_path            (const Package*);
+int valid_kernel_module_types                      (Options*,
+                                                    struct module_type_info*);
+int override_kernel_module_build_directory         (Options*, const char*);
+int override_kernel_module_type                    (Options*, const char*);
 
 #ifndef ENOKEY
 #define	ENOKEY		126	/* Required key not available */

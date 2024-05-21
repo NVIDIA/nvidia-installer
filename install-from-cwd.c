@@ -805,9 +805,31 @@ static Package *parse_manifest (Options *op)
 
     if (op->kernel_module_build_directory_override) {
         p->kernel_module_build_directory =
-            nvstrdup(op->kernel_module_build_directory_override);
+            op->kernel_module_build_directory_override;
+        op->kernel_module_build_directory_override = NULL;
     } else {
-        p->kernel_module_build_directory = nvstrdup("kernel");
+        struct module_type_info types;
+        int num_types;
+
+        num_types = valid_kernel_module_types(op, &types);
+
+        if (num_types > 0) {
+            int selection;
+
+            if (num_types == 1) {
+                selection = 0;
+            } else {
+                selection = ui_multiple_choice(op, types.licenses, num_types,
+                    types.default_entry,
+                    "Multiple kernel module types are available for this "
+                    "system. Which would you like to use?"
+                );
+            }
+
+            p->kernel_module_build_directory = nvstrdup(types.dirs[selection]);
+        } else {
+            p->kernel_module_build_directory = nvstrdup("kernel");
+        }
     }
 
     remove_trailing_slashes(p->kernel_module_build_directory);

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2005, 2006, 2012, 2014 NVIDIA Corporation
+ * Copyright (c) 2005, 2006, 2012, 2014, 2023 NVIDIA Corporation
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -21,8 +21,8 @@
  * SOFTWARE.
  */
 
-#ifndef __NV_LEGACY_H
-#define __NV_LEGACY_H
+#ifndef __NV_GPUS_H
+#define __NV_GPUS_H
 
 typedef struct _LEGACY_INFO {
     unsigned int  uiDevId;
@@ -31,6 +31,13 @@ typedef struct _LEGACY_INFO {
     unsigned int  branch;
     char*         AdapterString;
 } LEGACY_INFO;
+
+enum { GPU_FLAGS_NO_GSP = 1 << 0, };
+
+typedef struct _GPU_FLAGS {
+    unsigned short  devId;
+    unsigned short  flags;
+} GPU_FLAGS;
 
 typedef struct _LEGACY_STRINGS {
     unsigned int    branch;
@@ -1243,4 +1250,169 @@ static const LEGACY_INFO LegacyList[] = {
     { 0x12BA, 0x0000, 0x0000,  8,      "Quadro K510M" }
 };
 
-#endif /* __NV_LEGACY_H */
+// This is the list of feature flags for current GPUs
+// Only two-part IDs for GPUs with non-zero flags are tracked
+static const GPU_FLAGS GpuFlagList[] = {
+//    PCI-ID  Flags
+    { 0x1340, GPU_FLAGS_NO_GSP },
+    { 0x1341, GPU_FLAGS_NO_GSP },
+    { 0x1344, GPU_FLAGS_NO_GSP },
+    { 0x1346, GPU_FLAGS_NO_GSP },
+    { 0x1347, GPU_FLAGS_NO_GSP },
+    { 0x1348, GPU_FLAGS_NO_GSP },
+    { 0x1349, GPU_FLAGS_NO_GSP },
+    { 0x134b, GPU_FLAGS_NO_GSP },
+    { 0x134d, GPU_FLAGS_NO_GSP },
+    { 0x134e, GPU_FLAGS_NO_GSP },
+    { 0x134f, GPU_FLAGS_NO_GSP },
+    { 0x137a, GPU_FLAGS_NO_GSP },
+    { 0x137b, GPU_FLAGS_NO_GSP },
+    { 0x1380, GPU_FLAGS_NO_GSP },
+    { 0x1381, GPU_FLAGS_NO_GSP },
+    { 0x1382, GPU_FLAGS_NO_GSP },
+    { 0x1390, GPU_FLAGS_NO_GSP },
+    { 0x1391, GPU_FLAGS_NO_GSP },
+    { 0x1392, GPU_FLAGS_NO_GSP },
+    { 0x1393, GPU_FLAGS_NO_GSP },
+    { 0x1398, GPU_FLAGS_NO_GSP },
+    { 0x1399, GPU_FLAGS_NO_GSP },
+    { 0x139a, GPU_FLAGS_NO_GSP },
+    { 0x139b, GPU_FLAGS_NO_GSP },
+    { 0x139c, GPU_FLAGS_NO_GSP },
+    { 0x139d, GPU_FLAGS_NO_GSP },
+    { 0x13b0, GPU_FLAGS_NO_GSP },
+    { 0x13b1, GPU_FLAGS_NO_GSP },
+    { 0x13b2, GPU_FLAGS_NO_GSP },
+    { 0x13b3, GPU_FLAGS_NO_GSP },
+    { 0x13b4, GPU_FLAGS_NO_GSP },
+    { 0x13b6, GPU_FLAGS_NO_GSP },
+    { 0x13b9, GPU_FLAGS_NO_GSP },
+    { 0x13ba, GPU_FLAGS_NO_GSP },
+    { 0x13bb, GPU_FLAGS_NO_GSP },
+    { 0x13bc, GPU_FLAGS_NO_GSP },
+    { 0x13c0, GPU_FLAGS_NO_GSP },
+    { 0x13c2, GPU_FLAGS_NO_GSP },
+    { 0x13d7, GPU_FLAGS_NO_GSP },
+    { 0x13d8, GPU_FLAGS_NO_GSP },
+    { 0x13d9, GPU_FLAGS_NO_GSP },
+    { 0x13da, GPU_FLAGS_NO_GSP },
+    { 0x13f0, GPU_FLAGS_NO_GSP },
+    { 0x13f1, GPU_FLAGS_NO_GSP },
+    { 0x13f2, GPU_FLAGS_NO_GSP },
+    { 0x13f3, GPU_FLAGS_NO_GSP },
+    { 0x13f8, GPU_FLAGS_NO_GSP },
+    { 0x13f9, GPU_FLAGS_NO_GSP },
+    { 0x13fa, GPU_FLAGS_NO_GSP },
+    { 0x13fb, GPU_FLAGS_NO_GSP },
+    { 0x1401, GPU_FLAGS_NO_GSP },
+    { 0x1402, GPU_FLAGS_NO_GSP },
+    { 0x1406, GPU_FLAGS_NO_GSP },
+    { 0x1407, GPU_FLAGS_NO_GSP },
+    { 0x1427, GPU_FLAGS_NO_GSP },
+    { 0x1430, GPU_FLAGS_NO_GSP },
+    { 0x1431, GPU_FLAGS_NO_GSP },
+    { 0x1436, GPU_FLAGS_NO_GSP },
+    { 0x15f0, GPU_FLAGS_NO_GSP },
+    { 0x15f7, GPU_FLAGS_NO_GSP },
+    { 0x15f8, GPU_FLAGS_NO_GSP },
+    { 0x15f9, GPU_FLAGS_NO_GSP },
+    { 0x1617, GPU_FLAGS_NO_GSP },
+    { 0x1618, GPU_FLAGS_NO_GSP },
+    { 0x1619, GPU_FLAGS_NO_GSP },
+    { 0x161a, GPU_FLAGS_NO_GSP },
+    { 0x1667, GPU_FLAGS_NO_GSP },
+    { 0x174d, GPU_FLAGS_NO_GSP },
+    { 0x174e, GPU_FLAGS_NO_GSP },
+    { 0x179c, GPU_FLAGS_NO_GSP },
+    { 0x17c2, GPU_FLAGS_NO_GSP },
+    { 0x17c8, GPU_FLAGS_NO_GSP },
+    { 0x17f0, GPU_FLAGS_NO_GSP },
+    { 0x17f1, GPU_FLAGS_NO_GSP },
+    { 0x17fd, GPU_FLAGS_NO_GSP },
+    { 0x1b00, GPU_FLAGS_NO_GSP },
+    { 0x1b02, GPU_FLAGS_NO_GSP },
+    { 0x1b06, GPU_FLAGS_NO_GSP },
+    { 0x1b30, GPU_FLAGS_NO_GSP },
+    { 0x1b38, GPU_FLAGS_NO_GSP },
+    { 0x1b80, GPU_FLAGS_NO_GSP },
+    { 0x1b81, GPU_FLAGS_NO_GSP },
+    { 0x1b82, GPU_FLAGS_NO_GSP },
+    { 0x1b83, GPU_FLAGS_NO_GSP },
+    { 0x1b84, GPU_FLAGS_NO_GSP },
+    { 0x1b87, GPU_FLAGS_NO_GSP },
+    { 0x1ba0, GPU_FLAGS_NO_GSP },
+    { 0x1ba1, GPU_FLAGS_NO_GSP },
+    { 0x1ba2, GPU_FLAGS_NO_GSP },
+    { 0x1bb0, GPU_FLAGS_NO_GSP },
+    { 0x1bb1, GPU_FLAGS_NO_GSP },
+    { 0x1bb4, GPU_FLAGS_NO_GSP },
+    { 0x1bb5, GPU_FLAGS_NO_GSP },
+    { 0x1bb6, GPU_FLAGS_NO_GSP },
+    { 0x1bb7, GPU_FLAGS_NO_GSP },
+    { 0x1bb8, GPU_FLAGS_NO_GSP },
+    { 0x1bb9, GPU_FLAGS_NO_GSP },
+    { 0x1bbb, GPU_FLAGS_NO_GSP },
+    { 0x1bc7, GPU_FLAGS_NO_GSP },
+    { 0x1be0, GPU_FLAGS_NO_GSP },
+    { 0x1be1, GPU_FLAGS_NO_GSP },
+    { 0x1c02, GPU_FLAGS_NO_GSP },
+    { 0x1c03, GPU_FLAGS_NO_GSP },
+    { 0x1c04, GPU_FLAGS_NO_GSP },
+    { 0x1c06, GPU_FLAGS_NO_GSP },
+    { 0x1c07, GPU_FLAGS_NO_GSP },
+    { 0x1c09, GPU_FLAGS_NO_GSP },
+    { 0x1c20, GPU_FLAGS_NO_GSP },
+    { 0x1c21, GPU_FLAGS_NO_GSP },
+    { 0x1c22, GPU_FLAGS_NO_GSP },
+    { 0x1c23, GPU_FLAGS_NO_GSP },
+    { 0x1c30, GPU_FLAGS_NO_GSP },
+    { 0x1c31, GPU_FLAGS_NO_GSP },
+    { 0x1c60, GPU_FLAGS_NO_GSP },
+    { 0x1c61, GPU_FLAGS_NO_GSP },
+    { 0x1c62, GPU_FLAGS_NO_GSP },
+    { 0x1c81, GPU_FLAGS_NO_GSP },
+    { 0x1c82, GPU_FLAGS_NO_GSP },
+    { 0x1c83, GPU_FLAGS_NO_GSP },
+    { 0x1c8c, GPU_FLAGS_NO_GSP },
+    { 0x1c8d, GPU_FLAGS_NO_GSP },
+    { 0x1c8f, GPU_FLAGS_NO_GSP },
+    { 0x1c90, GPU_FLAGS_NO_GSP },
+    { 0x1c91, GPU_FLAGS_NO_GSP },
+    { 0x1c92, GPU_FLAGS_NO_GSP },
+    { 0x1c94, GPU_FLAGS_NO_GSP },
+    { 0x1c96, GPU_FLAGS_NO_GSP },
+    { 0x1cb1, GPU_FLAGS_NO_GSP },
+    { 0x1cb2, GPU_FLAGS_NO_GSP },
+    { 0x1cb3, GPU_FLAGS_NO_GSP },
+    { 0x1cb6, GPU_FLAGS_NO_GSP },
+    { 0x1cba, GPU_FLAGS_NO_GSP },
+    { 0x1cbb, GPU_FLAGS_NO_GSP },
+    { 0x1cbc, GPU_FLAGS_NO_GSP },
+    { 0x1cbd, GPU_FLAGS_NO_GSP },
+    { 0x1cfa, GPU_FLAGS_NO_GSP },
+    { 0x1cfb, GPU_FLAGS_NO_GSP },
+    { 0x1d01, GPU_FLAGS_NO_GSP },
+    { 0x1d02, GPU_FLAGS_NO_GSP },
+    { 0x1d10, GPU_FLAGS_NO_GSP },
+    { 0x1d11, GPU_FLAGS_NO_GSP },
+    { 0x1d12, GPU_FLAGS_NO_GSP },
+    { 0x1d13, GPU_FLAGS_NO_GSP },
+    { 0x1d16, GPU_FLAGS_NO_GSP },
+    { 0x1d33, GPU_FLAGS_NO_GSP },
+    { 0x1d34, GPU_FLAGS_NO_GSP },
+    { 0x1d52, GPU_FLAGS_NO_GSP },
+    { 0x1d81, GPU_FLAGS_NO_GSP },
+    { 0x1db1, GPU_FLAGS_NO_GSP },
+    { 0x1db3, GPU_FLAGS_NO_GSP },
+    { 0x1db4, GPU_FLAGS_NO_GSP },
+    { 0x1db5, GPU_FLAGS_NO_GSP },
+    { 0x1db6, GPU_FLAGS_NO_GSP },
+    { 0x1db7, GPU_FLAGS_NO_GSP },
+    { 0x1db8, GPU_FLAGS_NO_GSP },
+    { 0x1dba, GPU_FLAGS_NO_GSP },
+    { 0x1df0, GPU_FLAGS_NO_GSP },
+    { 0x1df2, GPU_FLAGS_NO_GSP },
+    { 0x1df6, GPU_FLAGS_NO_GSP },
+};
+
+#endif /* __NV_GPUS_H */
