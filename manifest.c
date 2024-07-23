@@ -133,6 +133,7 @@ static const struct {
     { ENTRY(SYSTEMD_UNIT_SYMLINK,       F, F, T, T, F, F, F, F, F) },
     { ENTRY(SYSTEMD_SLEEP_SCRIPT,       F, T, F, F, F, F, F, F, F) },
     { ENTRY(OPENGL_DATA,                F, T, T, F, F, T, F, T, F) },
+    { ENTRY(VULKANSC_ICD_JSON,          F, T, T, F, F, F, F, T, F) },
 };
 
 /*

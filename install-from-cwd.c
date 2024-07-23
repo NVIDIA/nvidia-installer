@@ -894,6 +894,9 @@ static Package *parse_manifest (Options *op)
             case FILE_TYPE_VULKAN_ICD_JSON:
                 op->vulkan_icd_json_packaged = TRUE;
                 break;
+            case FILE_TYPE_VULKANSC_ICD_JSON:
+                op->vulkansc_icd_json_packaged = TRUE;
+                break;
             default: break;
         }
 

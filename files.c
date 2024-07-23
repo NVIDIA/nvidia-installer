@@ -774,6 +774,15 @@ int set_destinations(Options *op, Package *p)
             dir = "";
             break;
 
+        case FILE_TYPE_VULKANSC_ICD_JSON:
+            /*
+             * Defined by the VulkanSC Linux ICD loader specification.
+             */
+            prefix = "/etc/vulkansc/";
+            path = p->entries[i].path;
+            dir = "";
+            break;
+
         case FILE_TYPE_GLVND_EGL_ICD_JSON:
             // We'll set this path later in check_libglvnd_files. We have to
             // wait until we figure out whether we're going to install our own

@@ -163,6 +163,7 @@ typedef enum {
     FILE_TYPE_GBM_BACKEND_LIB,
     FILE_TYPE_GBM_BACKEND_LIB_SYMLINK,
     FILE_TYPE_OPENGL_DATA,
+    FILE_TYPE_VULKANSC_ICD_JSON,
     FILE_TYPE_MAX
 } PackageEntryFileType;
 
@@ -221,6 +222,7 @@ typedef struct __options {
     int compat32_files_packaged;
     int x_files_packaged;
     int vulkan_icd_json_packaged;
+    int vulkansc_icd_json_packaged;
     int concurrency_level;
     int skip_module_load;
     int skip_depmod;

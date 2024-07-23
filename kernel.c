@@ -2727,7 +2727,7 @@ int valid_kernel_module_types(Options *op, struct module_type_info *info)
 
     /* Return a default selection to the caller if multiple types are valid. */
     if (num_valid_types > 1) {
-        char default_type = PROPRIETARY;
+        char default_type = OPEN;
 
         for (i = 0; i < num_valid_types; i++) {
             if (info->types[i] == default_type) {

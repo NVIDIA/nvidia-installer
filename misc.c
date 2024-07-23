@@ -1663,13 +1663,33 @@ int check_for_running_x(Options *op)
 } /* check_for_running_x() */
 
 /*
- * nvpci_dev_is_vgpu_gsp() - Check if 'is_vgpu_host_package.txt' file is present
+ * is_vgpu_host_package() - Check if 'is_vgpu_host_package.txt' file is present
  * in the package. File 'is_vgpu_host_package.txt' is present in vGPU host
  * packages only. Environment variables VGX_BUILD and VGX_KVM_BUILD are used to
  * install vGPU host driver using *-internal.run on Xenserver and KVM
  * respectively.
- * If device_id is present in the list of devIDs of pGPUs that don't support GSP
- * on vGPU then return FALSE, else return TRUE.
+ */
+static int is_vgpu_host_package(void)
+{
+    if (access("./is_vgpu_host_package.txt", F_OK) == 0) {
+        return TRUE;
+    }
+
+    if (getenv("VGX_BUILD") != NULL) {
+        return TRUE;
+    }
+
+    if (getenv("VGX_KVM_BUILD") != NULL) {
+        return TRUE;
+    }
+
+    return FALSE;
+}
+
+/*
+ * nvpci_dev_is_vgpu_gsp() - If this is a vGPU host package and device_id is
+ * present in the list of devIDs of pGPUs that don't support GSP on vGPU then
+ * return FALSE, else return TRUE.
  */
 static int nvpci_dev_is_vgpu_gsp(unsigned int device_id)
 {
@@ -1714,21 +1734,10 @@ static int nvpci_dev_is_vgpu_gsp(unsigned int device_id)
         0x25b6, // NVIDIA A16, NVIDIA A2
     };
 
-    int i, is_vgx_kvm_build = 0, is_vgx_build = 0;
-    const char *vgx_build = getenv("VGX_BUILD");
-    const char *vgx_kvm_build = getenv("VGX_KVM_BUILD");
-
-    if (vgx_build != NULL) {
-        is_vgx_build = 1;
-    }
-
-    if (vgx_kvm_build != NULL) {
-        is_vgx_kvm_build = 1;
-    }
-
     /* Check if this is vGPU host package */
-    if ((access("./is_vgpu_host_package.txt", F_OK) == 0) || (is_vgx_build == 1) ||
-       (is_vgx_kvm_build == 1)) {
+    if (is_vgpu_host_package()) {
+        int i;
+
         /* If device_id is present in the non-gsp devId list, return FALSE */
         for (i = 0; i < ARRAY_LEN(vgpu_non_gsp_dev_ids); i++) {
             if (device_id == vgpu_non_gsp_dev_ids[i]) {
@@ -1739,6 +1748,39 @@ static int nvpci_dev_is_vgpu_gsp(unsigned int device_id)
     }
     return FALSE;
 }
+
+
+static unsigned short pci_dev_get_gpu_flags(const struct pci_device *dev)
+{
+    int i;
+
+    /* Check for four-part ID matches first */
+    for (i = 0; i < ARRAY_LEN(GpuSubDeviceFlagList); i++) {
+        if (dev->device_id == GpuSubDeviceFlagList[i].devId &&
+            dev->subvendor_id == GpuSubDeviceFlagList[i].subVendorId &&
+            dev->subdevice_id == GpuSubDeviceFlagList[i].subDevId) {
+            return GpuSubDeviceFlagList[i].flags;
+        }
+    }
+
+    for (i = 0; i < ARRAY_LEN(GpuFlagList); i++) {
+        if (dev->device_id == GpuFlagList[i].devId) {
+            return GpuFlagList[i].flags;
+        }
+    }
+
+    return 0;
+}
+
+
+static int pci_devid_gsp_unlikely(unsigned short devid)
+{
+    /* Some unusual GPUs with IDs in this range may exist  despite not being in
+     * the list of supported GPUs; these are more likely to be non-GSP than GSP,
+     * so assume that they are non-GSP */
+    return devid >= 0x1340 && devid < 0x1E00;
+}
+
 
 /*
  * pci_device_scan() - Use libpciaccess to iterate over all of the PCI devices
@@ -1821,21 +1863,35 @@ void pci_device_scan(Options *op)
                     op->pci_devices.found_vga = TRUE;
                 }
 
-                if (pci_devid_is_self_hosted(dev->device_id) ||
-                    nvpci_dev_is_vgpu_gsp(dev->device_id)) {
+                if (pci_devid_is_self_hosted(dev->device_id)) {
                     op->open_modules.required = TRUE;
                     op->open_modules.supported_gpu_present = TRUE;
+                } else if (is_vgpu_host_package()) {
+                    /* On vGPU host, GSP-supported GPUs must use the open kernel
+                     * modules, and GSP-unsupported GPUs must not */
+                    if (nvpci_dev_is_vgpu_gsp(dev->device_id)) {
+                        op->open_modules.required = TRUE;
+                        op->open_modules.supported_gpu_present = TRUE;
+                    } else {
+                        op->open_modules.unsupported_gpu_present = TRUE;
+                    }
                 } else {
                     /* Assume the device has GSP unless flags say otherwise */
                     int device_has_gsp = TRUE;
+                    unsigned short flags = pci_dev_get_gpu_flags(dev);
 
-                    for (i = 0; i < ARRAY_LEN(GpuFlagList); i++) {
-                        if (dev->device_id == GpuFlagList[i].devId) {
-                            if (GpuFlagList[i].flags & GPU_FLAGS_NO_GSP) {
-                                device_has_gsp = FALSE;
-                            }
-                            break;
-                        }
+                    if (flags & GPU_FLAGS_NO_GSP ||
+                        ((flags & GPU_FLAGS_VGPU_GUEST) &&
+                         (flags & GPU_FLAGS_VGPU_NO_GSP))) {
+                        device_has_gsp = FALSE;
+                    }
+
+                    if (flags == 0 && pci_devid_gsp_unlikely(dev->device_id)) {
+                        ui_warn(op, "The unknown GPU with PCI device ID 0x%04X "
+                                "is unlikely to support the open GPU kernel "
+                                "modules; assuming they are unsupported for "
+                                "this device.", dev->device_id);
+                        device_has_gsp = FALSE;
                     }
 
                     if (device_has_gsp) {
