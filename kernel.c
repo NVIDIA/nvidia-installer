@@ -334,7 +334,6 @@ int determine_kernel_source_path(Options *op, Package *p)
 int determine_kernel_output_path(Options *op)
 {
     char *str, *tmp;
-    int len;
 
     /* check --kernel-output-path */
 
@@ -376,11 +375,19 @@ int determine_kernel_output_path(Options *op)
     tmp = get_kernel_name(op);
 
     if (tmp) {
-        str = nvstrcat("/lib/modules/", tmp, "/source", NULL);
-        len = strlen(str);
+        char *source_path, *build_source_path;
+        int len_source_path, len_build_source_path;
 
-        if (!strncmp(op->kernel_source_path, str, len)) {
-            nvfree(str);
+        source_path = nvstrcat("/lib/modules/", tmp, "/source", NULL);
+        len_source_path = strlen(source_path);
+
+        build_source_path = nvstrcat("/lib/modules/", tmp, "/build/source", NULL);
+        len_build_source_path = strlen(build_source_path);
+
+        if ((!strncmp(op->kernel_source_path, source_path, len_source_path)) ||
+            (!strncmp(op->kernel_source_path, build_source_path, len_build_source_path))) {
+            nvfree(source_path);
+            nvfree(build_source_path);
             str = nvstrcat("/lib/modules/", tmp, "/build", NULL);
 
             if (directory_exists(str)) {
@@ -388,7 +395,10 @@ int determine_kernel_output_path(Options *op)
                 return TRUE;
             }
         }
-
+        else  {
+            nvfree(source_path);
+            nvfree(build_source_path);
+        }
         nvfree(str);
     }
 
@@ -2051,6 +2061,14 @@ static char *default_kernel_source_path(Options *op)
 
     if (tmp) {
         str = nvstrcat("/lib/modules/", tmp, "/source", NULL);
+
+        if (directory_exists(str)) {
+            return str;
+        }
+
+        nvfree(str);
+
+        str = nvstrcat("/lib/modules/", tmp, "/build/source", NULL);
 
         if (directory_exists(str)) {
             return str;
