@@ -1410,6 +1410,7 @@ static int test_kernel_modules_helper(Options *op, Package *p, int pause_udev)
         "i2c-core",
         "drm",
         "drm-kms-helper",
+        "drm-ttm-helper",
         "vfio_mdev",
         "vfio",
         "mdev",

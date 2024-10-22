@@ -1665,9 +1665,9 @@ int check_for_running_x(Options *op)
 /*
  * is_vgpu_host_package() - Check if 'is_vgpu_host_package.txt' file is present
  * in the package. File 'is_vgpu_host_package.txt' is present in vGPU host
- * packages only. Environment variables VGX_BUILD and VGX_KVM_BUILD are used to
- * install vGPU host driver using *-internal.run on Xenserver and KVM
- * respectively.
+ * packages only. Environment variables VGX_BUILD, VGX_KVM_BUILD and
+ * VGX_DEVICE_VM_BUILD are used to install vGPU host driver using *-internal.run
+ * on Xenserver, KVM and Device VM respectively.
  */
 static int is_vgpu_host_package(void)
 {
@@ -1680,6 +1680,10 @@ static int is_vgpu_host_package(void)
     }
 
     if (getenv("VGX_KVM_BUILD") != NULL) {
+        return TRUE;
+    }
+
+    if (getenv("VGX_DEVICE_VM_BUILD") != NULL) {
         return TRUE;
     }
 
