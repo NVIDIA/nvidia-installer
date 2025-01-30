@@ -134,6 +134,7 @@ static const struct {
     { ENTRY(SYSTEMD_SLEEP_SCRIPT,       F, T, F, F, F, F, F, F, F) },
     { ENTRY(OPENGL_DATA,                F, T, T, F, F, T, F, T, F) },
     { ENTRY(VULKANSC_ICD_JSON,          F, T, T, F, F, F, F, T, F) },
+    { ENTRY(SANDBOXUTILS_FILELIST_JSON, F, T, T, F, F, F, F, F, F) },
 };
 
 /*

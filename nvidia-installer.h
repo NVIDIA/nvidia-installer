@@ -164,6 +164,7 @@ typedef enum {
     FILE_TYPE_GBM_BACKEND_LIB_SYMLINK,
     FILE_TYPE_OPENGL_DATA,
     FILE_TYPE_VULKANSC_ICD_JSON,
+    FILE_TYPE_SANDBOXUTILS_FILELIST_JSON,
     FILE_TYPE_MAX
 } PackageEntryFileType;
 
@@ -253,6 +254,7 @@ typedef struct __options {
     char *compat32_chroot;
     char *compat32_prefix;
     char *compat32_libdir;
+    char *compat32_gbm_backend_dir;
 
     char *utility_prefix;
     char *utility_libdir;

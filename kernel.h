@@ -29,6 +29,12 @@ typedef enum {
     KERNEL_CONFIG_OPTION_UNKNOWN
 } KernelConfigOptionStatus;
 
+/* These values correspond to the initial letter which will be matched using the
+ * --kernel-module-type command line option. */
+typedef enum {
+    PROPRIETARY = 'p',
+    OPEN = 'o',
+} KernelModuleType;
 #define NUM_KERNEL_MODULE_TYPES 2
 
 struct module_type_info {
@@ -67,7 +73,8 @@ int conftest_sanity_check                          (Options*, const char *,
                                                     const char *, const char *);
 char *precompiled_kernel_interface_path            (const Package*);
 int valid_kernel_module_types                      (Options*,
-                                                    struct module_type_info*);
+                                                    struct module_type_info*,
+                                                    int allow_missing_directory);
 int override_kernel_module_build_directory         (Options*, const char*);
 int override_kernel_module_type                    (Options*, const char*);
 

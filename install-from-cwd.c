@@ -811,7 +811,7 @@ static Package *parse_manifest (Options *op)
         struct module_type_info types;
         int num_types;
 
-        num_types = valid_kernel_module_types(op, &types);
+        num_types = valid_kernel_module_types(op, &types, FALSE);
 
         if (num_types > 0) {
             int selection;

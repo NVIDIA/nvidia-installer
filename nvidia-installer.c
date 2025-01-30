@@ -49,6 +49,7 @@
 
 static void print_version(void);
 static void print_help(const char* name, int is_uninstall, int advanced);
+static void print_module_type(char module_type);
 
 
 
@@ -184,6 +185,33 @@ static int assign_file_type_override(Options *op, char *optarg)
     return TRUE;
 }
 
+static void print_module_type(char module_type)
+{
+    switch (module_type) {
+        case PROPRIETARY:
+            nv_info_msg(NULL, "proprietary");
+            break;
+        case OPEN:
+            nv_info_msg(NULL, "open");
+            break;
+    }
+}
+
+static int print_recommended_module_type_option(Options *op)
+{
+    int num_types;
+    struct module_type_info info;
+
+    num_types = valid_kernel_module_types(op, &info, TRUE);
+
+    if (num_types <= 0) {
+        ui_error(op, "Unable to determine recommended module type.");
+        return FALSE;
+    }
+
+    print_module_type(info.types[info.default_entry]);
+    return TRUE;
+}
 
 /*
  * parse_commandline() - Populate the Options structure with
@@ -198,6 +226,7 @@ static void parse_commandline(int argc, char *argv[], Options *op)
 {
     int c;
     int print_help_after = FALSE;
+    int print_recommended_kernel_module_after = FALSE;
     int print_help_args_only_after = FALSE;
     int print_advanced_help = FALSE;
     char *strval = NULL, *program_name = NULL;
@@ -533,6 +562,9 @@ static void parse_commandline(int argc, char *argv[], Options *op)
                 goto fail;
             }
             break;
+        case PRINT_RECOMMENDED_MODULE_TYPE_OPTION:
+            print_recommended_kernel_module_after = TRUE;
+            break;
         case ALLOW_INSTALLATION_WITH_RUNNING_DRIVER_OPTION:
             op->allow_installation_with_running_driver = boolval;
             break;
@@ -542,6 +574,9 @@ static void parse_commandline(int argc, char *argv[], Options *op)
             break;
         case GBM_BACKEND_DIR_OPTION:
             op->gbm_backend_dir = strval;
+            break;
+        case GBM_BACKEND_DIR32_OPTION:
+            op->compat32_gbm_backend_dir = strval;
             break;
         default:
             goto fail;
@@ -566,6 +601,12 @@ static void parse_commandline(int argc, char *argv[], Options *op)
         exit(0);
     }
 
+    if (print_recommended_kernel_module_after) {
+        if (!print_recommended_module_type_option(op)) {
+            goto fail;
+        }
+        exit(0);
+    }
 
     /*
      * if the installer prefix was not specified, default it to the

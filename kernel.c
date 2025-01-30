@@ -1418,6 +1418,7 @@ static int test_kernel_modules_helper(Options *op, Package *p, int pause_udev)
         "backlight",
         "vfio_pci_core",
         "ecc",
+        "nvgrace-egm",
     };
 
     if (pause_udev) {
@@ -2666,13 +2667,6 @@ static int kernel_configuration_conflict(Options *op, Package *p,
     return FALSE;
 }
 
-/* These values correspond to the initial letter which will be matched using the
- * --kernel-module-type command line option. */
-enum {
-    PROPRIETARY = 'p',
-    OPEN = 'o',
-};
-
 static struct {
     char type;
     char * const dir;
@@ -2682,7 +2676,7 @@ static struct {
     { .type = OPEN, .dir = "kernel-open", .license = "MIT/GPL" },
 };
 
-int valid_kernel_module_types(Options *op, struct module_type_info *info)
+int valid_kernel_module_types(Options *op, struct module_type_info *info, int allow_missing_directory)
 {
     int num_valid_types = 0, i;
 
@@ -2711,7 +2705,7 @@ int valid_kernel_module_types(Options *op, struct module_type_info *info)
             }
         }
 
-        if (directory_exists(kernel_module_types[i].dir)) {
+        if (directory_exists(kernel_module_types[i].dir) || allow_missing_directory) {
             info->types[num_valid_types] = kernel_module_types[i].type;
             info->dirs[num_valid_types] = kernel_module_types[i].dir;
             info->licenses[num_valid_types] = kernel_module_types[i].license;
@@ -2719,12 +2713,6 @@ int valid_kernel_module_types(Options *op, struct module_type_info *info)
             num_valid_types++;
         }
     }
-
-    if (num_valid_types == 0) {
-        ui_error(op, "This system requires a kernel module type which is "
-                 "not present in this installer package.");
-    }
-
 
     /* Return a default selection to the caller if multiple types are valid. */
     if (num_valid_types > 1) {
@@ -2744,6 +2732,17 @@ int valid_kernel_module_types(Options *op, struct module_type_info *info)
         }
     }
 
+    if (num_valid_types == 0 ||
+        (!directory_exists(info->dirs[info->default_entry]) && allow_missing_directory)) {
+        const char *msg = "This system requires a kernel module type which is "
+                          "not present in this installer package.";
+        if (num_valid_types == 0) {
+            ui_error(op, "%s", msg);
+        } else {
+            ui_warn(op, "%s", msg);
+        }
+    }
+
     return num_valid_types;
 }
 
@@ -2758,7 +2757,7 @@ int override_kernel_module_build_directory(Options *op, const char *directory)
         return FALSE;
     }
 
-    num_types = valid_kernel_module_types(op, &types);
+    num_types = valid_kernel_module_types(op, &types, FALSE);
 
     for (i = 0; i < num_types; i++) {
         if (strcmp(directory, types.dirs[i]) == 0) {

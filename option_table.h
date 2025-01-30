@@ -117,8 +117,10 @@ enum {
     SYSTEMD_SLEEP_PREFIX_OPTION,
     SYSTEMD_SYSCONF_PREFIX_OPTION,
     GBM_BACKEND_DIR_OPTION,
+    GBM_BACKEND_DIR32_OPTION,
     ALLOW_INSTALLATION_WITH_RUNNING_DRIVER_OPTION,
     REBUILD_INITRAMFS_OPTION,
+    PRINT_RECOMMENDED_MODULE_TYPE_OPTION,
 };
 
 static const NVGetoptOption __options[] = {
@@ -308,8 +310,16 @@ static const NVGetoptOption __options[] = {
     { "gbm-backend-dir", GBM_BACKEND_DIR_OPTION, NVGETOPT_STRING_ARGUMENT, NULL,
       "The path relative to the OpenGL library installation prefix under "
       "which the NVIDIA GBM backend library will be installed.  The "
-      "default is '$libdir/gbm', where '$libdir' is '" DEFAULT_64BIT_LIBDIR
+      "default is '<libdir>/gbm', where '<libdir>' is '" DEFAULT_64BIT_LIBDIR
       "' or '" DEFAULT_LIBDIR "', depending on the installed Linux "
+      "distribution.  Only under very rare circumstances should this option be "
+      "used." },
+
+    { "gbm-backend-dir32", GBM_BACKEND_DIR32_OPTION, NVGETOPT_STRING_ARGUMENT, NULL,
+      "The path relative to the 32-bit OpenGL library installation prefix under "
+      "which the 32-bit NVIDIA GBM backend library will be installed.  The "
+      "default is '<libdir>/gbm', where <libdir>' is '" DEFAULT_LIBDIR
+      "' or '" DEFAULT_32BIT_LIBDIR "', depending on the installed Linux "
       "distribution.  Only under very rare circumstances should this option be "
       "used." },
 
@@ -726,6 +736,13 @@ static const NVGetoptOption __options[] = {
       "Directly set the directory within the package from which to build the "
       "kernel modules. This option is deprecated; use \"--kernel-module-type\" "
       "instead."
+    },
+
+    { "print-recommended-kernel-module-type",
+      PRINT_RECOMMENDED_MODULE_TYPE_OPTION,  0, NULL,
+      "Print if \"open\" or \"proprietary\" modules should be used based on "
+      "currently attached GPUs and exit. NOTE: A kernel module type may be "
+      "recommended even if it is not included in this driver package."
     },
 
     { "allow-installation-with-running-driver",

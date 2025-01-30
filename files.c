@@ -648,11 +648,20 @@ int set_destinations(Options *op, Package *p)
             break;
 
         case FILE_TYPE_GBM_BACKEND_LIB_SYMLINK:
-            p->entries[i].target = nvstrcat(op->utility_prefix, "/", op->utility_libdir, "/", p->entries[i].target, NULL);
+            if (p->entries[i].compat_arch == FILE_COMPAT_ARCH_COMPAT32) {
+                p->entries[i].target = nvstrcat(op->compat32_prefix, "/", op->compat32_libdir, "/", p->entries[i].target, NULL);
+            } else {
+                p->entries[i].target = nvstrcat(op->utility_prefix, "/", op->utility_libdir, "/", p->entries[i].target, NULL);
+            }
             /* fallthrough */
         case FILE_TYPE_GBM_BACKEND_LIB:
-            prefix = op->opengl_prefix;
-            dir = op->gbm_backend_dir;
+            if (p->entries[i].compat_arch == FILE_COMPAT_ARCH_COMPAT32) {
+                prefix = op->compat32_prefix;
+                dir = op->compat32_gbm_backend_dir;
+            } else {
+                prefix = op->opengl_prefix;
+                dir = op->gbm_backend_dir;
+            }
             path = "";
             break;
 
@@ -833,6 +842,11 @@ int set_destinations(Options *op, Package *p)
 
         case FILE_TYPE_SYSTEMD_SLEEP_SCRIPT:
             prefix = op->systemd_sleep_prefix;
+            dir = path = "";
+            break;
+
+        case FILE_TYPE_SANDBOXUTILS_FILELIST_JSON:
+            prefix = "/usr/share/nvidia/files.d";
             dir = path = "";
             break;
 
@@ -2548,6 +2562,10 @@ void get_compat32_path(Options *op)
             op->compat32_libdir = compat_libdir;
         }
     }
+
+    if (!op->compat32_gbm_backend_dir)
+        op->compat32_gbm_backend_dir =
+            nvstrcat(op->compat32_libdir, "/", "gbm", NULL);
 
     nvfree(ldconfig_cache);
 #endif
