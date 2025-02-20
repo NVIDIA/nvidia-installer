@@ -653,7 +653,7 @@ void free_precompiled(PrecompiledInfo *info)
 
 
 
-void free_precompiled_file_data(PrecompiledFileInfo fileInfo)
+void free_precompiled_file_data(const PrecompiledFileInfo &fileInfo)
 {
     nvfree(fileInfo.name);
     nvfree(fileInfo.linked_module_name);
