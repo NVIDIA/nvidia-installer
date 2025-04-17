@@ -1661,6 +1661,7 @@ static const GPU_FLAGS GpuFlagList[] = {
     { 0x28e1, GPU_FLAGS_PROPRIETARY_POSSIBLE },
     { 0x28e3, GPU_FLAGS_PROPRIETARY_POSSIBLE },
     { 0x28f8, GPU_FLAGS_PROPRIETARY_POSSIBLE },
+    { 0x2e2a, GPU_FLAGS_NO_GSP | GPU_FLAGS_PROPRIETARY_POSSIBLE },
 };
 // Feature flag overrides for specific GPUs with four-part IDs:
 // This list should be checked before the two-part list; a match
@@ -2836,6 +2837,8 @@ static const GPU_SUBDEVICE_FLAGS GpuSubDeviceFlagList[] = {
     { 0x2941, 0x10de, 0x20d0, GPU_FLAGS_VGPU_GUEST },
     { 0x2941, 0x10de, 0x20d1, GPU_FLAGS_VGPU_GUEST },
     { 0x2941, 0x10de, 0x20d2, GPU_FLAGS_VGPU_GUEST },
+    { 0x2bb5, 0x10de, 0x21a6, GPU_FLAGS_VGPU_GUEST },
+    { 0x2bb5, 0x10de, 0x21a7, GPU_FLAGS_VGPU_GUEST },
 };
 
 #endif /* __NV_GPUS_H */
