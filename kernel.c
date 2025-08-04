@@ -1419,6 +1419,11 @@ static int test_kernel_modules_helper(Options *op, Package *p, int pause_udev)
         "vfio_pci_core",
         "ecc",
         "nvgrace-egm",
+        // Modules for Tegra
+        "tsecriscv",
+        "tegra_dce",
+        "host1x_nvhost",
+        "mc_utils",
     };
 
     if (pause_udev) {
