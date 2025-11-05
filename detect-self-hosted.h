@@ -32,7 +32,8 @@ static inline int pci_devid_is_self_hosted_hopper(unsigned short devid)
 static inline int pci_devid_is_self_hosted_blackwell(unsigned short devid)
 {
     return (devid >= 0x2940 && devid <= 0x297f)      // GB100 Self-Hosted
-           || (devid >= 0x31c0 && devid <= 0x31ff);  // GB110 Self-Hosted
+           || (devid >= 0x31c0 && devid <= 0x31ff)   // GB110 Self-Hosted
+           || (devid == 0x31a1);                     //
 }
 
 static inline int pci_devid_is_self_hosted(unsigned short devid)
