@@ -1411,6 +1411,7 @@ static int test_kernel_modules_helper(Options *op, Package *p, int pause_udev)
         "drm",
         "drm-kms-helper",
         "drm-ttm-helper",
+        "drm_client_lib",
         "vfio_mdev",
         "vfio",
         "mdev",
