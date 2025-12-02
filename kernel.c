@@ -1488,6 +1488,12 @@ static int test_kernel_modules_helper(Options *op, Package *p, int pause_udev)
         if (strcmp(p->kernel_modules[i].module_name, "nvidia") == 0) {
             module_opts = "NVreg_DeviceFileUID=0 NVreg_DeviceFileGID=0 "
                           "NVreg_DeviceFileMode=0 NVreg_ModifyDeviceFiles=0";
+        } else if (strcmp(p->kernel_modules[i].module_name, "nvidia-drm") == 0) {
+            /*
+             * Don't allow nvidia-drm to try to initialize the GPUs. We just
+             * want to make sure the module can be loaded at all.
+             */
+            module_opts = "modeset=0";
         }
 
         insmod_ret = do_insmod(op, module_path, module_opts);

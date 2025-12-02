@@ -24,6 +24,8 @@
 #ifndef __DETECT_SELF_HOSTED_H__
 #define __DETECT_SELF_HOSTED_H__
 
+
+
 static inline int pci_devid_is_self_hosted_hopper(unsigned short devid)
 {
     return devid >= 0x2340 && devid <= 0x237f;       // GH100 Self-Hosted
@@ -39,7 +41,8 @@ static inline int pci_devid_is_self_hosted_blackwell(unsigned short devid)
 static inline int pci_devid_is_self_hosted(unsigned short devid)
 {
     return pci_devid_is_self_hosted_hopper(devid) ||
-           pci_devid_is_self_hosted_blackwell(devid);
+           pci_devid_is_self_hosted_blackwell(devid)
+           ;
 }
 
 #endif
