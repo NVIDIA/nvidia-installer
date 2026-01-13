@@ -180,6 +180,12 @@ static int assign_file_type_override(Options *op, char *optarg)
     return TRUE;
 }
 
+static int print_recommended_module_type_option(Options *op)
+{
+    /* On 535, proprietary modules is always the default */
+    nv_info_msg(NULL, "proprietary");
+    return TRUE;
+}
 
 /*
  * parse_commandline() - Populate the Options structure with
@@ -194,6 +200,7 @@ static void parse_commandline(int argc, char *argv[], Options *op)
 {
     int c;
     int print_help_after = FALSE;
+    int print_recommended_kernel_module_after = FALSE;
     int print_help_args_only_after = FALSE;
     int print_advanced_help = FALSE;
     char *strval = NULL, *program_name = NULL;
@@ -520,6 +527,9 @@ static void parse_commandline(int argc, char *argv[], Options *op)
         case 'm':
             op->kernel_module_build_directory_override = strval;
             break;
+        case PRINT_RECOMMENDED_MODULE_TYPE_OPTION:
+            print_recommended_kernel_module_after = TRUE;
+            break;
         case GBM_BACKEND_DIR_OPTION:
             op->gbm_backend_dir = strval;
             break;
@@ -546,6 +556,12 @@ static void parse_commandline(int argc, char *argv[], Options *op)
         exit(0);
     }
 
+    if (print_recommended_kernel_module_after) {
+        if (!print_recommended_module_type_option(op)) {
+            goto fail;
+        }
+        exit(0);
+    }
 
     /*
      * if the installer prefix was not specified, default it to the

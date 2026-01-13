@@ -116,6 +116,7 @@ enum {
     SYSTEMD_SLEEP_PREFIX_OPTION,
     SYSTEMD_SYSCONF_PREFIX_OPTION,
     GBM_BACKEND_DIR_OPTION,
+    PRINT_RECOMMENDED_MODULE_TYPE_OPTION,
 };
 
 static const NVGetoptOption __options[] = {
@@ -713,6 +714,13 @@ static const NVGetoptOption __options[] = {
       "The path within the driver package that contains the kernel module "
       "build files is normally 'kernel/'.  This option can be used to "
       "override this value." },
+
+    { "print-recommended-kernel-module-type",
+      PRINT_RECOMMENDED_MODULE_TYPE_OPTION,  0, NULL,
+      "Print if \"open\" or \"proprietary\" modules should be used based on "
+      "currently attached GPUs and exit. NOTE: A kernel module type may be "
+      "recommended even if it is not included in this driver package."
+    },
 
     /* Orphaned options: These options were in the long_options table in
      * nvidia-installer.c but not in the help. */
