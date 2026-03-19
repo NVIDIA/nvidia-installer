@@ -364,15 +364,16 @@ static int initramfs_tool_helper(Options *op, int tool, const char *kernel,
     }
 
     /* Build initramfs file path specific command line arguments */
-    if (path && initramfs_tools[tool].path_specific_args) {
-        if (!initramfs_tools[tool].path_specific_args) {
+    if (path) {
+        if (initramfs_tools[tool].path_specific_args) {
+            path_args = nvstrcat(initramfs_tools[tool].path_specific_args, " ",
+                                 path, NULL);
+        } else {
             ui_log(op, "%s does not take a path argument.", tool_path);
             goto done;
         }
-        path_args = nvstrcat(initramfs_tools[tool].path_specific_args, " ",
-                             path, NULL);
     } else {
-        if (initramfs_tools[tool].requires_path || !path) {
+        if (initramfs_tools[tool].requires_path) {
             ui_log(op, "%s requires a file path argument, but none was given.",
                    tool_path);
             goto done;
