@@ -2893,7 +2893,7 @@ static char *dkms_gen_tarball(Options *op, Package *p, const char *kernel)
 
             nvfree(dkms_dstdir);
 
-            ret = ret && copy_file(op, p->entries[i].file, dst, 0644);
+            ret = ret && copy_file(op, p->entries[i].file, dst, p->entries[i].mode);
             nvfree(dst);
             nvfree(dst_copy);
             if (!ret) goto done;
