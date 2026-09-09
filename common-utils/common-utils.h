@@ -87,6 +87,7 @@ void remove_trailing_slashes(char *string);
 void collapse_multiple_slashes(char *s);
 
 int directory_exists(const char *dir);
+int directory_exists_errno(const char *dir, int *errno_out);
 
 #if defined(__GNUC__)
 # define NV_INLINE __inline__

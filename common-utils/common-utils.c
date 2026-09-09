@@ -780,18 +780,41 @@ char *nv_trim_char_strict(char *string, char trim) {
 }
 
 /*
+ * directory_exists_errno() - test whether the given directory exists; if the
+ * path is not an accessible directory and errno_out is non-NULL, store the
+ * reason there: errno from stat(2) on failure, or ENOTDIR if the path exists
+ * but is not a directory.
+ */
+
+int directory_exists_errno(const char *dir, int *errno_out)
+{
+    struct stat stat_buf;
+
+    if (stat(dir, &stat_buf) == -1) {
+        if (errno_out) {
+            *errno_out = errno;
+        }
+        return FALSE;
+    }
+
+    if (!S_ISDIR(stat_buf.st_mode)) {
+        if (errno_out) {
+            *errno_out = ENOTDIR;
+        }
+        return FALSE;
+    }
+
+    return TRUE;
+}
+
+
+/*
  * directory_exists() - test whether the given directory exists
  */
 
 int directory_exists(const char *dir)
 {
-    struct stat stat_buf;
-
-    if ((stat (dir, &stat_buf) == -1) || (!S_ISDIR(stat_buf.st_mode))) {
-        return FALSE;
-    } else {
-        return TRUE;
-    }
+    return directory_exists_errno(dir, NULL);
 }
 
 /*

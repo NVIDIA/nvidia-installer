@@ -135,7 +135,6 @@ static Options *load_default_options(void)
     op->run_nvidia_xconfig = FALSE;
     op->selinux_option = SELINUX_DEFAULT;
 
-    op->sigwinch_workaround = TRUE;
     op->run_distro_scripts = TRUE;
     op->no_kernel_module_source = FALSE;
     op->dkms = TRUE;
@@ -421,9 +420,6 @@ static void parse_commandline(int argc, char *argv[], Options *op)
             break;
         case SELINUX_CHCON_TYPE_OPTION:
             op->selinux_chcon_type = strval; break;
-        case NO_SIGWINCH_WORKAROUND_OPTION:
-            op->sigwinch_workaround = FALSE;
-            break;
         case NO_KERNEL_MODULES_OPTION:
             op->no_kernel_modules = TRUE;
             op->kernel_modules_only = FALSE; /* conflicts */

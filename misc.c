@@ -26,7 +26,6 @@
 #include <string.h>
 #include <unistd.h>
 #include <errno.h>
-#include <signal.h>
 #include <sys/types.h>
 #include <sys/utsname.h>
 #include <sys/stat.h>
@@ -260,7 +259,6 @@ int run_command(Options *op, char **data, int output,
     int ret, total_lines;
     char *cmd, *buf = NULL;
     FILE *stream = NULL;
-    struct sigaction act, old_act;
     float percent;
     int *match_sizes = NULL;
     va_list ap;
@@ -290,21 +288,6 @@ int run_command(Options *op, char **data, int output,
         nvfree(tmp);
     }
     
-    /*
-     * XXX: temporarily ignore SIGWINCH; our child process inherits
-     * this disposition and will likewise ignore it (by default).
-     * This fixes cases where child processes abort after receiving
-     * SIGWINCH when its caught in the parent process.
-     */
-    if (op->sigwinch_workaround) {
-        act.sa_handler = SIG_IGN;
-        sigemptyset(&act.sa_mask);
-        act.sa_flags = 0;
-
-        if (sigaction(SIGWINCH, &act, &old_act) < 0)
-            old_act.sa_handler = NULL;
-    }
-
     /*
      * Clear LANG and LC_ALL before running the command, to make sure
      * command output that might need to be parsed doesn't vary based
@@ -375,7 +358,17 @@ int run_command(Options *op, char **data, int output,
             buf = nvrealloc(buf, buflen);
         }
         
-        if (fgets(buf + len, buflen - len, stream) == NULL) break;
+        if (fgets(buf + len, buflen - len, stream) == NULL) {
+            /*
+             * If the read was interrupted by a signal (e.g. SIGWINCH),
+             * clear the error and retry instead of treating it as EOF.
+             */
+            if (ferror(stream) && errno == EINTR) {
+                clearerr(stream);
+                continue;
+            }
+            break;
+        }
         
         if (output) ui_command_output(op, "%s", buf + len);
 
@@ -393,21 +386,6 @@ int run_command(Options *op, char **data, int output,
             if (n > total_lines) n = total_lines;
             percent = (float) n / (float) total_lines;
 
-            /*
-             * XXX: manually call the SIGWINCH handler, if set, to
-             * handle window resizes while we ignore the signal.
-             */
-            if (op->sigwinch_workaround) {
-                /* Only call into the handler if it isn't one of the special
-                 * pointer values from bits/signum-generic.h */
-                if (old_act.sa_handler != NULL &&
-                    old_act.sa_handler != SIG_DFL &&
-                    old_act.sa_handler != SIG_IGN &&
-                    old_act.sa_handler != SIG_ERR) {
-                    old_act.sa_handler(SIGWINCH);
-                }
-            }
-
             ui_status_update(op, percent, NULL);
         }
 
@@ -419,13 +397,6 @@ int run_command(Options *op, char **data, int output,
     /* Close the popen()'ed stream. */
 
     ret = pclose(stream);
-
-    /*
-     * Restore the SIGWINCH signal disposition and handler, if any,
-     * to their original values.
-     */
-    if (op->sigwinch_workaround)
-        sigaction(SIGWINCH, &old_act, NULL);
 
     /* if the last character in the buffer is a newline, null it */
     

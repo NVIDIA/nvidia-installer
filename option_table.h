@@ -75,7 +75,6 @@ enum {
     UPDATE_OPTION,
     FORCE_SELINUX_OPTION,
     SELINUX_CHCON_TYPE_OPTION,
-    NO_SIGWINCH_WORKAROUND_OPTION,
     X_MODULE_PATH_OPTION,
     DOCUMENTATION_PREFIX_OPTION,
     APPLICATION_PROFILE_PATH_OPTION,
@@ -529,13 +528,6 @@ static const NVGetoptOption __options[] = {
       "determine which chcon argument to use by first trying "
       "'textrel_shlib_t', then 'texrel_shlib_t', then 'shlib_t'.  Use this "
       "option to override this detection logic." },
-
-    { "no-sigwinch-workaround", NO_SIGWINCH_WORKAROUND_OPTION,
-      NVGETOPT_OPTION_APPLIES_TO_NVIDIA_UNINSTALL, NULL,
-      "Normally, nvidia-installer ignores the SIGWINCH signal before it "
-      "forks to execute commands, e.g. to build the kernel module, and "
-      "restores the SIGWINCH signal handler after the child process "
-      "has terminated.  This option disables this behavior." },
 
     { "no-distro-scripts", NO_DISTRO_SCRIPTS_OPTION,
       NVGETOPT_OPTION_APPLIES_TO_NVIDIA_UNINSTALL, NULL,
