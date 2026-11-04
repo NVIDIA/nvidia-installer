@@ -823,6 +823,12 @@ int set_destinations(Options *op, Package *p)
             dir = "";
             break;
 
+        case FILE_TYPE_FIRMWARE_SYMLINK:
+            prefix = "/lib/firmware/nvidia/";
+            path = p->entries[i].path;
+            dir = "";
+            break;
+
         case FILE_TYPE_SYSTEMD_UNIT:
             prefix = op->systemd_unit_prefix;
             path = p->entries[i].path;
@@ -2286,6 +2292,59 @@ static char *get_ldconfig_cache(Options *op)
 
 
 /*
+ * Return TRUE if the ldconfig cache lists a library directly in 'dir',
+ * and not just in a subdirectory of it.
+ */
+
+static int cache_lists_lib_in_dir(const char *ldconfig_cache, const char *dir)
+{
+    const char *m = ldconfig_cache;
+    size_t len = strlen(dir);
+
+    while ((m = strstr(m, dir)) != NULL) {
+        /* Don't match if the DSO on this line is in a subdirectory of the
+         * path under test. The subdirectory might be in the loader search
+         * path, but the higher level directory we're searching for might
+         * not be, leading to the installer placing libraries where the
+         * loader won't find them. */
+        if (memchr(m + len, '/', strcspn(m + len, "\n")) == NULL) return TRUE;
+        m += len;
+    }
+    return FALSE;
+}
+
+/*
+ * Like the above, but match a library listed under a directory that is a
+ * symlink to 'dir' (e.g. /lib64 -> /usr/lib64 on a merged-/usr system).
+ * Resolving both paths keeps genuinely distinct directories apart.
+ */
+
+static int cache_lists_lib_in_symlinked_dir(const char *ldconfig_cache,
+                                             const char *dir)
+{
+    char resolved_dir[PATH_MAX], resolved_lib[PATH_MAX];
+    const char *m;
+
+    if (realpath(dir, resolved_dir) == NULL) return FALSE;
+
+    for (m = ldconfig_cache; (m = strstr(m, "=> ")) != NULL; m += 3) {
+        size_t len = strcspn(m + 3, "\n");
+        char buf[PATH_MAX];
+
+        if (len >= sizeof(buf)) continue;
+        memcpy(buf, m + 3, len);
+        buf[len] = '\0';
+
+        if (realpath(dirname(buf), resolved_lib) != NULL &&
+            strcmp(resolved_lib, resolved_dir) == 0) {
+            return TRUE;
+        }
+    }
+    return FALSE;
+}
+
+
+/*
  * find_libdir() - search in 'prefix' (optionally under 'chroot'/'prefix')
  * for directories in 'list', either in the ldconfig(8) cache or on the
  * filesystem. return the first directory found, or NULL if none found.
@@ -2305,7 +2364,12 @@ static char *find_libdir(char * const * list, const char *prefix,
         collapse_multiple_slashes(path);
 
         if (ldconfig_cache) {
-            if (strstr(ldconfig_cache, path)) {
+            /* ldconfig may list the library under a symlinked alias of
+             * 'path' (e.g. a merge symlink such as /lib64 -> /usr/lib64),
+             * so fall back to matching through symlinks. */
+            if (cache_lists_lib_in_dir(ldconfig_cache, path) ||
+                (!chroot &&
+                 cache_lists_lib_in_symlinked_dir(ldconfig_cache, path))) {
                 break;
             }
         } else {

@@ -491,8 +491,8 @@ typedef struct {
     /* Flags to indicate the reults of an attempted initramfs scan. These flags
      * should all be zero-initialized before the first scan attempt. */
 
-    /* Initramfs scan detected Nouveau in the initramfs */
-    int nouveau_ko_detected;
+    /* Initramfs scan detected an incompatible kernel module in the initramfs */
+    int incompatible_ko_detected;
     /* Initramfs scan detected NVIDIA kernel modules in the initramfs */
     int nvidia_ko_detected;
     /* A non-interactive scan was attempted, but interaction is required to
@@ -519,10 +519,17 @@ static void scan_initramfs(Options *op, ScanThreadData *data, int interactive)
         if (ret == 0) {
             int i;
 
-            if (strstr(listing, "/nouveau.ko")) {
-                ui_log(op, "Nouveau detected in initramfs");
+            for (i = 0; i < num_incompatible_kernel_modules; i++) {
+                char *module = nvstrcat("/", incompatible_kernel_modules[i],
+                                        ".ko", NULL);
 
-                data->nouveau_ko_detected = TRUE;
+                if (strstr(listing, module)) {
+                    ui_log(op, "%s detected in initramfs", module + 1);
+
+                    data->incompatible_ko_detected = TRUE;
+                }
+
+                nvfree(module);
             }
 
             for (i = 0; i < num_conflicting_kernel_modules; i++) {
@@ -638,13 +645,15 @@ int update_initramfs(Options *op)
 
     reason = nvstrdup("");
 
-    if (nouveau_is_present()) {
-        add_bullet_list_item("nvidia-installer attempted to disable Nouveau.",
+    if (incompatible_kernel_module_present()) {
+        add_bullet_list_item("nvidia-installer attempted to disable an "
+                             "incompatible kernel module.",
                              &reason);
     }
 
-    if (data_pointer->nouveau_ko_detected) {
-        add_bullet_list_item("Nouveau is present in the initramfs.", &reason);
+    if (data_pointer->incompatible_ko_detected) {
+        add_bullet_list_item("An incompatible kernel module is present in the "
+                             "initramfs.", &reason);
     }
 
     if (data_pointer->nvidia_ko_detected) {

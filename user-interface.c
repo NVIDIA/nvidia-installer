@@ -799,6 +799,7 @@ static void ui_signal_handler(int n)
     };
     
     const char *s;
+    ssize_t dummy;
     
     ui_close(NULL); /* 
                      * XXX don't have an Options struct to
@@ -807,15 +808,19 @@ static void ui_signal_handler(int n)
     
     /*
      * print to stderr with write(2) rather than fprintf(3), since
-     * fprintf isn't guaranteed to be reentrant
+     * fprintf isn't guaranteed to be reentrant. And ignore errors
+     * since we're about to exit.
      */
     
     s = (n < 32) ? sig_names[n] : "UNKNOWN";
     
-    write(2, "Received signal ", 16);
-    write(2, s, strlen(s));
-    write(2, "; aborting.\n", 12);
-    
+    dummy = write(2, "Received signal ", 16);
+    (void)dummy;
+    dummy = write(2, s, strlen(s));
+    (void)dummy;
+    dummy = write(2, "; aborting.\n", 12);
+    (void)dummy;
+
     exit(128 + n);
 
 } /* ui_signal_handler() */

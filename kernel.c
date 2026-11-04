@@ -1305,7 +1305,7 @@ static int ignore_load_error(Options *op, Package *p,
                  "built against the wrong or improperly configured "
                  "kernel sources, with a version of gcc that differs "
                  "from the one used to build the target kernel, or "
-                 "if another driver, such as nouveau, is "
+                 "if another driver, such as nouveau or nova_core, is "
                  "present and prevents the NVIDIA kernel module from "
                  "obtaining ownership of the NVIDIA device(s), "
                  "or no NVIDIA device installed in this system is supported "
@@ -1647,6 +1647,19 @@ static void load_kernel_module_quiet(Options *op, const char *module_name)
 static void modprobe_remove_kernel_module_quiet(Options *op, const char *name)
 {
     modprobe_helper(op, name, TRUE, TRUE);
+}
+
+void load_kernel_module_quiet_if_not_skipped(Options *op,
+                                             const char *module_name)
+{
+    if (op->skip_module_load) {
+        ui_log(op, "Skipping live '%s' load because '--skip-module-load' "
+               "was specified.",
+               module_name);
+        return;
+    }
+
+    load_kernel_module_quiet(op, module_name);
 }
 
 

@@ -184,8 +184,9 @@ int install_from_cwd(Options *op)
                                "The distribution-provided pre-install script "
                                "completed successfully. If this is the first "
                                "time you have run the installer, this script "
-                               "may have helped disable Nouveau, but a reboot "
-                               "may be required first.  "
+                               "may have helped disable an incompatible "
+                               "kernel driver, but a reboot may be required "
+                               "first.  "
                                "Would you like to continue, or would you "
                                "prefer to abort installation to reboot the "
                                "system?") == ABORT_CHOICE) {
@@ -215,9 +216,9 @@ int install_from_cwd(Options *op)
         }
     }
 
-    /* fail if the nouveau driver is currently in use */
+    /* fail if an incompatible kernel driver is currently in use */
 
-    if (!check_for_nouveau(op)) goto failed;
+    if (!check_for_incompatible_kernel_modules(op)) goto failed;
 
     /* ask if we should install the optional kernel modules */
 
@@ -357,6 +358,8 @@ int install_from_cwd(Options *op)
 
     if (!op->no_kernel_modules) {
         if (package_includes_kernel_module(p, "nvidia-drm")) {
+            load_kernel_module_quiet_if_not_skipped(op, "tegra_dce");
+
             if (!load_kernel_module(op, "nvidia-drm")) {
                 goto failed;
             }

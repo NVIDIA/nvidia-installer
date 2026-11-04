@@ -55,6 +55,7 @@ int build_kernel_interfaces                        (Options*, Package*,
                                                     PrecompiledFileInfo **);
 int test_kernel_modules                            (Options*, Package*);
 int load_kernel_module                             (Options*, const char*);
+void load_kernel_module_quiet_if_not_skipped      (Options*, const char*);
 int check_for_unloaded_kernel_module               (Options*);
 PrecompiledInfo *find_precompiled_kernel_interface (Options*, Package*);
 char *get_kernel_name                              (Options*);

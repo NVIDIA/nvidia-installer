@@ -589,6 +589,7 @@ static char *nv_ncurses_get_input(Options *op,
             }
             break;
 
+        case KEY_RESIZE:
         case NV_NCURSES_CTRL('L'):
             nv_ncurses_check_resize(d, TRUE);
             goto draw_get_input;
@@ -711,6 +712,7 @@ static void nv_ncurses_message(Options *op, int level, const char *msg)
         ch = wgetch(nv_stdscr);
 
         switch (ch) {
+        case KEY_RESIZE:
         case NV_NCURSES_CTRL('L'):
             nv_ncurses_check_resize(d, TRUE);
             goto draw_message;
@@ -885,11 +887,11 @@ static void nv_ncurses_status_update(Options *op, const float percent,
 
     while ((ch = wgetch(nv_stdscr)) != ERR) {
         /*
-         * if the user explicitly requested that the screen be
-         * redrawn by pressing CTRL-L, then also redraw the entire
-         * progress bar egion.
+         * If the user explicitly requested that the screen be redrawn by
+         * pressing CTRL-L, or if ncurses reported a resize, redraw the entire
+         * progress bar region.
          */
-        if (ch == NV_NCURSES_CTRL('L')) {
+        if (ch == NV_NCURSES_CTRL('L') || ch == KEY_RESIZE) {
             nv_ncurses_check_resize(d, TRUE);
             nv_ncurses_destroy_region(d->message);
             nv_ncurses_do_progress_bar_region(d);
@@ -1745,6 +1747,7 @@ static int nv_ncurses_paged_prompt(Options *op, const char *question,
                 wrefresh(nv_stdscr);
                 break;
 
+            case KEY_RESIZE:
             case NV_NCURSES_CTRL('L'):
                 nv_ncurses_check_resize(d, TRUE);
                 if (p) {

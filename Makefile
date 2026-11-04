@@ -123,13 +123,15 @@ common_cflags  = -I.
 common_cflags += -imacros $(CONFIG_H)
 common_cflags += -I $(OUTPUTDIR)
 common_cflags += -I $(COMMON_UTILS_DIR)
-
 common_cflags += $(if $(BULLSEYE_BUILD),-DBULLSEYE_BUILD,)
+common_cflags += -fstack-protector-strong
+common_cflags += -fstack-clash-protection
+common_cflags += $(if $(DEBUG), ,-O2 -D_FORTIFY_SOURCE=2)
 
 CFLAGS += $(common_cflags)
-
 HOST_CFLAGS += $(common_cflags)
 
+LDFLAGS += -Wl,-z,relro,-z,now
 LDFLAGS += -L.
 LIBS += -ldl -lpthread
 

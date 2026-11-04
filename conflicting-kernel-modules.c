@@ -37,6 +37,7 @@ const char * const conflicting_kernel_modules[] = {
     "nvidia0", "nvidia1", "nvidia2", "nvidia3",
     "nvidia4", "nvidia5", "nvidia6", "nvidia7",
     "nvidia-frontend",
+    "tegra_dce",
 #ifdef BULLSEYE_BUILD
     "libcov-lkm",
 #endif

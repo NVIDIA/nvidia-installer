@@ -487,15 +487,23 @@ static const NVGetoptOption __options[] = {
       "Before searching for a precompiled kernel interface in the "
       ".run file, search in the specified directory." },
 
-    { "no-nouveau-check", 'z', 0, NULL,
-      "Normally, nvidia-installer aborts installation if the nouveau kernel "
-      "driver is in use.  Use this option to disable this check." },
+    { "no-incompatible-kernel-module-check", 'z', 0, NULL,
+      "Normally, nvidia-installer aborts installation if an incompatible "
+      "kernel driver such as nouveau or nova_core is in use.  Use this "
+      "option to disable this check." },
 
-    { "disable-nouveau", 'Z', NVGETOPT_IS_BOOLEAN, NULL,
-      "nvidia-installer will attempt to disable the nouveau kernel driver "
-      "by default, if it is in use during installation. Use "
-      "'--no-disable-nouveau to prevent nvidia-installer from disabling "
-      "nouveau by default."},
+    /* alias for backwards compatibility */
+    { "no-nouveau-check", 'z', 0, NULL, NULL },
+
+    { "disable-incompatible-kernel-modules", 'Z', NVGETOPT_IS_BOOLEAN, NULL,
+      "nvidia-installer will attempt to disable incompatible kernel drivers "
+      "such as nouveau or nova_core by default, if they are in use during "
+      "installation. Use "
+      "'--no-disable-incompatible-kernel-modules to prevent nvidia-installer "
+      "from disabling these kernel drivers by default."},
+
+    /* alias for backwards compatibility */
+    { "disable-nouveau", 'Z', NVGETOPT_IS_BOOLEAN, NULL, NULL },
 
     { "run-nvidia-xconfig", 'X', 0, NULL,
       "nvidia-installer can optionally invoke the nvidia-xconfig utility.  "
@@ -744,10 +752,11 @@ static const NVGetoptOption __options[] = {
       "and running."
     },
 
-    { "release-fb-console", RELEASE_FB_CONSOLE_OPTION, 0, NULL,
-      "When installing on a virtual terminal that appears to use nvidia-drm "
-      "for the framebuffer console, unload the nvidia kernel modules before "
-      "proceeding instead of skipping the module unload."
+    { "release-fb-console", RELEASE_FB_CONSOLE_OPTION,
+      NVGETOPT_OPTION_APPLIES_TO_NVIDIA_UNINSTALL, NULL,
+      "When installing or uninstalling on a virtual terminal that appears to "
+      "use nvidia-drm for the framebuffer console, unload the NVIDIA kernel "
+      "modules before proceeding instead of skipping the module unload."
     },
 
     { "rebuild-initramfs",

@@ -1494,8 +1494,8 @@ int run_existing_uninstaller(Options *op)
         ret = run_command(op, &data, FALSE, NULL, TRUE,
                           uninstaller, " -s --log-file-name=",
                           uninstall_log_path,
-                          skip_depmod ? " --skip-depmod" : NULL,
-                          op->nvidia_vt_detected ? " --skip-module-unload" : NULL,
+                          skip_depmod ? " --skip-depmod" : "",
+                          op->nvidia_vt_detected ? " --skip-module-unload" : "",
                           NULL);
         ui_indeterminate_end(op);
 

@@ -729,6 +729,7 @@ int main(int argc, char *argv[])
     /* uninstall */
 
     else if (op->uninstall) {
+        if (!check_for_nvidia_active_vt(op)) goto done;
         ret = uninstall_existing_driver(op, TRUE /* interactive */,
                                         op->skip_depmod);
     }

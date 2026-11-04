@@ -129,6 +129,7 @@ static const struct {
     { ENTRY(INTERNAL_UTILITY_LIB,       T, T, F, F, T, F, F, T, F) },
     { ENTRY(INTERNAL_UTILITY_DATA,      F, T, F, F, F, F, F, T, F) },
     { ENTRY(FIRMWARE,                   F, T, F, F, F, F, F, F, T) },
+    { ENTRY(FIRMWARE_SYMLINK,           F, F, F, T, F, F, F, F, T) },
     { ENTRY(SYSTEMD_UNIT,               F, T, F, F, F, F, F, F, T) },
     { ENTRY(SYSTEMD_UNIT_SYMLINK,       F, F, T, T, F, F, F, F, F) },
     { ENTRY(SYSTEMD_SLEEP_SCRIPT,       F, T, F, F, F, F, F, F, F) },

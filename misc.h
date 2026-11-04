@@ -98,7 +98,7 @@ void check_for_nvidia_graphics_devices(Options *op, Package *p);
 int run_nvidia_xconfig(Options *op, int restore, const char *question, int answer);
 HookScriptStatus run_distro_hook(Options *op, const char *hook);
 int check_for_alternate_install(Options *op);
-int check_for_nouveau(Options *op);
+int check_for_incompatible_kernel_modules(Options *op);
 int dkms_module_installed(Options *op, const char *module, const char *kernel);
 void dkms_register_module(Options *op, Package *p, const char *kernel);
 int dkms_remove_module(Options *op, const char *version);
@@ -115,6 +115,9 @@ int option_is_supported(Options *op, const char *cmd, const char *help,
 void check_for_vulkan_loader(Options *op);
 void add_bullet_list_item(const char *new, char **orig);
 void suggest_reboot(Options *op);
-int nouveau_is_present(void);
+
+extern const char * const incompatible_kernel_modules[];
+extern const int num_incompatible_kernel_modules;
+const char *incompatible_kernel_module_present(void);
 
 #endif /* __NVIDIA_INSTALLER_MISC_H__ */

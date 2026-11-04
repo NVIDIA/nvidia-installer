@@ -1667,7 +1667,7 @@ static int check_for_vt_output(Options *op)
  * check_for_nvidia_active_vt() - Check if nvidia-drm is driving a framebuffer
  * console and we're running on a VT.  If this condition is detected, print a
  * warning message, set op->nvidia_vt_detected, and give the user a choice
- * whether to continue installing (return TRUE) or abort (return FALSE).
+ * whether to continue (return TRUE) or abort (return FALSE).
  */
 
 int check_for_nvidia_active_vt(Options *op)
@@ -1691,13 +1691,15 @@ int check_for_nvidia_active_vt(Options *op)
             NUM_FB_CONSOLE_CHOICES
         };
 
-        static const char * const choices[] = {
+        const int uninstall = op->uninstall;
+        const char * const choices[] = {
             [FB_CONSOLE_CONTINUE_WITHOUT_UNLOADING] =
-                "Install without unloading",
+                uninstall ? "Uninstall without unloading" :
+                            "Install without unloading",
             [FB_CONSOLE_UNLOAD_ANYWAY] =
                 "Unload anyway",
             [FB_CONSOLE_ABORT] =
-                "Abort installation",
+                uninstall ? "Abort uninstallation" : "Abort installation",
         };
 
         int choice;
@@ -1705,17 +1707,22 @@ int check_for_nvidia_active_vt(Options *op)
         if (op->release_fb_console) {
             ui_log(op, "Continuing per the '--release-fb-console' option.");
             choice = FB_CONSOLE_UNLOAD_ANYWAY;
+        } else if (uninstall && op->skip_module_unload) {
+            ui_log(op, "Skipping module unload.");
+            choice = FB_CONSOLE_CONTINUE_WITHOUT_UNLOADING;
         } else {
             choice = ui_multiple_choice(op, choices, NUM_FB_CONSOLE_CHOICES,
                     FB_CONSOLE_CONTINUE_WITHOUT_UNLOADING,
                     "The installer has detected that its output may be "
                     "displayed on a monitor connected to an NVIDIA GPU, and "
-                    "that the install process may disrupt the output on that "
-                    "monitor if the previous driver is unloaded.  You may "
-                    "install without unloading the previous driver, after "
-                    "which it is recommended that you reboot your computer to "
-                    "use the new driver.  Or you may unload the previous "
-                    "driver anyway.  If installing without unloading, the "
+                    "that the %s process may disrupt the output on that "
+                    "monitor if the current driver is unloaded.  You may "
+                    "continue without unloading the current driver, after "
+                    "which it is recommended that you reboot your computer for "
+                    "the changes to take effect.  Or you may unload the current "
+                    "driver anyway.%s",
+                    uninstall ? "uninstall" : "install",
+                    uninstall ? "" : "  If installing without unloading, the "
                     "installer will not be able to detect some potential "
                     "installation problems.");
         }
@@ -1724,11 +1731,15 @@ int check_for_nvidia_active_vt(Options *op)
         case FB_CONSOLE_CONTINUE_WITHOUT_UNLOADING:
             op->nvidia_vt_detected = TRUE;
             op->skip_module_load = TRUE;
+            op->skip_module_unload = TRUE;
 
-            ui_warn(op, "Continuing installation without unloading the "
-                    "previous driver.  It is highly recommended that you "
-                    "reboot your computer after installation to use the newly "
-                    "installed driver.");
+            {
+                const char *mode = uninstall ? "uninstallation" : "installation";
+                ui_warn(op, "Continuing %s without unloading the current "
+                        "driver.  It is highly recommended that you reboot "
+                        "your computer after %s.",
+                        mode, mode);
+            }
             break;
 
         case FB_CONSOLE_UNLOAD_ANYWAY:
@@ -1948,7 +1959,7 @@ void pci_device_scan(Options *op)
                     op->pci_devices.found_vga = TRUE;
                 }
 
-                if (pci_devid_is_self_hosted(dev->device_id)) {
+                if (pci_devid_is_self_hosted_hopper(dev->device_id)) {
                     op->open_modules.required = TRUE;
                     op->open_modules.supported_gpu_present = TRUE;
                 } else if (is_vgpu_host_package()) {
@@ -2377,10 +2388,10 @@ int check_for_alternate_install(Options *op)
 
 
 /*
- * Determine if the nouveau driver is currently in use.  We do the
- * equivalent of:
+ * Determine if any incompatible kernel driver is currently in use.
+ * We do the equivalent of:
  *
- *   ls -l /sys/bus/pci/devices/ /driver | grep nouveau
+ *   ls -l /sys/bus/pci/devices/ /driver | grep <module>
  *
  * The directory structure under /sys/bus/pci/devices/ should contain
  * a directory for each PCI device, and for those devices with a
@@ -2388,21 +2399,39 @@ int check_for_alternate_install(Options *op)
  *
  * This appears to be consistent with how libpciaccess works.
  *
- * Returns TRUE if nouveau is found; returns FALSE if not.
+ * Returns the name of the first incompatible module found; returns NULL if
+ * none are found.
  */
 
 #define SYSFS_DEVICES_PATH "/sys/bus/pci/devices"
 
-int nouveau_is_present(void)
+const char * const incompatible_kernel_modules[] = {
+    "nouveau",
+    // This list is used to search both file names in initramfs and module
+    // names in sysfs. The Nova modules underwent a few name changes in
+    // commits 8bfe9d72cf and 4f3491f6ec, so just list all of the names
+    // they're known by here.
+    "NovaCore",
+    "nova_core",
+    "nova-core",
+    "nova",
+    "nova_drm",
+    "nova-drm",
+};
+const int num_incompatible_kernel_modules =
+    ARRAY_LEN(incompatible_kernel_modules);
+
+const char *incompatible_kernel_module_present(void)
 {
     DIR *dir;
     struct dirent * ent;
-    int found = FALSE;
+    const char *found = NULL;
+    int i;
 
     dir = opendir(SYSFS_DEVICES_PATH);
 
     if (!dir) {
-        return FALSE;
+        return NULL;
     }
 
     while ((ent = readdir(dir)) != NULL) {
@@ -2435,12 +2464,17 @@ int nouveau_is_present(void)
 
         name = basename(symlink_target);
 
-        if (strcmp(name, "nouveau") == 0) {
-            found = TRUE;
-            break;
+        for (i = 0; i < num_incompatible_kernel_modules; i++) {
+            if (strcmp(name, incompatible_kernel_modules[i]) != 0) {
+                continue;
+            }
+
+            found = incompatible_kernel_modules[i];
+            goto done;
         }
     }
 
+done:
     closedir(dir);
 
     return found;
@@ -2457,7 +2491,7 @@ static const char* modprobe_directories[] = { "/etc/modprobe.d",
  * written in disable_nouveau()
  */
 
-#define DISABLE_NOUVEAU_FILE_CKSUM 3728279991U
+#define DISABLE_NOUVEAU_FILE_CKSUM 1827757923U
 
 /*
  * disable_nouveau_filename() - generate the filename of a configuration file.
@@ -2493,6 +2527,9 @@ static char *write_disable_nouveau_file(const char *directory)
     fprintf(file, "# generated by nvidia-installer\n");
     fprintf(file, "blacklist nouveau\n");
     fprintf(file, "options nouveau modeset=0\n");
+    fprintf(file, "blacklist nova_core\n");
+    fprintf(file, "blacklist nova_drm\n");
+    fprintf(file, "blacklist nova\n");
 
     ret = fclose(file);
 
@@ -2506,8 +2543,8 @@ static char *write_disable_nouveau_file(const char *directory)
 
 
 /*
- * Write modprobe configuration fragments to disable loading of
- * nouveau.
+ * Write modprobe configuration fragments to disable loading of the
+ * specified kernel modules.
  *
  * Returns a list of written configuration files if successful; 
  * returns NULL if there was a failure.
@@ -2532,7 +2569,7 @@ static char *disable_nouveau(void)
 
 
 /*
- * Check if any disable nouveau file is already present with the
+ * Check if any disable module file is already present with the
  * contents that we expect, and return the paths to any found files,
  * or NULL if no matching files were found
  */
@@ -2565,31 +2602,34 @@ static char *disable_nouveau_file_is_present(Options *op,
 
 
 /*
- * Check if the nouveau kernel driver is in use.  If it is, provide an
- * appropriate error message and offer to try to disable nouveau.
+ * Check if an incompatible kernel driver is in use.  If it is,
+ * provide an appropriate error message and offer to try to disable the
+ * incompatible modules.
  *
  * Returns FALSE if the user chooses to abort the installation due to
- * the presence of Nouveau; TRUE otherwise.
+ * the presence of an incompatible kernel module; TRUE otherwise.
  */
 
-int check_for_nouveau(Options *op)
+int check_for_incompatible_kernel_modules(Options *op)
 {
-    int ret, nouveau_detected, all_files_written;
+    int ret, all_files_written;
+    const char *detected_module;
     char *disable_files;
 
 #define NOUVEAU_POINTER_MESSAGE                                         \
     "Please consult the NVIDIA driver README and your Linux "           \
         "distribution's documentation for details on how to correctly " \
-        "disable the Nouveau kernel driver."
+        "disable these kernel modules."
 
     if (op->no_nouveau_check) return TRUE;
 
-    nouveau_detected = nouveau_is_present();
+    detected_module = incompatible_kernel_module_present();
 
-    if (nouveau_detected) {
-        ui_warn(op, "The Nouveau kernel driver is currently in use "
-                "by your system.  This driver is incompatible with the NVIDIA "
-                "driver, and must be disabled before proceeding.");
+    if (detected_module) {
+        ui_warn(op, "The %s kernel module is currently in use by your system.  "
+                "This kernel module is incompatible with the NVIDIA driver, "
+                "and must be disabled before proceeding.",
+                detected_module);
     } else {
         return TRUE;
     }
@@ -2598,12 +2638,12 @@ int check_for_nouveau(Options *op)
 
     if (disable_files) {
         ui_warn(op, "One or more modprobe configuration files to disable "
-                "Nouveau are already present at: %s.  Please be "
+                "%s are already present at: %s.  Please be "
                 "sure you have rebooted your system since these files were "
-                "written.  If you have rebooted, then Nouveau may be enabled "
-                "for other reasons, such as being included in the system "
-                "initial ramdisk or in your X configuration file.  "
-                NOUVEAU_POINTER_MESSAGE, disable_files);
+                "written.  If you have rebooted, then this kernel module may "
+                "be enabled for other reasons, such as being included in the "
+                "system initial ramdisk or in your X configuration file.  "
+                NOUVEAU_POINTER_MESSAGE, detected_module, disable_files);
         nvfree(disable_files);
         if (all_files_written) {
             /* If all of the possible disable files are already present,
@@ -2615,7 +2655,7 @@ int check_for_nouveau(Options *op)
     /* Disable files were missing from at least one of the expected locations:
      * offer to create additional ones. */
     ret = ui_yes_no(op, op->disable_nouveau,
-                    "Nouveau can usually be disabled by adding files "
+                    "This kernel module can usually be disabled by adding files "
                     "to the modprobe configuration directories and rebuilding "
                     "the initramfs.\n\n"
                     "Would you like nvidia-installer to attempt to create "
@@ -2626,20 +2666,22 @@ int check_for_nouveau(Options *op)
 
         if (disable_files) {
             ui_message(op, "One or more modprobe configuration files to "
-                       "disable Nouveau have been written.  You will need "
+                       "disable %s have been written.  You will need "
                        "to reboot your system and possibly rebuild the initramfs "
                        "before these changes can take effect.  Note if you "
-                       "later wish to reenable Nouveau, you will need to "
+                       "later wish to reenable the disabled kernel module, "
+                       "you will need to "
                        "delete these files: %s",
+                       detected_module,
                        disable_files);
             nvfree(disable_files);
         } else {
-            ui_warn(op, "Unable to alter the nouveau modprobe configuration.  "
-                    NOUVEAU_POINTER_MESSAGE);
+            ui_warn(op, "Unable to alter the modprobe configuration for %s.  "
+                    NOUVEAU_POINTER_MESSAGE, detected_module);
         }
     } else {
-        ui_message(op, "Please disable Nouveau manually and attempt to install "
-                   "the NVIDIA driver again later.");
+        ui_message(op, "Please disable %s manually and attempt to install "
+                   "the NVIDIA driver again later.", detected_module);
         return FALSE;
     }
 
@@ -2650,10 +2692,13 @@ continue_or_abort:
         op->allow_installation_with_running_driver ?
         CONTINUE_CHOICE : ABORT_CHOICE,
         "nvidia-installer is not able to perform some of the sanity checks "
-        "which detect potential installation problems while Nouveau is loaded. "
+        "which detect potential installation problems while %s is loaded. "
         "Would you like to continue installation without these sanity "
-        "checks, or abort installation, confirm that Nouveau has been "
-        "properly disabled, and attempt installation again later?");
+        "checks, or abort installation, confirm that %s has been properly "
+        "disabled, "
+        "and attempt installation again later?",
+        detected_module,
+        detected_module);
 
     if (ret == ABORT_CHOICE) {
         /* Offer to update the initramfs: normally, this happens before
@@ -2663,8 +2708,9 @@ continue_or_abort:
     }
 
     op->skip_module_load = TRUE;
-    ui_log(op, "Proceeding with installation despite the presence of Nouveau. "
-               "Kernel module load tests will be skipped.");
+    ui_log(op, "Proceeding with installation despite the presence of %s. "
+               "Kernel module load tests will be skipped.",
+               detected_module);
 
     return TRUE;
 }
@@ -3410,23 +3456,30 @@ void suggest_reboot(Options *op)
     }
 
     if (op->nvidia_vt_detected) {
-        add_bullet_list_item("The display was in use during installation.", &reason);
+        add_bullet_list_item("The display was in use.", &reason);
     }
 
-    if (nouveau_is_present()) {
-        add_bullet_list_item("Nouveau is running: any attempt to disable it "
-                             "will not take effect until after a reboot.",
-                             &reason);
+    if (incompatible_kernel_module_present()) {
+        add_bullet_list_item("An incompatible kernel module is running: any "
+                             "attempt to disable it will not take effect until "
+                             "after a reboot.", &reason);
     }
 
     if (reason[0]) {
-        ui_warn(op, "It is strongly recommended that you reboot your computer "
-                    "after exiting the installer, due to the following "
-                    "condition(s) which the installer detected: \n\n%s\n"
-                    "If you continue to use the computer without rebooting, "
-                    "you may not be able to start new programs which use the "
-                    "NVIDIA GPU(s) until after you reboot or reload the NVIDIA "
-                    "kernel modules.", reason);
+        if (op->uninstall) {
+            ui_warn(op, "It is strongly recommended that you reboot your computer "
+                        "after exiting the uninstaller, due to the following "
+                        "condition(s) which the uninstaller detected: \n\n%s\n",
+                    reason);
+        } else {
+            ui_warn(op, "It is strongly recommended that you reboot your computer "
+                        "after exiting the installer, due to the following "
+                        "condition(s) which the installer detected: \n\n%s\n"
+                        "If you continue to use the computer without rebooting, "
+                        "you may not be able to start new programs which use the "
+                        "NVIDIA GPU(s) until after you reboot or reload the NVIDIA "
+                        "kernel modules.", reason);
+        }
     }
 
     nvfree(reason);
