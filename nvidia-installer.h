@@ -229,6 +229,7 @@ typedef struct __options {
     int skip_depmod;
     int allow_installation_with_running_driver;
     int loaded_kernel_module_detected;
+    int loaded_tegra_dce_detected;
     int running_x_server_detected;
     int nvidia_vt_detected;
     int release_fb_console;

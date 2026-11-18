@@ -64,8 +64,14 @@ static int run_make(Options *op, Package *p, const char *dir,
                     const RunCommandOutputMatch *match);
 static void load_kernel_module_quiet(Options *op, const char *module_name);
 static void modprobe_remove_kernel_module_quiet(Options *op, const char *name);
+static int should_manage_tegra_dce(void);
 static int kernel_configuration_conflict(Options *op, Package *p,
                                          int target_system_checks);
+
+#define DEVICE_TREE_SYSFS_ROOT "/sys/firmware/devicetree/base"
+#define DEVICE_TREE_PROC_ROOT "/proc/device-tree"
+#define TEGRA_DCE_MODULE_NAME "tegra_dce"
+#define DCE_FW_LOAD_BY_PSC_PROPERTY "nvidia,dce-fw-load-by-psc"
 
 /*
  * Message text that is used by several error messages.
@@ -1440,6 +1446,14 @@ static int test_kernel_modules_helper(Options *op, Package *p, int pause_udev)
      * Attempt to load modules that the NVIDIA kernel modules might depend on.
      */
     for (i = 0; i < ARRAY_LEN(depmods); i++) {
+        if ((strcmp(depmods[i], TEGRA_DCE_MODULE_NAME) == 0) &&
+            !should_manage_tegra_dce()) {
+            ui_log(op, "Skipping '%s' because it is not enabled by the "
+                   "current system's device tree.", depmods[i]);
+            depmods[i] = NULL;
+            continue;
+        }
+
         if (check_for_loaded_kernel_module(op, depmods[i])) {
             /*
              * The dependency kernel module is already loaded: don't attempt to
@@ -1649,9 +1663,146 @@ static void modprobe_remove_kernel_module_quiet(Options *op, const char *name)
     modprobe_helper(op, name, TRUE, TRUE);
 }
 
+static int read_device_tree_u32(const char *filename, uint32 *value)
+{
+    unsigned char data[4];
+    FILE *fp;
+    int ret = FALSE;
+
+    fp = fopen(filename, "rb");
+    if (!fp) {
+        return FALSE;
+    }
+
+    if (fread(data, 1, sizeof(data), fp) == sizeof(data)) {
+        *value = ((uint32)data[0] << 24) |
+                 ((uint32)data[1] << 16) |
+                 ((uint32)data[2] << 8) |
+                 (uint32)data[3];
+        ret = TRUE;
+    }
+
+    fclose(fp);
+
+    return ret;
+}
+
+static int device_tree_node_is_available(const char *node_path)
+{
+    char *status_path = nvstrcat(node_path, "/status", NULL);
+    char status[sizeof("okay")];
+    FILE *fp;
+    size_t bytes_read;
+    int ret = FALSE;
+
+    fp = fopen(status_path, "rb");
+    if (!fp) {
+        /* A node without a status property is considered available. */
+        ret = (errno == ENOENT);
+        goto done;
+    }
+
+    bytes_read = fread(status, 1, sizeof(status), fp);
+
+    if ((bytes_read > 0) &&
+        (status[bytes_read - 1] == '\0') &&
+        (fgetc(fp) == EOF) &&
+        !ferror(fp)) {
+        ret = (strcmp(status, "okay") == 0) ||
+              (strcmp(status, "ok") == 0);
+    }
+
+    fclose(fp);
+
+done:
+    nvfree(status_path);
+
+    return ret;
+}
+
+static int device_tree_has_u32_property(const char *property,
+                                        uint32 expected_value)
+{
+    const char *roots[] = {
+        DEVICE_TREE_SYSFS_ROOT,
+        DEVICE_TREE_PROC_ROOT,
+    };
+    int i;
+
+    for (i = 0; i < ARRAY_LEN(roots); i++) {
+        char *paths[] = { NULL, NULL };
+        FTS *fts;
+        FTSENT *ent;
+
+        paths[0] = nvstrdup(roots[i]);
+        fts = fts_open(paths, FTS_LOGICAL | FTS_NOCHDIR, NULL);
+
+        if (!fts) {
+            nvfree(paths[0]);
+            continue;
+        }
+
+        while ((ent = fts_read(fts)) != NULL) {
+            char *node_path;
+            char *separator;
+            uint32 value;
+
+            if ((ent->fts_info != FTS_F) ||
+                (strcmp(ent->fts_name, property) != 0)) {
+                continue;
+            }
+
+            /*
+             * fts_parent->fts_path shares storage with the current entry's
+             * path, so derive the node path from a private copy instead.
+             */
+            node_path = nvstrdup(ent->fts_path);
+            separator = strrchr(node_path, '/');
+
+            if (!separator) {
+                nvfree(node_path);
+                continue;
+            }
+
+            *separator = '\0';
+
+            if (!device_tree_node_is_available(node_path)) {
+                nvfree(node_path);
+                continue;
+            }
+
+            nvfree(node_path);
+
+            if (read_device_tree_u32(ent->fts_path, &value) &&
+                (value == expected_value)) {
+                fts_close(fts);
+                nvfree(paths[0]);
+                return TRUE;
+            }
+        }
+
+        fts_close(fts);
+        nvfree(paths[0]);
+    }
+
+    return FALSE;
+}
+
+static int should_manage_tegra_dce(void)
+{
+    return device_tree_has_u32_property(DCE_FW_LOAD_BY_PSC_PROPERTY, 1);
+}
+
 void load_kernel_module_quiet_if_not_skipped(Options *op,
                                              const char *module_name)
 {
+    if ((strcmp(module_name, TEGRA_DCE_MODULE_NAME) == 0) &&
+        !should_manage_tegra_dce()) {
+        ui_log(op, "Skipping live '%s' load because it is not enabled by the "
+               "current system's device tree.", module_name);
+        return;
+    }
+
     if (op->skip_module_load) {
         ui_log(op, "Skipping live '%s' load because '--skip-module-load' "
                "was specified.",
@@ -1662,7 +1813,66 @@ void load_kernel_module_quiet_if_not_skipped(Options *op,
     load_kernel_module_quiet(op, module_name);
 }
 
+static int continue_with_loaded_kernel_module(Options *op,
+                                              const char *module_name)
+{
+    int choice;
 
+    op->loaded_kernel_module_detected = TRUE;
+
+    if (strcmp(module_name, TEGRA_DCE_MODULE_NAME) == 0) {
+        op->loaded_tegra_dce_detected = TRUE;
+    }
+
+    ui_warn(op, "An NVIDIA kernel module '%s' appears to be already "
+        "loaded in your kernel.  This may be because it is in use (for "
+        "example, by an X server, a CUDA program, or the NVIDIA "
+        "Persistence Daemon), but this may also happen if your kernel "
+        "was configured without support for module unloading.  Some of "
+        "the sanity checks that nvidia-installer performs to detect "
+        "potential installation problems are not possible while an "
+        "NVIDIA kernel module is running.", module_name);
+
+    choice = ui_multiple_choice(op, CONTINUE_ABORT_CHOICES,
+        NUM_CONTINUE_ABORT_CHOICES,
+        op->allow_installation_with_running_driver ?
+        CONTINUE_CHOICE : ABORT_CHOICE,
+        "Would you like to continue installation and skip the sanity "
+        "checks? If not, please abort the installation, then close "
+        "any programs which may be using the NVIDIA GPU(s), and "
+        "attempt installation again.");
+
+    if (choice == CONTINUE_CHOICE) {
+        ui_warn(op, "Continuing installation despite the presence of a "
+            "loaded NVIDIA kernel module.  Some sanity checks will not "
+            "be performed.  It is strongly recommended that you reboot "
+            "your computer after installation is complete.  If the "
+            "installation is not successful after rebooting the "
+            "computer, you can run `nvidia-uninstall` to attempt to "
+            "remove the NVIDIA driver.");
+
+        op->skip_module_load = TRUE;
+        op->skip_module_unload = TRUE;
+        ui_log(op, "Kernel module unload and load tests will be skipped.");
+    }
+
+    return choice == CONTINUE_CHOICE;
+}
+
+static void try_unload_kernel_module(Options *op, const char *module_name)
+{
+    if (!check_for_loaded_kernel_module(op, module_name)) {
+        return;
+    }
+
+    rmmod_kernel_module(op, module_name);
+
+    if (check_for_loaded_kernel_module(op, module_name)) {
+        ui_warn(op, "The kernel module '%s' could not be unloaded. Continuing "
+                "without unloading it; the currently loaded module will "
+                "remain active until the system is rebooted.", module_name);
+    }
+}
 
 /*
  * check_for_unloaded_kernel_module() - test if any of the "bad"
@@ -1674,6 +1884,7 @@ int check_for_unloaded_kernel_module(Options *op)
 {
     int n;
     int loaded = FALSE;
+    int manage_tegra_dce;
     unsigned long long int bits = 0;
 
     /*
@@ -1709,11 +1920,28 @@ int check_for_unloaded_kernel_module(Options *op)
         return TRUE;
     }
 
+    manage_tegra_dce = should_manage_tegra_dce();
+
+    /*
+     * tegra_dce may be pinned because the driver does not support restart.
+     * When it is part of the active display stack, handle it before unloading
+     * any other driver component so continuing with a running driver cannot
+     * leave a partially unloaded module stack.
+     */
+    if (manage_tegra_dce &&
+        check_for_loaded_kernel_module(op, TEGRA_DCE_MODULE_NAME)) {
+        return continue_with_loaded_kernel_module(op, TEGRA_DCE_MODULE_NAME);
+    }
+
     for (n = 0; n < num_conflicting_kernel_modules; n++) {
         if (check_for_loaded_kernel_module(op, conflicting_kernel_modules[n])) {
             loaded = TRUE;
             bits |= (1 << n);
         }
+    }
+
+    if (!manage_tegra_dce) {
+        try_unload_kernel_module(op, TEGRA_DCE_MODULE_NAME);
     }
 
     if (!loaded) return TRUE;
@@ -1730,43 +1958,8 @@ int check_for_unloaded_kernel_module(Options *op)
         /* check again */
 
         if (check_for_loaded_kernel_module(op, conflicting_kernel_modules[n])) {
-            int choice;
-
-            op->loaded_kernel_module_detected = TRUE;
-
-            ui_warn(op, "An NVIDIA kernel module '%s' appears to be already "
-                "loaded in your kernel.  This may be because it is in use (for "
-                "example, by an X server, a CUDA program, or the NVIDIA "
-                "Persistence Daemon), but this may also happen if your kernel "
-                "was configured without support for module unloading.  Some of "
-                "the sanity checks that nvidia-installer performs to detect "
-                "potential installation problems are not possible while an "
-                "NVIDIA kernel module is running.",
-                conflicting_kernel_modules[n]);
-
-            choice = ui_multiple_choice(op, CONTINUE_ABORT_CHOICES,
-                NUM_CONTINUE_ABORT_CHOICES,
-                op->allow_installation_with_running_driver ?
-                CONTINUE_CHOICE : ABORT_CHOICE,
-                "Would you like to continue installation and skip the sanity "
-                "checks? If not, please abort the installation, then close "
-                "any programs which may be using the NVIDIA GPU(s), and "
-                "attempt installation again.");
-
-            if (choice == CONTINUE_CHOICE) {
-                ui_warn(op, "Continuing installation despite the presence of a "
-                    "loaded NVIDIA kernel module.  Some sanity checks will not "
-                    "be performed.  It is strongly recommended that you reboot "
-                    "your computer after installation is complete.  If the "
-                    "installation is not successful after rebooting the "
-                    "computer, you can run `nvidia-uninstall` to attempt to "
-                    "remove the NVIDIA driver.");
-
-                op->skip_module_load = TRUE;
-                ui_log(op, "Kernel module load tests will be skipped.");
-            }
-
-            return choice == CONTINUE_CHOICE;
+            return continue_with_loaded_kernel_module(
+                op, conflicting_kernel_modules[n]);
         }
     }
 

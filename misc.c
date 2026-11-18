@@ -3443,6 +3443,13 @@ void add_bullet_list_item(const char *new, char **orig)
 void suggest_reboot(Options *op)
 {
     char *reason = nvstrdup("");
+    const char *reload_kernel_modules;
+
+    if (op->loaded_tegra_dce_detected) {
+        add_bullet_list_item("The tegra_dce kernel module remained loaded "
+                             "during installation and cannot be safely "
+                             "reloaded.", &reason);
+    }
 
     if (op->loaded_kernel_module_detected) {
         add_bullet_list_item("Existing NVIDIA kernel modules were loaded "
@@ -3465,6 +3472,9 @@ void suggest_reboot(Options *op)
                              "after a reboot.", &reason);
     }
 
+    reload_kernel_modules = op->loaded_tegra_dce_detected ?
+        "" : " or reload the NVIDIA kernel modules";
+
     if (reason[0]) {
         if (op->uninstall) {
             ui_warn(op, "It is strongly recommended that you reboot your computer "
@@ -3477,8 +3487,8 @@ void suggest_reboot(Options *op)
                         "condition(s) which the installer detected: \n\n%s\n"
                         "If you continue to use the computer without rebooting, "
                         "you may not be able to start new programs which use the "
-                        "NVIDIA GPU(s) until after you reboot or reload the NVIDIA "
-                        "kernel modules.", reason);
+                        "NVIDIA GPU(s) until after you reboot%s.",
+                    reason, reload_kernel_modules);
         }
     }
 
